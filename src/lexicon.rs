@@ -50,7 +50,7 @@ impl Feature<char> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum FeatureOrLemma<T: Eq, Category: Eq> {
+pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(T),
     Feature(Feature<Category>),
@@ -154,6 +154,26 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
             .node_references()
             .find_map(|(i, x)| if *x == category { Some(i) } else { None })
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    }
+
+    pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, f64)> {
+        if let Some(x) = self.graph.node_weight(nx) {
+            let p = self
+                .graph
+                .edges_directed(nx, petgraph::Direction::Incoming)
+                .next()
+                .unwrap()
+                .weight();
+            Some((x, *p))
+        } else {
+            None
+        }
+    }
+
+    pub fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Outgoing)
+            .map(|e| e.target())
     }
 }
 

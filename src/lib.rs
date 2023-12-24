@@ -1,8 +1,8 @@
 use std::collections::BinaryHeap;
 
-use anyhow::Result;
-use lexicon::FeatureOrLemma;
+use anyhow::{anyhow, bail, Result};
 use lexicon::Lexicon;
+use lexicon::{Feature, FeatureOrLemma};
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 
@@ -12,9 +12,26 @@ pub enum Direction {
     Right,
 }
 
+impl Direction {
+    fn flip(&self) -> Self {
+        match self {
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Default)]
 struct GornIndex {
     index: Vec<Direction>,
+}
+
+impl GornIndex {
+    fn clone_push(&self, d: Direction) -> Self {
+        let mut v = self.clone();
+        v.index.push(d);
+        v
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,69 +162,101 @@ fn scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
 ) -> impl Iterator<Item = ParseBeam<T>> + 'a {
     lexicon
         .children_of(moment.tree.node)
-        .filter_map(|child| match lexicon.get(child) {
-            Some((FeatureOrLemma::Lemma(s), p)) => {
+        .map(|child| lexicon.get(child).unwrap())
+        .filter_map(|(child, child_prob)| match child {
+            FeatureOrLemma::Lemma(s) => {
                 if let Some(x) = beam.sentence.first() {
-                    if x == s {
+                    if let Some(s) = s {
+                        if s == x {
+                            Some(ParseBeam::<T> {
+                                queue: beam.queue.clone(),
+                                log_probability: beam.log_probability + child_prob,
+                                sentence: beam.sentence[1..].to_vec(),
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        //Invisible word to scan
                         Some(ParseBeam::<T> {
                             queue: beam.queue.clone(),
-                            log_probability: beam.log_probability + p,
-                            sentence: beam.sentence[1..].to_vec(),
+                            log_probability: beam.log_probability + child_prob,
+                            sentence: beam.sentence.clone(),
                         })
-                    } else {
-                        None
                     }
                 } else {
                     None
                 }
             }
-            None => {
-                panic!("THIS SHOULD BE IMPOSSIBLE!")
+            _ => None,
+        })
+}
+
+fn unmerge<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
+    moment: &'a ParseMoment,
+    beam: &'a ParseBeam<T>,
+    lexicon: &'a Lexicon<T, Category>,
+) -> impl Iterator<Item = ParseBeam<T>> + 'a {
+    lexicon
+        .children_of(moment.tree.node)
+        .map(|nx| (nx, lexicon.get(nx).unwrap()))
+        .filter_map(|(child_node, (child, child_prob))| match &child {
+            &FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
+                let complement = lexicon.find_category(cat.clone()).unwrap();
+                let mut queue = beam.queue.clone();
+                queue.push(Reverse(ParseMoment {
+                    tree: FutureTree {
+                        node: complement,
+                        index: moment.tree.index.clone_push(*dir),
+                    },
+                    movers: vec![],
+                }));
+                queue.push(Reverse(ParseMoment {
+                    tree: FutureTree {
+                        node: child_node,
+                        index: moment.tree.index.clone_push(dir.flip()),
+                    },
+                    movers: vec![],
+                }));
+
+                Some(ParseBeam::<T> {
+                    queue,
+                    log_probability: beam.log_probability + child_prob,
+                    sentence: beam.sentence.clone(),
+                })
             }
             _ => None,
         })
-    //        node = moment.node
-    //    movers = moment.movers
-    //    for child in node.children:
-    //        if child.is_leaf() and len(movers) == 0:
-    //            if child.value == "":
-    //                return [copy_push(child.prob(), [], beam, ("scan", child))]
-    //            elif len(beam.s) > 0 and child.value == beam.s[0]:
-    //                beam = copy.copy(beam)
-    //                beam.p = beam.p * child.prob()
-    //                beam.rules.append(("scan", child))
-    //                beam.s.pop(0)
-    //                return [beam]
-    //    return []
 }
 
-fn expand<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
-    moment: ParseMoment,
-    beam: ParseBeam<T>,
+fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
+    moment: &'a ParseMoment,
+    beam: &'a ParseBeam<T>,
+    lexicon: &'a Lexicon<T, Category>,
+) -> impl Iterator<Item = ParseBeam<T>> + 'a {
+    scan(moment, beam, lexicon).chain(unmerge(moment, beam, lexicon))
+}
+
+fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     lexicon: &Lexicon<T, Category>,
-) -> Vec<ParseBeam<T>> {
-    scan(&moment, &beam, lexicon).collect()
-}
-
-fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
-    lexicon: Lexicon<T, Category>,
     initial_category: Category,
     sentence: Vec<T>,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(ParseBeam::<T>::new(&lexicon, initial_category, sentence)?);
+    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, sentence)?);
 
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
-            parse_heap.extend(expand(moment, beam, &lexicon).into_iter());
+            parse_heap.extend(expand(&moment, &beam, lexicon));
         } else {
             if beam.good_parse() {
                 println!("Found parse");
+                return Ok(());
             }
             break;
         }
     }
-    Ok(())
+    bail!("No parse found :(")
 }
 
 mod grammars;
@@ -224,7 +273,38 @@ mod tests {
     fn simple_scan() -> Result<()> {
         let v = vec![SimpleLexicalEntry::parse("hello::h")?];
         let lexicon = Lexicon::new(v);
-        parse(lexicon, 'h', vec!["hello".to_string()])
+        parse(&lexicon, 'h', vec!["hello".to_string()])
+    }
+
+    #[test]
+    fn simple_merge() -> Result<()> {
+        let v = vec![
+            SimpleLexicalEntry::parse("the::n= d")?,
+            SimpleLexicalEntry::parse("man::n")?,
+            SimpleLexicalEntry::parse("drinks::d= =d v")?,
+            SimpleLexicalEntry::parse("beer::n")?,
+        ];
+        let lexicon = Lexicon::new(v);
+        parse(&lexicon, 'd', vec!["the".to_string(), "man".to_string()])?;
+        parse(
+            &lexicon,
+            'v',
+            "the man drinks the beer"
+                .split(' ')
+                .map(|x| x.to_string())
+                .collect(),
+        )?;
+        assert!(parse(
+            &lexicon,
+            'd',
+            "drinks the man the beer"
+                .split(' ')
+                .map(|x| x.to_string())
+                .collect(),
+        )
+        .is_err());
+
+        Ok(())
     }
 
     #[test]

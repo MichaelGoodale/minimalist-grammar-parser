@@ -52,7 +52,7 @@ impl Feature<char> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
-    Lemma(T),
+    Lemma(Option<T>),
     Feature(Feature<Category>),
 }
 
@@ -68,12 +68,12 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LexicalEntry<T: Eq, Category: Eq> {
-    lemma: T,
+    lemma: Option<T>,
     features: Vec<Feature<Category>>,
 }
 
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
-    pub fn new(lemma: T, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
+    pub fn new(lemma: Option<T>, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
     }
 }
@@ -82,7 +82,11 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
     for LexicalEntry<T, Category>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}::", self.lemma)?;
+        if let Some(t) = &self.lemma {
+            write!(f, "{}::", t)?;
+        } else {
+            write!(f, "ε::")?;
+        }
         for feature in self.features.iter() {
             write!(f, "{}", feature)?;
         }
@@ -182,7 +186,11 @@ impl LexicalEntry<String, char> {
     pub fn parse(s: &str) -> Result<LexicalEntry<String, char>> {
         if let Some((lemma, features)) = s.split_once("::") {
             Ok(LexicalEntry {
-                lemma: if lemma == "ε" { "" } else { lemma }.to_string(),
+                lemma: if lemma == "ε" || lemma.is_empty() {
+                    None
+                } else {
+                    Some(lemma.to_string())
+                },
                 features: features
                     .split(' ')
                     .map(Feature::<char>::parse)
@@ -199,10 +207,10 @@ impl std::fmt::Display for FeatureOrLemma<String, char> {
         match self {
             FeatureOrLemma::Root => write!(f, "root"),
             FeatureOrLemma::Lemma(lemma) => {
-                if lemma.is_empty() {
-                    write!(f, "ε")
+                if let Some(l) = lemma {
+                    write!(f, "{}", l)
                 } else {
-                    write!(f, "{}", lemma)
+                    write!(f, "ε")
                 }
             }
             FeatureOrLemma::Feature(feature) => write!(f, "{}", feature),
@@ -222,14 +230,14 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("John::d").unwrap(),
             SimpleLexicalEntry {
-                lemma: "John".to_string(),
+                lemma: Some("John".to_string()),
                 features: vec![Feature::Category('d')]
             }
         );
         assert_eq!(
             SimpleLexicalEntry::parse("eats::d= =d V").unwrap(),
             SimpleLexicalEntry {
-                lemma: "eats".to_string(),
+                lemma: Some("eats".to_string()),
                 features: vec![
                     Feature::Selector('d', Direction::Right),
                     Feature::Selector('d', Direction::Left),
@@ -240,7 +248,7 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("::d= =d V").unwrap(),
             SimpleLexicalEntry::new(
-                "".to_string(),
+                None,
                 vec![
                     Feature::Selector('d', Direction::Right),
                     Feature::Selector('d', Direction::Left),
@@ -251,7 +259,7 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("ε::d= =d V").unwrap(),
             SimpleLexicalEntry {
-                lemma: "".to_string(),
+                lemma: None,
                 features: vec![
                     Feature::Selector('d', Direction::Right),
                     Feature::Selector('d', Direction::Left),
@@ -268,7 +276,7 @@ mod tests {
         assert_eq!(
             x,
             vec![
-                FeatureOrLemma::Lemma("eats".to_string()),
+                FeatureOrLemma::Lemma(Some("eats".to_string())),
                 FeatureOrLemma::Feature(Feature::Selector('d', Direction::Right)),
                 FeatureOrLemma::Feature(Feature::Selector('d', Direction::Left)),
                 FeatureOrLemma::Feature(Feature::Category('V')),

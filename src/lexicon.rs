@@ -1,10 +1,14 @@
-use std::{fmt::Display, hash::Hash};
+use std::fmt::Display;
 
 use crate::Direction;
 use anyhow::{bail, Context, Result};
-use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
+use petgraph::{
+    graph::DiGraph,
+    graph::NodeIndex,
+    visit::{EdgeRef, IntoNodeReferences},
+};
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Feature<Category: Eq> {
     Category(Category),
     Selector(Category, Direction),
@@ -45,16 +49,14 @@ impl Feature<char> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum FeatureOrLemma<T: Eq + Hash, Category: Eq + Hash> {
+#[derive(Debug, PartialEq, Eq)]
+enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(T),
     Feature(Feature<Category>),
 }
 
-impl<T: Eq + Hash, Category: Eq + Hash> From<LexicalEntry<T, Category>>
-    for Vec<FeatureOrLemma<T, Category>>
-{
+impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma<T, Category>> {
     fn from(value: LexicalEntry<T, Category>) -> Self {
         let LexicalEntry { lemma, features } = value;
         std::iter::once(lemma)
@@ -101,12 +103,12 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 }
 
 #[derive(Debug)]
-pub struct Lexicon<T: Eq + Hash, Category: Eq + Hash> {
+pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
     root_index: NodeIndex,
 }
 
-impl<T: Eq + Hash, Category: Eq + Hash> Lexicon<T, Category> {
+impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Category> {
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
         let mut graph = DiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
@@ -144,6 +146,14 @@ impl<T: Eq + Hash, Category: Eq + Hash> Lexicon<T, Category> {
             }
         }
         Lexicon { graph, root_index }
+    }
+
+    pub fn find_category(&self, category: Category) -> Result<NodeIndex> {
+        let category = FeatureOrLemma::Feature(Feature::Category(category));
+        self.graph
+            .node_references()
+            .find_map(|(i, x)| if *x == category { Some(i) } else { None })
+            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 }
 

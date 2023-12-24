@@ -1,6 +1,6 @@
 use std::collections::BinaryHeap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use lexicon::Lexicon;
 use lexicon::{Feature, FeatureOrLemma};
 use petgraph::graph::NodeIndex;
@@ -60,6 +60,12 @@ impl Ord for FutureTree {
 struct ParseMoment {
     tree: FutureTree,
     movers: Vec<FutureTree>,
+}
+
+fn clone_push(v: &[FutureTree], node: NodeIndex, index: GornIndex) -> Vec<FutureTree> {
+    let mut v = v.to_vec();
+    v.push(FutureTree { node, index });
+    v
 }
 
 impl ParseMoment {
@@ -140,9 +146,6 @@ impl<T: Eq + std::fmt::Debug> ParseBeam<T> {
         })
     }
 
-    fn bad_parse(&self) -> bool {
-        self.queue.is_empty() && !self.sentence.is_empty()
-    }
     fn good_parse(&self) -> bool {
         self.queue.is_empty() && self.sentence.is_empty()
     }
@@ -201,7 +204,7 @@ fn unmerge<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt:
         .children_of(moment.tree.node)
         .map(|nx| (nx, lexicon.get(nx).unwrap()))
         .filter_map(|(child_node, (child, child_prob))| match &child {
-            &FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
+            FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
                 let complement = lexicon.find_category(cat.clone()).unwrap();
                 let mut queue = beam.queue.clone();
                 queue.push(Reverse(ParseMoment {
@@ -209,19 +212,45 @@ fn unmerge<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt:
                         node: complement,
                         index: moment.tree.index.clone_push(*dir),
                     },
-                    movers: vec![],
+                    movers: match dir {
+                        Direction::Right => moment.movers.clone(),
+                        Direction::Left => vec![],
+                    },
                 }));
                 queue.push(Reverse(ParseMoment {
                     tree: FutureTree {
                         node: child_node,
                         index: moment.tree.index.clone_push(dir.flip()),
                     },
-                    movers: vec![],
+                    movers: match dir {
+                        Direction::Right => vec![],
+                        Direction::Left => moment.movers.clone(),
+                    },
                 }));
 
                 Some(ParseBeam::<T> {
                     queue,
                     log_probability: beam.log_probability + child_prob,
+                    sentence: beam.sentence.clone(),
+                })
+            }
+            FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
+                let stored = lexicon.find_licensee(cat.clone()).unwrap();
+                let mut queue = beam.queue.clone();
+                queue.push(Reverse(ParseMoment {
+                    tree: FutureTree {
+                        node: child_node,
+                        index: moment.tree.index.clone_push(Direction::Right),
+                    },
+                    movers: clone_push(
+                        &moment.movers,
+                        stored,
+                        moment.tree.index.clone_push(Direction::Left),
+                    ),
+                }));
+                Some(ParseBeam::<T> {
+                    log_probability: beam.log_probability + child_prob,
+                    queue,
                     sentence: beam.sentence.clone(),
                 })
             }
@@ -237,14 +266,13 @@ fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + 
     scan(moment, beam, lexicon).chain(unmerge(moment, beam, lexicon))
 }
 
-fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
+pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     lexicon: &Lexicon<T, Category>,
     initial_category: Category,
     sentence: Vec<T>,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, sentence)?);
-
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(expand(&moment, &beam, lexicon));

@@ -109,7 +109,6 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 #[derive(Debug)]
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
-    root_index: NodeIndex,
 }
 
 impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Category> {
@@ -149,11 +148,19 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
                 }
             }
         }
-        Lexicon { graph, root_index }
+        Lexicon { graph }
     }
 
     pub fn find_category(&self, category: Category) -> Result<NodeIndex> {
         let category = FeatureOrLemma::Feature(Feature::Category(category));
+        self.graph
+            .node_references()
+            .find_map(|(i, x)| if *x == category { Some(i) } else { None })
+            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    }
+
+    pub fn find_licensee(&self, category: Category) -> Result<NodeIndex> {
+        let category = FeatureOrLemma::Feature(Feature::Licensee(category));
         self.graph
             .node_references()
             .find_map(|(i, x)| if *x == category { Some(i) } else { None })

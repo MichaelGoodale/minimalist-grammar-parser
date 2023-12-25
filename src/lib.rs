@@ -390,6 +390,7 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
     lexicon: &Lexicon<T, Category>,
     initial_category: Category,
     min_log_prob: f64,
+    max_parses: usize,
 ) -> Vec<(f64, Vec<T>)> {
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, vec![]).unwrap());
@@ -400,7 +401,10 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
                 expand(&moment, &beam, lexicon, true).filter(|b| b.log_probability > min_log_prob),
             )
         } else if beam.queue.is_empty() {
-            v.push((beam.log_probability, beam.sentence))
+            v.push((beam.log_probability, beam.sentence));
+            if v.len() >= max_parses {
+                break;
+            }
         }
     }
     v
@@ -560,7 +564,7 @@ mod tests {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
-        let v = generate(&lex, 'C', MIN_PROB);
+        let v = generate(&lex, 'C', MIN_PROB, 100);
 
         let x = vec![
             (

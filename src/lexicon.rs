@@ -164,7 +164,7 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
         self.graph
             .node_references()
             .find_map(|(i, x)| if *x == category { Some(i) } else { None })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+            .with_context(|| format!("{category:?} is not a valid licencee in the lexicon!"))
     }
 
     pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, f64)> {

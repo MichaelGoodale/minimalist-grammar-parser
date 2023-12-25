@@ -157,14 +157,46 @@ impl<T: Eq + std::fmt::Debug> ParseBeam<T> {
         }
     }
 }
-
-fn scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
-    moment: &'_ ParseMoment,
+fn reverse_scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
+    moment: &'a ParseMoment,
     beam: &'a ParseBeam<T>,
     lexicon: &'a Lexicon<T, Category>,
 ) -> impl Iterator<Item = ParseBeam<T>> + 'a {
     lexicon
         .children_of(moment.tree.node)
+        .filter(|_| moment.movers.is_empty())
+        .map(|child| lexicon.get(child).unwrap())
+        .filter_map(|(child, child_prob)| match child {
+            FeatureOrLemma::Lemma(s) => {
+                if let Some(s) = s {
+                    let mut sentence = beam.sentence.clone();
+                    sentence.push(s.clone());
+                    Some(ParseBeam::<T> {
+                        queue: beam.queue.clone(),
+                        log_probability: beam.log_probability + child_prob,
+                        sentence,
+                    })
+                } else {
+                    //Invisible word to scan
+                    Some(ParseBeam::<T> {
+                        queue: beam.queue.clone(),
+                        log_probability: beam.log_probability + child_prob,
+                        sentence: beam.sentence.clone(),
+                    })
+                }
+            }
+            _ => None,
+        })
+}
+
+fn scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
+    moment: &'a ParseMoment,
+    beam: &'a ParseBeam<T>,
+    lexicon: &'a Lexicon<T, Category>,
+) -> impl Iterator<Item = ParseBeam<T>> + 'a {
+    lexicon
+        .children_of(moment.tree.node)
+        .filter(|_| moment.movers.is_empty())
         .map(|child| lexicon.get(child).unwrap())
         .filter_map(|(child, child_prob)| match child {
             FeatureOrLemma::Lemma(s) => {
@@ -233,7 +265,7 @@ fn unmerge_while_moving<
                                     node: child_node,
                                     index: moment.tree.index.clone(),
                                 },
-                                movers: vec![], //Skip i
+                                movers: vec![],
                             }));
                             queue.push(Reverse(ParseMoment {
                                 tree: FutureTree {
@@ -384,13 +416,39 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     bail!("No parse found :(")
 }
 
+pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
+    lexicon: &Lexicon<T, Category>,
+    initial_category: Category,
+    min_log_prob: f64,
+) -> Vec<(f64, Vec<T>)> {
+    let mut parse_heap = BinaryHeap::new();
+    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, vec![]).unwrap());
+    let mut v = vec![];
+    while let Some(mut beam) = parse_heap.pop() {
+        if let Some(moment) = beam.pop() {
+            parse_heap.extend(
+                unmerge(&moment, &beam, lexicon)
+                    .chain(unmerge_while_moving(&moment, &beam, lexicon))
+                    .chain(reverse_scan(&moment, &beam, lexicon))
+                    .filter(|b| b.log_probability > min_log_prob),
+            )
+        } else if beam.queue.is_empty() {
+            v.push((beam.log_probability, beam.sentence))
+        }
+    }
+    v
+}
+
 mod grammars;
 pub mod lexicon;
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
 
-    use crate::lexicon::{LexicalEntry, SimpleLexicalEntry};
+    use crate::{
+        grammars::SIMPLESTABLER2011,
+        lexicon::{LexicalEntry, SimpleLexicalEntry},
+    };
 
     use super::*;
 
@@ -527,6 +585,22 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn generation() -> Result<()> {
+        let v: Vec<_> = SIMPLESTABLER2011
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?;
+        let lex = Lexicon::new(v);
+        let v = generate(&lex, 'C', MIN_PROB);
+        for (p, sentence) in v {
+            println!("{p} {sentence:?}");
+            parse(&lex, 'C', sentence, MIN_PROB)?;
+        }
+        bail!("w");
+    }
+
     #[test]
     fn index_order() -> Result<()> {
         let a = GornIndex {

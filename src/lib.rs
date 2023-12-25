@@ -254,6 +254,31 @@ fn unmerge_while_moving<
                                 sentence: beam.sentence.clone(),
                             })
                         }
+                        (Feature::Licensee(s), Feature::Licensor(c)) if c == s => {
+                            let mut queue = beam.queue.clone();
+                            queue.push(Reverse(ParseMoment {
+                                tree: FutureTree {
+                                    node: child_node,
+                                    index: moment.tree.index.clone(),
+                                },
+                                movers: moment
+                                    .movers
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|&(i, _v)| i != mover_id)
+                                    .map(|(_, v)| v.clone())
+                                    .chain(std::iter::once(FutureTree {
+                                        node: stored_child,
+                                        index: stored_child_index.clone(),
+                                    }))
+                                    .collect(),
+                            }));
+                            Some(ParseBeam {
+                                log_probability: beam.log_probability + stored_prob + child_prob,
+                                queue,
+                                sentence: beam.sentence.clone(),
+                            })
+                        }
                         _ => None,
                     }
                 }
@@ -365,7 +390,7 @@ pub mod lexicon;
 mod tests {
     use anyhow::Result;
 
-    use crate::lexicon::SimpleLexicalEntry;
+    use crate::lexicon::{LexicalEntry, SimpleLexicalEntry};
 
     use super::*;
 
@@ -447,13 +472,58 @@ mod tests {
         ]
         .into_iter()
         {
-            assert!(parse(
-                &lex,
-                'C',
-                bad_sentence.split(' ').map(|x| x.to_string()).collect(),
-                -10.0,
-            )
-            .is_err());
+            let bad_sentence: Vec<_> = bad_sentence.split(' ').map(|x| x.to_string()).collect();
+
+            let v: Vec<_> = STABLER2011
+                .split('\n')
+                .map(SimpleLexicalEntry::parse)
+                .filter_map(|x| {
+                    if let Ok(LexicalEntry { lemma, features }) = x {
+                        if let Some(lemma) = lemma {
+                            if bad_sentence.contains(&lemma) {
+                                Some(LexicalEntry {
+                                    lemma: Some(lemma),
+                                    features,
+                                })
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(LexicalEntry { lemma, features })
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let mut categories: Vec<_> = vec![];
+            v.iter().for_each(|x| {
+                for feature in &x.features {
+                    match feature {
+                        Feature::Category(c) => categories.push(*c),
+                        Feature::Licensee(c) => categories.push(*c),
+                        _ => {}
+                    }
+                }
+            });
+            let (v, _) = v.into_iter().partition(|x| {
+                for feature in &x.features {
+                    match feature {
+                        Feature::Selector(c, _) if !categories.contains(c) => {
+                            return false;
+                        }
+                        Feature::Licensor(c) if !categories.contains(c) => {
+                            return false;
+                        }
+                        _ => (),
+                    }
+                }
+                true
+            });
+            let lex = Lexicon::new(v);
+
+            assert!(parse(&lex, 'C', bad_sentence, MIN_PROB).is_err());
         }
         Ok(())
     }

@@ -68,8 +68,8 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct LexicalEntry<T: Eq, Category: Eq> {
-    lemma: Option<T>,
-    features: Vec<Feature<Category>>,
+    pub lemma: Option<T>,
+    pub features: Vec<Feature<Category>>,
 }
 
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {

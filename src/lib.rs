@@ -157,239 +157,209 @@ impl<T: Eq + std::fmt::Debug> ParseBeam<T> {
         }
     }
 }
-fn reverse_scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
-    moment: &'a ParseMoment,
-    beam: &'a ParseBeam<T>,
-    lexicon: &'a Lexicon<T, Category>,
-) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    lexicon
-        .children_of(moment.tree.node)
-        .filter(|_| moment.movers.is_empty())
-        .map(|child| lexicon.get(child).unwrap())
-        .filter_map(|(child, child_prob)| match child {
-            FeatureOrLemma::Lemma(s) => {
-                if let Some(s) = s {
-                    let mut sentence = beam.sentence.clone();
-                    sentence.push(s.clone());
-                    Some(ParseBeam::<T> {
-                        queue: beam.queue.clone(),
-                        log_probability: beam.log_probability + child_prob,
-                        sentence,
-                    })
-                } else {
-                    //Invisible word to scan
-                    Some(ParseBeam::<T> {
-                        queue: beam.queue.clone(),
-                        log_probability: beam.log_probability + child_prob,
-                        sentence: beam.sentence.clone(),
-                    })
-                }
-            }
-            _ => None,
-        })
-}
 
-fn scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
-    moment: &'a ParseMoment,
-    beam: &'a ParseBeam<T>,
-    lexicon: &'a Lexicon<T, Category>,
-) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    lexicon
-        .children_of(moment.tree.node)
-        .filter(|_| moment.movers.is_empty())
-        .map(|child| lexicon.get(child).unwrap())
-        .filter_map(|(child, child_prob)| match child {
-            FeatureOrLemma::Lemma(s) => {
-                if let Some(x) = beam.sentence.first() {
-                    if let Some(s) = s {
-                        if s == x {
-                            Some(ParseBeam::<T> {
-                                queue: beam.queue.clone(),
-                                log_probability: beam.log_probability + child_prob,
-                                sentence: beam.sentence[1..].to_vec(),
-                            })
-                        } else {
-                            None
-                        }
-                    } else {
-                        //Invisible word to scan
-                        Some(ParseBeam::<T> {
-                            queue: beam.queue.clone(),
-                            log_probability: beam.log_probability + child_prob,
-                            sentence: beam.sentence.clone(),
-                        })
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-}
-
-fn unmerge_while_moving<
-    'a,
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
->(
-    moment: &'a ParseMoment,
-    beam: &'a ParseBeam<T>,
-    lexicon: &'a Lexicon<T, Category>,
-) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    (0..moment.movers.len())
-        .flat_map(|mover_id| {
-            lexicon
-                .children_of(moment.tree.node)
-                .map(move |nx| (mover_id, nx))
-        })
-        .flat_map(|(mover_id, child_node)| {
-            let FutureTree {
-                node: mover_node,
-                index: mover_index,
-            } = &moment.movers[mover_id];
-            lexicon
-                .children_of(*mover_node)
-                .map(move |stored_child| (mover_id, mover_index, stored_child, child_node))
-        })
-        .filter_map(|(mover_id, stored_child_index, stored_child, child_node)| {
-            let (child, child_prob) = lexicon.get(child_node).unwrap();
-
-            let (stored, stored_prob) = lexicon.get(stored_child).unwrap();
-            match (stored, child) {
-                (FeatureOrLemma::Feature(stored), FeatureOrLemma::Feature(child)) => {
-                    match (stored, child) {
-                        (Feature::Category(s), Feature::Selector(c, _dir)) if c == s => {
-                            let mut queue = beam.queue.clone();
-                            queue.push(Reverse(ParseMoment {
-                                tree: FutureTree {
-                                    node: child_node,
-                                    index: moment.tree.index.clone(),
-                                },
-                                movers: vec![],
-                            }));
-                            queue.push(Reverse(ParseMoment {
-                                tree: FutureTree {
-                                    node: stored_child,
-                                    index: stored_child_index.clone(),
-                                },
-                                movers: moment
-                                    .movers
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|&(i, _v)| i != mover_id)
-                                    .map(|(_, v)| v.clone())
-                                    .collect(),
-                            }));
-                            Some(ParseBeam {
-                                log_probability: beam.log_probability + stored_prob + child_prob,
-                                queue,
-                                sentence: beam.sentence.clone(),
-                            })
-                        }
-                        (Feature::Licensee(s), Feature::Licensor(c)) if c == s => {
-                            let mut queue = beam.queue.clone();
-                            queue.push(Reverse(ParseMoment {
-                                tree: FutureTree {
-                                    node: child_node,
-                                    index: moment.tree.index.clone(),
-                                },
-                                movers: moment
-                                    .movers
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|&(i, _v)| i != mover_id)
-                                    .map(|(_, v)| v.clone())
-                                    .chain(std::iter::once(FutureTree {
-                                        node: stored_child,
-                                        index: stored_child_index.clone(),
-                                    }))
-                                    .collect(),
-                            }));
-                            Some(ParseBeam {
-                                log_probability: beam.log_probability + stored_prob + child_prob,
-                                queue,
-                                sentence: beam.sentence.clone(),
-                            })
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
-        })
-}
-
-fn unmerge<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
-    moment: &'a ParseMoment,
-    beam: &'a ParseBeam<T>,
-    lexicon: &'a Lexicon<T, Category>,
-) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    lexicon
-        .children_of(moment.tree.node)
-        .map(|nx| (nx, lexicon.get(nx).unwrap()))
-        .filter_map(|(child_node, (child, child_prob))| match &child {
-            FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                let complement = lexicon.find_category(cat.clone()).unwrap();
-                let mut queue = beam.queue.clone();
-                queue.push(Reverse(ParseMoment {
-                    tree: FutureTree {
-                        node: complement,
-                        index: moment.tree.index.clone_push(*dir),
-                    },
-                    movers: match dir {
-                        Direction::Right => moment.movers.clone(),
-                        Direction::Left => vec![],
-                    },
-                }));
-                queue.push(Reverse(ParseMoment {
-                    tree: FutureTree {
-                        node: child_node,
-                        index: moment.tree.index.clone_push(dir.flip()),
-                    },
-                    movers: match dir {
-                        Direction::Right => vec![],
-                        Direction::Left => moment.movers.clone(),
-                    },
-                }));
-
-                Some(ParseBeam::<T> {
-                    queue,
+fn scan<T: Eq + std::fmt::Debug + Clone>(
+    v: &mut Vec<ParseBeam<T>>,
+    beam: &ParseBeam<T>,
+    s: &Option<T>,
+    child_prob: f64,
+) {
+    if let Some(x) = beam.sentence.first() {
+        if let Some(s) = s {
+            if s == x {
+                v.push(ParseBeam::<T> {
+                    queue: beam.queue.clone(),
                     log_probability: beam.log_probability + child_prob,
-                    sentence: beam.sentence.clone(),
+                    sentence: beam.sentence[1..].to_vec(),
                 })
             }
-            FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                let stored = lexicon.find_licensee(cat.clone()).unwrap();
-                let mut queue = beam.queue.clone();
-                queue.push(Reverse(ParseMoment {
-                    tree: FutureTree {
-                        node: child_node,
-                        index: moment.tree.index.clone_push(Direction::Right),
-                    },
-                    movers: clone_push(
-                        &moment.movers,
-                        stored,
-                        moment.tree.index.clone_push(Direction::Left),
-                    ),
-                }));
-                Some(ParseBeam::<T> {
-                    log_probability: beam.log_probability + child_prob,
-                    queue,
-                    sentence: beam.sentence.clone(),
-                })
-            }
-            _ => None,
+        } else {
+            //Invisible word to scan
+            v.push(ParseBeam::<T> {
+                queue: beam.queue.clone(),
+                log_probability: beam.log_probability + child_prob,
+                sentence: beam.sentence.clone(),
+            })
+        }
+    };
+}
+fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
+    v: &mut Vec<ParseBeam<T>>,
+    beam: &ParseBeam<T>,
+    s: &Option<T>,
+    child_prob: f64,
+) {
+    if let Some(s) = s {
+        let mut sentence = beam.sentence.clone();
+        sentence.push(s.clone());
+        v.push(ParseBeam::<T> {
+            queue: beam.queue.clone(),
+            log_probability: beam.log_probability + child_prob,
+            sentence,
         })
+    } else {
+        //Invisible word to scan
+        v.push(ParseBeam::<T> {
+            queue: beam.queue.clone(),
+            log_probability: beam.log_probability + child_prob,
+            sentence: beam.sentence.clone(),
+        })
+    };
 }
 
 fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
     moment: &'a ParseMoment,
     beam: &'a ParseBeam<T>,
     lexicon: &'a Lexicon<T, Category>,
+    use_reverse_scan: bool,
 ) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    scan(moment, beam, lexicon)
-        .chain(unmerge(moment, beam, lexicon))
-        .chain(unmerge_while_moving(moment, beam, lexicon))
+    lexicon
+        .children_of(moment.tree.node)
+        .map(|nx| (nx, lexicon.get(nx).unwrap()))
+        .flat_map(move |(child_node, (child, child_prob))| {
+            let mut v: Vec<_> = vec![];
+            match &child {
+                FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
+                    if use_reverse_scan {
+                        reverse_scan(&mut v, beam, s, child_prob);
+                    } else {
+                        scan(&mut v, beam, s, child_prob);
+                    }
+                }
+                FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
+                    let complement = lexicon.find_category(cat.clone()).unwrap();
+                    let mut queue = beam.queue.clone();
+
+                    for mover_id in 0..moment.movers.len() {
+                        for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
+                            let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
+                            match stored {
+                                FeatureOrLemma::Feature(Feature::Category(stored))
+                                    if stored == cat =>
+                                {
+                                    let mut queue = beam.queue.clone();
+                                    queue.push(Reverse(ParseMoment {
+                                        tree: FutureTree {
+                                            node: child_node,
+                                            index: moment.tree.index.clone(),
+                                        },
+                                        movers: vec![],
+                                    }));
+                                    queue.push(Reverse(ParseMoment {
+                                        tree: FutureTree {
+                                            node: stored_child_node,
+                                            index: moment.movers[mover_id].index.clone(),
+                                        },
+                                        movers: moment
+                                            .movers
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|&(i, _v)| i != mover_id)
+                                            .map(|(_, v)| v.clone())
+                                            .collect(),
+                                    }));
+                                    v.push(ParseBeam {
+                                        log_probability: beam.log_probability
+                                            + stored_prob
+                                            + child_prob
+                                            - 2_f64.ln(),
+                                        queue,
+                                        sentence: beam.sentence.clone(),
+                                    });
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+
+                    queue.push(Reverse(ParseMoment {
+                        tree: FutureTree {
+                            node: complement,
+                            index: moment.tree.index.clone_push(*dir),
+                        },
+                        movers: match dir {
+                            Direction::Right => moment.movers.clone(),
+                            Direction::Left => vec![],
+                        },
+                    }));
+                    queue.push(Reverse(ParseMoment {
+                        tree: FutureTree {
+                            node: child_node,
+                            index: moment.tree.index.clone_push(dir.flip()),
+                        },
+                        movers: match dir {
+                            Direction::Right => vec![],
+                            Direction::Left => moment.movers.clone(),
+                        },
+                    }));
+
+                    v.push(ParseBeam::<T> {
+                        queue,
+                        log_probability: beam.log_probability + child_prob,
+                        sentence: beam.sentence.clone(),
+                    });
+                }
+                FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
+                    let stored = lexicon.find_licensee(cat.clone()).unwrap();
+                    let mut queue = beam.queue.clone();
+
+                    for mover_id in 0..moment.movers.len() {
+                        for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
+                            let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
+                            match stored {
+                                FeatureOrLemma::Feature(Feature::Licensee(s)) if cat == s => {
+                                    let mut queue = beam.queue.clone();
+                                    queue.push(Reverse(ParseMoment {
+                                        tree: FutureTree {
+                                            node: child_node,
+                                            index: moment.tree.index.clone(),
+                                        },
+                                        movers: moment
+                                            .movers
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|&(i, _v)| i != mover_id)
+                                            .map(|(_, v)| v.clone())
+                                            .chain(std::iter::once(FutureTree {
+                                                node: stored_child_node,
+                                                index: moment.movers[mover_id].index.clone(),
+                                            }))
+                                            .collect(),
+                                    }));
+                                    v.push(ParseBeam {
+                                        log_probability: beam.log_probability
+                                            + stored_prob
+                                            + child_prob,
+                                        queue,
+                                        sentence: beam.sentence.clone(),
+                                    });
+                                }
+                                _ => (),
+                            }
+                        }
+                    }
+
+                    queue.push(Reverse(ParseMoment {
+                        tree: FutureTree {
+                            node: child_node,
+                            index: moment.tree.index.clone_push(Direction::Right),
+                        },
+                        movers: clone_push(
+                            &moment.movers,
+                            stored,
+                            moment.tree.index.clone_push(Direction::Left),
+                        ),
+                    }));
+                    v.push(ParseBeam::<T> {
+                        log_probability: beam.log_probability + child_prob,
+                        queue,
+                        sentence: beam.sentence.clone(),
+                    });
+                }
+                _ => (),
+            }
+            v.into_iter()
+        })
 }
 
 pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
@@ -403,7 +373,7 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                expand(&moment, &beam, lexicon).filter(|b| b.log_probability > min_log_prob),
+                expand(&moment, &beam, lexicon, false).filter(|b| b.log_probability > min_log_prob),
             )
         } else {
             if beam.good_parse() {
@@ -427,10 +397,7 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                unmerge(&moment, &beam, lexicon)
-                    .chain(unmerge_while_moving(&moment, &beam, lexicon))
-                    .chain(reverse_scan(&moment, &beam, lexicon))
-                    .filter(|b| b.log_probability > min_log_prob),
+                expand(&moment, &beam, lexicon, true).filter(|b| b.log_probability > min_log_prob),
             )
         } else if beam.queue.is_empty() {
             v.push((beam.log_probability, beam.sentence))
@@ -594,11 +561,67 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
         let v = generate(&lex, 'C', MIN_PROB);
-        for (p, sentence) in v {
-            println!("{p} {sentence:?}");
+
+        let x = vec![
+            (
+                -2.0794415416798357,
+                vec!["the", "queen", "likes", "the", "king"],
+            ),
+            (
+                -2.0794415416798357,
+                vec!["the", "queen", "likes", "the", "queen"],
+            ),
+            (
+                -2.0794415416798357,
+                vec!["the", "king", "likes", "the", "king"],
+            ),
+            (
+                -2.0794415416798357,
+                vec!["the", "king", "likes", "the", "queen"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "queen", "likes", "the", "king"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "king", "likes", "the", "king"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "king", "likes", "the", "queen"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "queen", "likes", "the", "queen"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "king", "the", "king", "likes"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "king", "the", "queen", "likes"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "queen", "the", "queen", "likes"],
+            ),
+            (
+                -2.772588722239781,
+                vec!["which", "queen", "the", "king", "likes"],
+            ),
+        ];
+
+        for ((p, sentence), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
+            let correct_sentence = correct_sentence
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect();
+            assert_eq!((p, &sentence), (correct_p, &correct_sentence));
             parse(&lex, 'C', sentence, MIN_PROB)?;
         }
-        bail!("w");
+        Ok(())
     }
 
     #[test]

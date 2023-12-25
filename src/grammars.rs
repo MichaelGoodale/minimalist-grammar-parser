@@ -15,7 +15,8 @@ which::N= D -W";
 #[allow(dead_code)]
 pub const SIMPLESTABLER2011: &str = "::V= C
 ::V= +W C
-prefers::D= =D V
+likes::D= =D V
 queen::N
+king::N
 the::N= D
 which::N= D -W";

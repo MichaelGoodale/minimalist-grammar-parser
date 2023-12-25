@@ -195,6 +195,73 @@ fn scan<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
         })
 }
 
+fn unmerge_while_moving<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+>(
+    moment: &'a ParseMoment,
+    beam: &'a ParseBeam<T>,
+    lexicon: &'a Lexicon<T, Category>,
+) -> impl Iterator<Item = ParseBeam<T>> + 'a {
+    (0..moment.movers.len())
+        .flat_map(|mover_id| {
+            lexicon
+                .children_of(moment.tree.node)
+                .map(move |nx| (mover_id, nx))
+        })
+        .flat_map(|(mover_id, child_node)| {
+            let FutureTree {
+                node: mover_node,
+                index: mover_index,
+            } = &moment.movers[mover_id];
+            lexicon
+                .children_of(*mover_node)
+                .map(move |stored_child| (mover_id, mover_index, stored_child, child_node))
+        })
+        .filter_map(|(mover_id, stored_child_index, stored_child, child_node)| {
+            let (child, child_prob) = lexicon.get(child_node).unwrap();
+
+            let (stored, stored_prob) = lexicon.get(stored_child).unwrap();
+            match (stored, child) {
+                (FeatureOrLemma::Feature(stored), FeatureOrLemma::Feature(child)) => {
+                    match (stored, child) {
+                        (Feature::Category(s), Feature::Selector(c, _dir)) if c == s => {
+                            let mut queue = beam.queue.clone();
+                            queue.push(Reverse(ParseMoment {
+                                tree: FutureTree {
+                                    node: child_node,
+                                    index: moment.tree.index.clone(),
+                                },
+                                movers: vec![], //Skip i
+                            }));
+                            queue.push(Reverse(ParseMoment {
+                                tree: FutureTree {
+                                    node: stored_child,
+                                    index: stored_child_index.clone(),
+                                },
+                                movers: moment
+                                    .movers
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|&(i, _v)| i != mover_id)
+                                    .map(|(_, v)| v.clone())
+                                    .collect(),
+                            }));
+                            Some(ParseBeam {
+                                log_probability: beam.log_probability + stored_prob + child_prob,
+                                queue,
+                                sentence: beam.sentence.clone(),
+                            })
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        })
+}
+
 fn unmerge<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     moment: &'a ParseMoment,
     beam: &'a ParseBeam<T>,
@@ -263,19 +330,24 @@ fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + 
     beam: &'a ParseBeam<T>,
     lexicon: &'a Lexicon<T, Category>,
 ) -> impl Iterator<Item = ParseBeam<T>> + 'a {
-    scan(moment, beam, lexicon).chain(unmerge(moment, beam, lexicon))
+    scan(moment, beam, lexicon)
+        .chain(unmerge(moment, beam, lexicon))
+        .chain(unmerge_while_moving(moment, beam, lexicon))
 }
 
 pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     lexicon: &Lexicon<T, Category>,
     initial_category: Category,
     sentence: Vec<T>,
+    min_log_prob: f64,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
-            parse_heap.extend(expand(&moment, &beam, lexicon));
+            parse_heap.extend(
+                expand(&moment, &beam, lexicon).filter(|b| b.log_probability > min_log_prob),
+            )
         } else {
             if beam.good_parse() {
                 println!("Found parse");
@@ -297,11 +369,13 @@ mod tests {
 
     use super::*;
 
+    const MIN_PROB: f64 = -64.0;
+
     #[test]
     fn simple_scan() -> Result<()> {
         let v = vec![SimpleLexicalEntry::parse("hello::h")?];
         let lexicon = Lexicon::new(v);
-        parse(&lexicon, 'h', vec!["hello".to_string()])
+        parse(&lexicon, 'h', vec!["hello".to_string()], MIN_PROB)
     }
 
     #[test]
@@ -313,7 +387,12 @@ mod tests {
             SimpleLexicalEntry::parse("beer::n")?,
         ];
         let lexicon = Lexicon::new(v);
-        parse(&lexicon, 'd', vec!["the".to_string(), "man".to_string()])?;
+        parse(
+            &lexicon,
+            'd',
+            vec!["the".to_string(), "man".to_string()],
+            MIN_PROB,
+        )?;
         parse(
             &lexicon,
             'v',
@@ -321,6 +400,7 @@ mod tests {
                 .split(' ')
                 .map(|x| x.to_string())
                 .collect(),
+            MIN_PROB,
         )?;
         assert!(parse(
             &lexicon,
@@ -329,12 +409,54 @@ mod tests {
                 .split(' ')
                 .map(|x| x.to_string())
                 .collect(),
+            MIN_PROB
         )
         .is_err());
-
         Ok(())
     }
 
+    use crate::grammars::STABLER2011;
+    #[test]
+    fn moving_parse() -> anyhow::Result<()> {
+        let v: Vec<_> = STABLER2011
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?;
+        let lex = Lexicon::new(v);
+        for sentence in vec![
+            "the king drinks the beer",
+            "which wine the queen prefers",
+            "which queen prefers the wine",
+            "the queen knows the king drinks the beer",
+            "the queen knows the king knows the queen drinks the beer",
+        ]
+        .into_iter()
+        {
+            parse(
+                &lex,
+                'C',
+                sentence.split(' ').map(|x| x.to_string()).collect(),
+                MIN_PROB,
+            )?;
+        }
+
+        for bad_sentence in vec![
+            "the king the drinks the beer",
+            "which the queen prefers the wine",
+            "which queen prefers king the",
+        ]
+        .into_iter()
+        {
+            assert!(parse(
+                &lex,
+                'C',
+                bad_sentence.split(' ').map(|x| x.to_string()).collect(),
+                -10.0,
+            )
+            .is_err());
+        }
+        Ok(())
+    }
     #[test]
     fn index_order() -> Result<()> {
         let a = GornIndex {

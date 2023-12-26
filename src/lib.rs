@@ -21,18 +21,33 @@ impl Direction {
     }
 }
 
+pub struct ParsingConfig {
+    pub min_log_prob: f64,
+    pub merge_log_prob: f64,
+    pub move_log_prob: f64,
+    pub max_parses: usize,
+}
+
 pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     lexicon: &Lexicon<T, Category>,
     initial_category: Category,
     sentence: Vec<T>,
-    min_log_prob: f64,
+    config: &ParsingConfig,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                expand(&moment, &beam, lexicon, false).filter(|b| b.log_probability > min_log_prob),
+                expand(
+                    &moment,
+                    &beam,
+                    lexicon,
+                    false,
+                    config.merge_log_prob,
+                    config.move_log_prob,
+                )
+                .filter(|b| b.log_probability > config.min_log_prob),
             )
         } else {
             if beam.good_parse() {
@@ -48,8 +63,7 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
 pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>(
     lexicon: &Lexicon<T, Category>,
     initial_category: Category,
-    min_log_prob: f64,
-    max_parses: usize,
+    config: &ParsingConfig,
 ) -> Vec<(f64, Vec<T>)> {
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, vec![]).unwrap());
@@ -57,11 +71,19 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                expand(&moment, &beam, lexicon, true).filter(|b| b.log_probability > min_log_prob),
+                expand(
+                    &moment,
+                    &beam,
+                    lexicon,
+                    true,
+                    config.merge_log_prob,
+                    config.move_log_prob,
+                )
+                .filter(|b| b.log_probability > config.min_log_prob),
             )
         } else if beam.queue.is_empty() {
             v.push((beam.log_probability, beam.sentence));
-            if v.len() >= max_parses {
+            if v.len() >= config.max_parses {
                 break;
             }
         }

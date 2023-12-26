@@ -54,6 +54,7 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
     };
 }
 
+#[allow(clippy::too_many_arguments)]
 fn unmerge_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
     v: &mut Vec<ParseBeam<T>>,
     lexicon: &Lexicon<T, Category>,
@@ -62,6 +63,7 @@ fn unmerge_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::
     cat: &Category,
     child_node: NodeIndex,
     child_prob: f64,
+    rule_prob: f64,
 ) {
     for mover_id in 0..moment.movers.len() {
         for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
@@ -90,8 +92,10 @@ fn unmerge_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::
                             .collect(),
                     }));
                     v.push(ParseBeam {
-                        log_probability: beam.log_probability + stored_prob + child_prob
-                            - 2_f64.ln(),
+                        log_probability: beam.log_probability
+                            + stored_prob
+                            + child_prob
+                            + rule_prob,
                         queue,
                         sentence: beam.sentence.clone(),
                     });
@@ -112,6 +116,7 @@ fn unmerge<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clo
     dir: &Direction,
     child_node: NodeIndex,
     child_prob: f64,
+    rule_prob: f64,
 ) {
     let complement = lexicon.find_category(cat.clone()).unwrap();
     let mut queue = beam.queue.clone();
@@ -138,11 +143,12 @@ fn unmerge<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clo
 
     v.push(ParseBeam::<T> {
         queue,
-        log_probability: beam.log_probability + child_prob,
+        log_probability: beam.log_probability + child_prob + rule_prob,
         sentence: beam.sentence.clone(),
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn unmove_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug>(
     v: &mut Vec<ParseBeam<T>>,
     lexicon: &Lexicon<T, Category>,
@@ -151,6 +157,7 @@ fn unmove_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::D
     cat: &Category,
     child_node: NodeIndex,
     child_prob: f64,
+    rule_prob: f64,
 ) {
     for mover_id in 0..moment.movers.len() {
         for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
@@ -176,7 +183,10 @@ fn unmove_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::D
                             .collect(),
                     }));
                     v.push(ParseBeam {
-                        log_probability: beam.log_probability + stored_prob + child_prob,
+                        log_probability: beam.log_probability
+                            + stored_prob
+                            + child_prob
+                            + rule_prob,
                         queue,
                         sentence: beam.sentence.clone(),
                     });
@@ -187,6 +197,7 @@ fn unmove_from_mover<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::D
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn unmove<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
     v: &mut Vec<ParseBeam<T>>,
     lexicon: &Lexicon<T, Category>,
@@ -195,6 +206,7 @@ fn unmove<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clon
     cat: &Category,
     child_node: NodeIndex,
     child_prob: f64,
+    rule_prob: f64,
 ) {
     let stored = lexicon.find_licensee(cat.clone()).unwrap();
     let mut queue = beam.queue.clone();
@@ -210,8 +222,8 @@ fn unmove<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clon
             moment.tree.index.clone_push(Direction::Left),
         ),
     }));
-    v.push(ParseBeam::<T> {
-        log_probability: beam.log_probability + child_prob,
+    v.push(ParseBeam {
+        log_probability: beam.log_probability + child_prob + rule_prob,
         queue,
         sentence: beam.sentence.clone(),
     });
@@ -222,7 +234,20 @@ pub fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debu
     beam: &'a ParseBeam<T>,
     lexicon: &'a Lexicon<T, Category>,
     use_reverse_scan: bool,
+    probability_of_moving: f64,
+    probability_of_merging: f64,
 ) -> impl Iterator<Item = ParseBeam<T>> + 'a {
+    #[cfg(test)]
+    {
+        let c = if probability_of_moving > probability_of_merging {
+            probability_of_moving
+        } else {
+            probability_of_merging
+        };
+        let n = c + ((probability_of_merging - c).exp() + (probability_of_moving - c).exp()).ln();
+        assert_eq!(n, 0.0_f64)
+    }
+
     lexicon
         .children_of(moment.tree.node)
         .map(|nx| (nx, lexicon.get(nx).unwrap()))
@@ -237,14 +262,44 @@ pub fn expand<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debu
                     }
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                    unmerge_from_mover(&mut v, lexicon, moment, beam, cat, child_node, child_prob);
+                    unmerge_from_mover(
+                        &mut v,
+                        lexicon,
+                        moment,
+                        beam,
+                        cat,
+                        child_node,
+                        child_prob,
+                        probability_of_moving,
+                    );
+                    let rule_prob = if v.len() > 1 {
+                        probability_of_merging
+                    } else {
+                        0_f64
+                    };
                     unmerge(
-                        &mut v, lexicon, moment, beam, cat, dir, child_node, child_prob,
+                        &mut v, lexicon, moment, beam, cat, dir, child_node, child_prob, rule_prob,
                     );
                 }
                 FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                    unmove_from_mover(&mut v, lexicon, moment, beam, cat, child_node, child_prob);
-                    unmove(&mut v, lexicon, moment, beam, cat, child_node, child_prob);
+                    unmove_from_mover(
+                        &mut v,
+                        lexicon,
+                        moment,
+                        beam,
+                        cat,
+                        child_node,
+                        child_prob,
+                        probability_of_moving,
+                    );
+                    let rule_prob = if v.len() > 1 {
+                        probability_of_merging
+                    } else {
+                        0_f64
+                    };
+                    unmove(
+                        &mut v, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
+                    );
                 }
                 _ => (),
             }

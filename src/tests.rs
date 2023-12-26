@@ -5,16 +5,22 @@ use crate::{
     grammars::SIMPLESTABLER2011,
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
+use std::f64::consts::LN_2;
 
 use super::*;
 
-const MIN_PROB: f64 = -64.0;
+const CONFIG: ParsingConfig = ParsingConfig {
+    min_log_prob: -64.0,
+    merge_log_prob: -LN_2,
+    move_log_prob: -LN_2,
+    max_parses: 1000,
+};
 
 #[test]
 fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
     let lexicon = Lexicon::new(v);
-    parse(&lexicon, 'h', vec!["hello".to_string()], MIN_PROB)
+    parse(&lexicon, 'h', vec!["hello".to_string()], &CONFIG)
 }
 
 #[test]
@@ -30,7 +36,7 @@ fn simple_merge() -> Result<()> {
         &lexicon,
         'd',
         vec!["the".to_string(), "man".to_string()],
-        MIN_PROB,
+        &CONFIG,
     )?;
     parse(
         &lexicon,
@@ -39,7 +45,7 @@ fn simple_merge() -> Result<()> {
             .split(' ')
             .map(|x| x.to_string())
             .collect(),
-        MIN_PROB,
+        &CONFIG,
     )?;
     assert!(parse(
         &lexicon,
@@ -48,7 +54,7 @@ fn simple_merge() -> Result<()> {
             .split(' ')
             .map(|x| x.to_string())
             .collect(),
-        MIN_PROB
+        &CONFIG
     )
     .is_err());
     Ok(())
@@ -75,7 +81,7 @@ fn moving_parse() -> anyhow::Result<()> {
             &lex,
             'C',
             sentence.split(' ').map(|x| x.to_string()).collect(),
-            MIN_PROB,
+            &CONFIG,
         )?;
     }
 
@@ -137,7 +143,7 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(parse(&lex, 'C', bad_sentence, MIN_PROB).is_err());
+        assert!(parse(&lex, 'C', bad_sentence, &CONFIG).is_err());
     }
     Ok(())
 }
@@ -149,7 +155,7 @@ fn generation() -> Result<()> {
         .map(SimpleLexicalEntry::parse)
         .collect::<Result<Vec<_>>>()?;
     let lex = Lexicon::new(v);
-    let v = generate(&lex, 'C', MIN_PROB, 100);
+    let v = generate(&lex, 'C', &CONFIG);
 
     let x = vec![
         (
@@ -208,7 +214,7 @@ fn generation() -> Result<()> {
             .map(|x| x.to_string())
             .collect();
         assert_eq!((p, &sentence), (correct_p, &correct_sentence));
-        parse(&lex, 'C', sentence, MIN_PROB)?;
+        parse(&lex, 'C', sentence, &CONFIG)?;
     }
     Ok(())
 }

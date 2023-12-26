@@ -1,10 +1,11 @@
 use std::collections::BinaryHeap;
 
 use anyhow::{bail, Result};
-use lexicon::Lexicon;
+use lexicon::{FeatureOrLemma, Lexicon};
 
 use parsing::beam::Beam;
 use parsing::{expand_generate, expand_parse};
+use tree_building::build_tree;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Direction {
@@ -33,7 +34,10 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     initial_category: Category,
     sentence: Vec<T>,
     config: &ParsingConfig,
-) -> Result<()> {
+) -> Result<()>
+where
+    FeatureOrLemma<T, Category>: std::fmt::Display,
+{
     let mut parse_heap = BinaryHeap::new();
     parse_heap.push(Beam::new(lexicon, initial_category, &sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
@@ -50,6 +54,7 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
             )
         } else {
             if beam.good_parse() {
+                build_tree(lexicon, &beam.rules);
                 println!("Found parse");
                 return Ok(());
             }
@@ -92,6 +97,7 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
 mod grammars;
 pub mod lexicon;
 mod parsing;
+pub mod tree_building;
 
 #[cfg(test)]
 mod tests;

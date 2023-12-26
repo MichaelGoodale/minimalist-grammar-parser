@@ -26,12 +26,14 @@ fn index_order() -> Result<()> {
     let a = ParseMoment {
         tree: FutureTree {
             node: NodeIndex::new(0),
+            id: 0,
             index: GornIndex {
                 index: vec![Direction::Left, Direction::Right],
             },
         },
         movers: vec![FutureTree {
             node: NodeIndex::new(0),
+            id: 0,
             index: GornIndex {
                 index: vec![Direction::Right],
             },

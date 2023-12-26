@@ -11,6 +11,7 @@ pub struct Beam<T> {
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: Vec<T>,
     pub rules: Vec<Rule>,
+    pub top_id: usize,
 }
 
 impl<T: Eq + std::fmt::Debug> PartialEq for Beam<T> {
@@ -57,6 +58,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
             tree: FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
+                id: 0,
             },
             movers: vec![],
         }));
@@ -66,6 +68,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
             sentence: vec![],
             queue,
             rules: vec![Rule::Start(category_index)],
+            top_id: 0,
         })
     }
     pub fn new<Category: Eq + std::fmt::Debug>(
@@ -80,6 +83,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
             tree: FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
+                id: 0,
             },
             movers: vec![],
         }));
@@ -89,6 +93,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
             sentence: sentence.iter().collect(),
             queue,
             rules: vec![Rule::Start(category_index)],
+            top_id: 0,
         })
     }
 

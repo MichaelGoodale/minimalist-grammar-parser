@@ -8,22 +8,39 @@ use trees::{FutureTree, ParseMoment};
 #[derive(Debug, Clone)]
 pub enum Rule {
     Start(NodeIndex),
-    Scan(NodeIndex),
+    Scan {
+        node: NodeIndex,
+        parent: usize,
+    },
     Unmerge {
         child: NodeIndex,
         complement: NodeIndex,
+        parent: usize,
+        child_id: usize,
+        complement_id: usize,
     },
     UnmergeFromMover {
         child: NodeIndex,
         complement: NodeIndex,
+        child_id: usize,
+        stored_id: usize,
+        parent: usize,
+        storage: usize,
     },
     Unmove {
         child: NodeIndex,
         stored: NodeIndex,
+        child_id: usize,
+        stored_id: usize,
+        parent: usize,
     },
     UnmoveFromMover {
         child: NodeIndex,
         stored: NodeIndex,
+        child_id: usize,
+        stored_id: usize,
+        parent: usize,
+        storage: usize,
     },
 }
 
@@ -35,6 +52,7 @@ fn clone_push<T: Clone>(v: &[T], x: T) -> Vec<T> {
 
 fn scan<T: Eq + std::fmt::Debug + Clone>(
     v: &mut Vec<Beam<T>>,
+    moment: &ParseMoment,
     beam: &Beam<T>,
     s: &Option<T>,
     child_node: NodeIndex,
@@ -47,7 +65,14 @@ fn scan<T: Eq + std::fmt::Debug + Clone>(
                     log_probability: beam.log_probability + child_prob,
                     queue: beam.queue.clone(),
                     sentence: beam.sentence[1..].to_vec(),
-                    rules: clone_push(&beam.rules, Rule::Scan(child_node)),
+                    rules: clone_push(
+                        &beam.rules,
+                        Rule::Scan {
+                            node: child_node,
+                            parent: moment.tree.id,
+                        },
+                    ),
+                    top_id: beam.top_id,
                 })
             }
         } else {
@@ -56,13 +81,21 @@ fn scan<T: Eq + std::fmt::Debug + Clone>(
                 log_probability: beam.log_probability + child_prob,
                 queue: beam.queue.clone(),
                 sentence: beam.sentence.to_vec(),
-                rules: clone_push(&beam.rules, Rule::Scan(child_node)),
+                rules: clone_push(
+                    &beam.rules,
+                    Rule::Scan {
+                        node: child_node,
+                        parent: moment.tree.id,
+                    },
+                ),
+                top_id: beam.top_id,
             });
         }
     };
 }
 fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
     v: &mut Vec<Beam<T>>,
+    moment: &ParseMoment,
     beam: &Beam<T>,
     s: &Option<T>,
     child_node: NodeIndex,
@@ -75,7 +108,14 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
             log_probability: beam.log_probability + child_prob,
             queue: beam.queue.clone(),
             sentence,
-            rules: clone_push(&beam.rules, Rule::Scan(child_node)),
+            rules: clone_push(
+                &beam.rules,
+                Rule::Scan {
+                    node: child_node,
+                    parent: moment.tree.id,
+                },
+            ),
+            top_id: beam.top_id,
         });
     } else {
         //Invisible word to scan
@@ -83,7 +123,14 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
             queue: beam.queue.clone(),
             log_probability: beam.log_probability + child_prob,
             sentence: beam.sentence.clone(),
-            rules: clone_push(&beam.rules, Rule::Scan(child_node)),
+            rules: clone_push(
+                &beam.rules,
+                Rule::Scan {
+                    node: child_node,
+                    parent: moment.tree.id,
+                },
+            ),
+            top_id: beam.top_id,
         })
     };
 }
@@ -113,6 +160,7 @@ fn unmerge_from_mover<
                         tree: FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
+                            id: beam.top_id + 1,
                         },
                         movers: vec![],
                     }));
@@ -120,6 +168,7 @@ fn unmerge_from_mover<
                         tree: FutureTree {
                             node: stored_child_node,
                             index: moment.movers[mover_id].index.clone(),
+                            id: beam.top_id + 2,
                         },
                         movers: moment
                             .movers
@@ -141,8 +190,13 @@ fn unmerge_from_mover<
                             Rule::UnmergeFromMover {
                                 child: child_node,
                                 complement: stored_child_node,
+                                child_id: beam.top_id + 1,
+                                stored_id: beam.top_id + 2,
+                                parent: moment.tree.id,
+                                storage: moment.movers[mover_id].id,
                             },
                         ),
+                        top_id: beam.top_id + 2,
                     });
                 }
                 _ => (),
@@ -173,6 +227,7 @@ fn unmerge<
         tree: FutureTree {
             node: complement,
             index: moment.tree.index.clone_push(*dir),
+            id: beam.top_id + 1,
         },
         movers: match dir {
             Direction::Right => moment.movers.clone(),
@@ -183,6 +238,7 @@ fn unmerge<
         tree: FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(dir.flip()),
+            id: beam.top_id + 2,
         },
         movers: match dir {
             Direction::Right => vec![],
@@ -199,8 +255,12 @@ fn unmerge<
             Rule::Unmerge {
                 child: child_node,
                 complement,
+                parent: moment.tree.id,
+                child_id: beam.top_id + 2,
+                complement_id: beam.top_id + 1,
             },
         ),
+        top_id: beam.top_id + 2,
     });
 }
 
@@ -229,6 +289,7 @@ fn unmove_from_mover<
                         tree: FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
+                            id: beam.top_id + 1,
                         },
                         movers: moment
                             .movers
@@ -239,6 +300,7 @@ fn unmove_from_mover<
                             .chain(std::iter::once(FutureTree {
                                 node: stored_child_node,
                                 index: moment.movers[mover_id].index.clone(),
+                                id: beam.top_id + 2,
                             }))
                             .collect(),
                     }));
@@ -254,8 +316,13 @@ fn unmove_from_mover<
                             Rule::UnmoveFromMover {
                                 child: child_node,
                                 stored: stored_child_node,
+                                parent: moment.tree.id,
+                                storage: moment.movers[mover_id].id,
+                                child_id: beam.top_id + 1,
+                                stored_id: beam.top_id + 2,
                             },
                         ),
+                        top_id: beam.top_id + 2,
                     });
                 }
                 _ => (),
@@ -286,12 +353,14 @@ fn unmove<
         tree: FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(Direction::Right),
+            id: beam.top_id + 1,
         },
         movers: clone_push(
             &moment.movers,
             FutureTree {
                 node: stored,
                 index: moment.tree.index.clone_push(Direction::Left),
+                id: beam.top_id + 2,
             },
         ),
     }));
@@ -303,9 +372,13 @@ fn unmove<
             &beam.rules,
             Rule::Unmove {
                 child: child_node,
+                child_id: beam.top_id + 1,
+                stored_id: beam.top_id + 2,
                 stored,
+                parent: moment.tree.id,
             },
         ),
+        top_id: beam.top_id + 2,
     });
 }
 
@@ -338,7 +411,7 @@ pub fn expand_generate<
             let mut v: Vec<_> = vec![];
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    reverse_scan(&mut v, beam, s, child_node, child_prob);
+                    reverse_scan(&mut v, moment, beam, s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
                     unmerge_from_mover(
@@ -411,7 +484,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
             let mut v: Vec<_> = vec![];
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    scan(&mut v, &beam, &s.as_ref(), child_node, child_prob);
+                    scan(&mut v, &moment, &beam, &s.as_ref(), child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
                     unmerge_from_mover(

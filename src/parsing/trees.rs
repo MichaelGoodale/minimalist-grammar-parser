@@ -19,6 +19,7 @@ impl GornIndex {
 pub struct FutureTree {
     pub node: NodeIndex,
     pub index: GornIndex,
+    pub id: usize,
 }
 
 impl PartialOrd for FutureTree {

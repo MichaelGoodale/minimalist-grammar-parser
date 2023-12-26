@@ -179,6 +179,29 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
             None
         }
     }
+    pub fn parent_of(&self, nx: NodeIndex) -> NodeIndex {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Incoming)
+            .next()
+            .unwrap()
+            .source()
+    }
+
+    pub fn get_category(&self, mut nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
+        while let Some(e) = self
+            .graph
+            .edges_directed(nx, petgraph::Direction::Incoming)
+            .next()
+        {
+            nx = e.source();
+            let cat = &self.graph[nx];
+            if let FeatureOrLemma::Feature(Feature::Category(_)) = cat {
+                return Some(cat);
+            }
+        }
+
+        None
+    }
 
     pub fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
         self.graph

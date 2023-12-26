@@ -6,37 +6,14 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 #[derive(Debug, Clone)]
-pub struct ParseBeam<'a, T> {
-    pub log_probability: f64,
-    pub queue: BinaryHeap<Reverse<ParseMoment>>,
-    pub sentence: Vec<&'a T>,
-    pub rules: Vec<Rule>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GenerationBeam<T> {
+pub struct Beam<T> {
     pub log_probability: f64,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: Vec<T>,
     pub rules: Vec<Rule>,
 }
 
-pub trait Beam<T>: Sized {
-    fn pop(&mut self) -> Option<ParseMoment>;
-    fn new(
-        log_probability: f64,
-        queue: BinaryHeap<Reverse<ParseMoment>>,
-        sentence: Vec<T>,
-        rules: Vec<Rule>,
-    ) -> Self;
-
-    fn sentence(&self) -> &[T];
-    fn log_probability(&self) -> f64;
-    fn queue(&self) -> &BinaryHeap<Reverse<ParseMoment>>;
-    fn rules(&self) -> &[Rule];
-}
-
-impl<T: Eq + std::fmt::Debug> PartialEq for ParseBeam<'_, T> {
+impl<T: Eq + std::fmt::Debug> PartialEq for Beam<T> {
     fn eq(&self, other: &Self) -> bool {
         self.log_probability == other.log_probability
             && self.sentence == other.sentence
@@ -44,30 +21,15 @@ impl<T: Eq + std::fmt::Debug> PartialEq for ParseBeam<'_, T> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug> PartialEq for GenerationBeam<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.log_probability == other.log_probability
-            && self.sentence == other.sentence
-            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> PartialOrd for ParseBeam<'_, T> {
+impl<T: Eq + std::fmt::Debug> PartialOrd for Beam<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Eq + std::fmt::Debug> PartialOrd for GenerationBeam<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
+impl<T: Eq + std::fmt::Debug> Eq for Beam<T> {}
 
-impl<T: Eq + std::fmt::Debug> Eq for ParseBeam<'_, T> {}
-impl<T: Eq + std::fmt::Debug> Eq for GenerationBeam<T> {}
-
-impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
+impl<T: Eq + std::fmt::Debug> Ord for Beam<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.log_probability
             .partial_cmp(&other.log_probability)
@@ -75,16 +37,8 @@ impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug> Ord for GenerationBeam<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.log_probability
-            .partial_cmp(&other.log_probability)
-            .unwrap()
-    }
-}
-
-impl<'a, T: Eq + std::fmt::Debug> Beam<&'a T> for ParseBeam<'a, T> {
-    fn pop(&mut self) -> Option<ParseMoment> {
+impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
+    pub fn pop(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)
         } else {
@@ -92,71 +46,10 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<&'a T> for ParseBeam<'a, T> {
         }
     }
 
-    fn new(
-        log_probability: f64,
-        queue: BinaryHeap<Reverse<ParseMoment>>,
-        sentence: Vec<&'a T>,
-        rules: Vec<Rule>,
-    ) -> Self {
-        todo!()
-    }
-
-    fn sentence(&self) -> &[&'a T] {
-        todo!()
-    }
-
-    fn log_probability(&self) -> f64 {
-        todo!()
-    }
-
-    fn queue(&self) -> &BinaryHeap<Reverse<ParseMoment>> {
-        todo!()
-    }
-
-    fn rules(&self) -> &[Rule] {
-        todo!()
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> Beam<T> for GenerationBeam<T> {
-    fn pop(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
-    }
-
-    fn new(
-        log_probability: f64,
-        queue: BinaryHeap<Reverse<ParseMoment>>,
-        sentence: Vec<T>,
-        rules: Vec<Rule>,
-    ) -> Self {
-        todo!()
-    }
-
-    fn sentence(&self) -> &[T] {
-        todo!()
-    }
-
-    fn log_probability(&self) -> f64 {
-        todo!()
-    }
-
-    fn queue(&self) -> &BinaryHeap<Reverse<ParseMoment>> {
-        todo!()
-    }
-
-    fn rules(&self) -> &[Rule] {
-        todo!()
-    }
-}
-impl<'a, T: Eq + std::fmt::Debug> GenerationBeam<T> {
-    pub fn new<Category: Eq + std::fmt::Debug>(
+    pub fn new_empty<Category: Eq + std::fmt::Debug>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
-    ) -> Result<GenerationBeam<T>> {
+    ) -> Result<Beam<T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(initial_category)?;
 
@@ -168,21 +61,18 @@ impl<'a, T: Eq + std::fmt::Debug> GenerationBeam<T> {
             movers: vec![],
         }));
 
-        Ok(GenerationBeam {
+        Ok(Beam {
             log_probability: 0_f64,
             sentence: vec![],
             queue,
             rules: vec![Rule::Start(category_index)],
         })
     }
-}
-
-impl<'a, T: Eq + std::fmt::Debug> ParseBeam<'a, T> {
     pub fn new<Category: Eq + std::fmt::Debug>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentence: &'a [T],
-    ) -> Result<ParseBeam<'a, T>> {
+    ) -> Result<Beam<&'a T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(initial_category)?;
 
@@ -194,7 +84,7 @@ impl<'a, T: Eq + std::fmt::Debug> ParseBeam<'a, T> {
             movers: vec![],
         }));
 
-        Ok(ParseBeam {
+        Ok(Beam {
             log_probability: 0_f64,
             sentence: sentence.iter().collect(),
             queue,

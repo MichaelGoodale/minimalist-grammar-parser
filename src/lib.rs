@@ -3,8 +3,8 @@ use std::collections::BinaryHeap;
 use anyhow::{bail, Result};
 use lexicon::Lexicon;
 
-use parsing::beam::{Beam, GenerationBeam, ParseBeam};
-use parsing::expand;
+use parsing::beam::Beam;
+use parsing::{expand_generate, expand_parse};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Direction {
@@ -35,13 +35,13 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     config: &ParsingConfig,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(ParseBeam::new(lexicon, initial_category, &sentence)?);
+    parse_heap.push(Beam::new(lexicon, initial_category, &sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                expand(
-                    &moment,
-                    &beam,
+                expand_parse(
+                    moment,
+                    beam,
                     lexicon,
                     config.merge_log_prob,
                     config.move_log_prob,
@@ -65,12 +65,12 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
     config: &ParsingConfig,
 ) -> Vec<(f64, Vec<T>)> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(GenerationBeam::new(lexicon, initial_category).unwrap());
+    parse_heap.push(Beam::new_empty(lexicon, initial_category).unwrap());
     let mut v = vec![];
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
-                expand(
+                expand_generate(
                     &moment,
                     &beam,
                     lexicon,

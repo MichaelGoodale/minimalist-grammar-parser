@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use anyhow::{bail, Result};
 use lexicon::Lexicon;
 
-use parsing::beam::{GenerationBeam, ParseBeam};
+use parsing::beam::{Beam, GenerationBeam, ParseBeam};
 use parsing::expand;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -35,7 +35,7 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     config: &ParsingConfig,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, &sentence)?);
+    parse_heap.push(ParseBeam::new(lexicon, initial_category, &sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
@@ -43,7 +43,6 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
                     &moment,
                     &beam,
                     lexicon,
-                    false,
                     config.merge_log_prob,
                     config.move_log_prob,
                 )
@@ -75,7 +74,6 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
                     &moment,
                     &beam,
                     lexicon,
-                    true,
                     config.merge_log_prob,
                     config.move_log_prob,
                 )

@@ -36,9 +36,9 @@ fn clone_push<T: Clone>(v: &[T], x: T) -> Vec<T> {
     v
 }
 
-fn scan<T: Eq + std::fmt::Debug + Clone>(
-    v: &mut Vec<ParseBeam<T>>,
-    beam: &Beam,
+fn scan<B: Beam<T>, T: Eq + std::fmt::Debug + Clone>(
+    v: &mut Vec<B>,
+    beam: &B,
     s: &Option<T>,
     child_node: NodeIndex,
     child_prob: f64,
@@ -298,13 +298,18 @@ fn unmove<B: Beam<T>, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::
     ));
 }
 
-pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
+pub fn expand<
+    'a,
+    B: Beam<&'a T>,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone,
+>(
     moment: &'a ParseMoment,
-    beam: &'a ParseBeam<T>,
+    beam: &'a B,
     lexicon: &'a Lexicon<T, Category>,
     probability_of_moving: f64,
     probability_of_merging: f64,
-) -> impl Iterator<Item = ParseBeam<'a, T>> + 'a {
+) -> impl Iterator<Item = B> + 'a {
     #[cfg(test)]
     {
         let c = if probability_of_moving > probability_of_merging {

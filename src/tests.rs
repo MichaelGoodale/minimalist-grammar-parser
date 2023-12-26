@@ -20,7 +20,7 @@ const CONFIG: ParsingConfig = ParsingConfig {
 fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
     let lexicon = Lexicon::new(v);
-    parse(&lexicon, 'h', vec!["hello".to_string()], &CONFIG)
+    parse(&lexicon, 'h', vec!["hello"], &CONFIG)
 }
 
 #[test]
@@ -32,28 +32,17 @@ fn simple_merge() -> Result<()> {
         SimpleLexicalEntry::parse("beer::n")?,
     ];
     let lexicon = Lexicon::new(v);
-    parse(
-        &lexicon,
-        'd',
-        vec!["the".to_string(), "man".to_string()],
-        &CONFIG,
-    )?;
+    parse(&lexicon, 'd', vec!["the", "man"], &CONFIG)?;
     parse(
         &lexicon,
         'v',
-        "the man drinks the beer"
-            .split(' ')
-            .map(|x| x.to_string())
-            .collect(),
+        "the man drinks the beer".split(' ').collect(),
         &CONFIG,
     )?;
     assert!(parse(
         &lexicon,
         'd',
-        "drinks the man the beer"
-            .split(' ')
-            .map(|x| x.to_string())
-            .collect(),
+        "drinks the man the beer".split(' ').collect(),
         &CONFIG
     )
     .is_err());
@@ -77,12 +66,7 @@ fn moving_parse() -> anyhow::Result<()> {
     ]
     .into_iter()
     {
-        parse(
-            &lex,
-            'C',
-            sentence.split(' ').map(|x| x.to_string()).collect(),
-            &CONFIG,
-        )?;
+        parse(&lex, 'C', sentence.split(' ').collect(), &CONFIG)?;
     }
 
     for bad_sentence in vec![
@@ -92,7 +76,7 @@ fn moving_parse() -> anyhow::Result<()> {
     ]
     .into_iter()
     {
-        let bad_sentence: Vec<_> = bad_sentence.split(' ').map(|x| x.to_string()).collect();
+        let bad_sentence: Vec<_> = bad_sentence.split(' ').collect();
 
         let v: Vec<_> = STABLER2011
             .split('\n')
@@ -209,10 +193,7 @@ fn generation() -> Result<()> {
     ];
 
     for ((p, sentence), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
-        let correct_sentence = correct_sentence
-            .into_iter()
-            .map(|x| x.to_string())
-            .collect();
+        let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p, &sentence), (correct_p, &correct_sentence));
         parse(&lex, 'C', sentence, &CONFIG)?;
     }

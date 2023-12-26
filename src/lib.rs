@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use anyhow::{bail, Result};
 use lexicon::Lexicon;
 
-use parsing::beam::ParseBeam;
+use parsing::beam::{GenerationBeam, ParseBeam};
 use parsing::expand;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -35,7 +35,7 @@ pub fn parse<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::D
     config: &ParsingConfig,
 ) -> Result<()> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, sentence)?);
+    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, &sentence)?);
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {
             parse_heap.extend(
@@ -66,7 +66,7 @@ pub fn generate<T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt
     config: &ParsingConfig,
 ) -> Vec<(f64, Vec<T>)> {
     let mut parse_heap = BinaryHeap::new();
-    parse_heap.push(ParseBeam::<T>::new(lexicon, initial_category, vec![]).unwrap());
+    parse_heap.push(GenerationBeam::new(lexicon, initial_category).unwrap());
     let mut v = vec![];
     while let Some(mut beam) = parse_heap.pop() {
         if let Some(moment) = beam.pop() {

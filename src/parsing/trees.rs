@@ -43,12 +43,6 @@ pub struct ParseMoment {
     pub movers: Vec<FutureTree>,
 }
 
-pub fn clone_push(v: &[FutureTree], node: NodeIndex, index: GornIndex) -> Vec<FutureTree> {
-    let mut v = v.to_vec();
-    v.push(FutureTree { node, index });
-    v
-}
-
 impl ParseMoment {
     pub fn least_index(&self) -> &GornIndex {
         let mut least = &self.tree.index;

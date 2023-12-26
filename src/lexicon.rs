@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::Direction;
 use anyhow::{bail, Context, Result};
 use petgraph::{
@@ -7,6 +5,7 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
+use std::fmt::Display;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Feature<Category: Eq> {

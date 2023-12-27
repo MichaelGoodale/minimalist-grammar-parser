@@ -61,7 +61,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = Vec<Rule>;
+    type Item = (f64, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {
@@ -77,7 +77,7 @@ where
                     .filter(|b| b.log_probability > self.config.min_log_prob),
                 )
             } else if beam.good_parse() {
-                return Some(beam.rules);
+                return Some((beam.log_probability, beam.rules));
             }
         }
         None

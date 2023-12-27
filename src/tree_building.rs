@@ -4,17 +4,16 @@ use std::fmt::Display;
 use crate::lexicon::{FeatureOrLemma, Lexicon};
 use crate::parsing::Rule;
 
-use petgraph::dot::Dot;
 use petgraph::graph::DiGraph;
 
-struct Empty {}
+pub struct Empty {}
 impl Display for Empty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "")
     }
 }
 
-pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &[Rule])
+pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &[Rule]) -> DiGraph<String, Empty>
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug,
@@ -123,7 +122,94 @@ where
             }
         }
     }
-    //g.remove_node(id2node[&0]);
-    let d = Dot::new(&g);
-    println!("{}", d);
+    g
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grammars::STABLER2011;
+    use crate::lexicon::Lexicon;
+    use crate::lexicon::SimpleLexicalEntry;
+    use crate::{Parser, ParsingConfig};
+    use anyhow::Result;
+    use petgraph::dot::Dot;
+    use std::f64::consts::LN_2;
+
+    const CONFIG: ParsingConfig = ParsingConfig {
+        min_log_prob: -64.0,
+        merge_log_prob: -LN_2,
+        move_log_prob: -LN_2,
+    };
+
+    #[test]
+    fn tree_building() -> Result<()> {
+        let v: Vec<_> = STABLER2011
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?;
+        let lex = Lexicon::new(v);
+        let rules = Parser::new(
+            &lex,
+            'C',
+            &"which queen prefers the wine"
+                .split(' ')
+                .collect::<Vec<_>>(),
+            &CONFIG,
+        )?
+        .next()
+        .unwrap()
+        .1;
+        let parse = build_tree(&lex, &rules);
+        let dot = Dot::new(&parse);
+        assert_eq!(
+            dot.to_string(),
+            "digraph {
+    0 [ label = \"CP\" ]
+    1 [ label = \"DP\" ]
+    2 [ label = \"C'\" ]
+    3 [ label = \"VP\" ]
+    4 [ label = \"t\" ]
+    5 [ label = \"which\" ]
+    6 [ label = \"D\" ]
+    7 [ label = \"queen\" ]
+    8 [ label = \"N\" ]
+    9 [ label = \"NP\" ]
+    10 [ label = \"ε\" ]
+    11 [ label = \"C\" ]
+    12 [ label = \"V'\" ]
+    13 [ label = \"prefers\" ]
+    14 [ label = \"V\" ]
+    15 [ label = \"DP\" ]
+    16 [ label = \"the\" ]
+    17 [ label = \"D\" ]
+    18 [ label = \"wine\" ]
+    19 [ label = \"N\" ]
+    20 [ label = \"NP\" ]
+    0 -> 1 [ label = \"\" ]
+    0 -> 2 [ label = \"\" ]
+    2 -> 3 [ label = \"\" ]
+    3 -> 4 [ label = \"\" ]
+    4 -> 1 [ label = \"\" ]
+    1 -> 6 [ label = \"\" ]
+    6 -> 5 [ label = \"\" ]
+    1 -> 9 [ label = \"\" ]
+    9 -> 8 [ label = \"\" ]
+    8 -> 7 [ label = \"\" ]
+    2 -> 11 [ label = \"\" ]
+    11 -> 10 [ label = \"\" ]
+    3 -> 12 [ label = \"\" ]
+    12 -> 14 [ label = \"\" ]
+    14 -> 13 [ label = \"\" ]
+    12 -> 15 [ label = \"\" ]
+    15 -> 17 [ label = \"\" ]
+    17 -> 16 [ label = \"\" ]
+    15 -> 20 [ label = \"\" ]
+    20 -> 19 [ label = \"\" ]
+    19 -> 18 [ label = \"\" ]
+}
+"
+        );
+        Ok(())
+    }
 }

@@ -74,7 +74,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
     pub fn new<Category: Eq + std::fmt::Debug>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
-        sentence: &'a [T],
+        sentence: Vec<&'a T>,
     ) -> Result<Beam<&'a T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(initial_category)?;
@@ -90,7 +90,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
 
         Ok(Beam {
             log_probability: 0_f64,
-            sentence: sentence.iter().collect(),
+            sentence,
             queue,
             rules: vec![Rule::Start(category_index)],
             top_id: 0,

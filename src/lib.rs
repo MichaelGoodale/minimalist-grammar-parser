@@ -54,8 +54,8 @@ where
             )
         } else {
             if beam.good_parse() {
+                println!("Found parse for {:?}", sentence);
                 build_tree(lexicon, &beam.rules);
-                println!("Found parse");
                 return Ok(());
             }
             break;

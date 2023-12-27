@@ -14,33 +14,26 @@ pub enum Rule {
     },
     Unmerge {
         child: NodeIndex,
-        complement: NodeIndex,
         parent: usize,
         child_id: usize,
         complement_id: usize,
     },
     UnmergeFromMover {
         child: NodeIndex,
-        complement: NodeIndex,
         child_id: usize,
         stored_id: usize,
         parent: usize,
         storage: usize,
     },
     Unmove {
-        child: NodeIndex,
-        stored: NodeIndex,
         child_id: usize,
         stored_id: usize,
         parent: usize,
     },
     UnmoveFromMover {
-        child: NodeIndex,
-        stored: NodeIndex,
         child_id: usize,
         stored_id: usize,
         parent: usize,
-        storage: usize,
     },
 }
 
@@ -189,7 +182,6 @@ fn unmerge_from_mover<
                             &beam.rules,
                             Rule::UnmergeFromMover {
                                 child: child_node,
-                                complement: stored_child_node,
                                 child_id: beam.top_id + 1,
                                 stored_id: beam.top_id + 2,
                                 parent: moment.tree.id,
@@ -254,7 +246,6 @@ fn unmerge<
             &beam.rules,
             Rule::Unmerge {
                 child: child_node,
-                complement,
                 parent: moment.tree.id,
                 child_id: beam.top_id + 2,
                 complement_id: beam.top_id + 1,
@@ -314,10 +305,7 @@ fn unmove_from_mover<
                         rules: clone_push(
                             &beam.rules,
                             Rule::UnmoveFromMover {
-                                child: child_node,
-                                stored: stored_child_node,
                                 parent: moment.tree.id,
-                                storage: moment.movers[mover_id].id,
                                 child_id: beam.top_id + 1,
                                 stored_id: beam.top_id + 2,
                             },
@@ -371,10 +359,8 @@ fn unmove<
         rules: clone_push(
             &beam.rules,
             Rule::Unmove {
-                child: child_node,
                 child_id: beam.top_id + 1,
                 stored_id: beam.top_id + 2,
-                stored,
                 parent: moment.tree.id,
             },
         ),

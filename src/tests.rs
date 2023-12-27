@@ -248,5 +248,36 @@ fn copy_language() -> anyhow::Result<()> {
         .map(|(_, s, _)| s)
         .collect();
     assert_eq!(generated, strings);
+    let rules = Generator::new(&lex, 'T', &CONFIG)?
+        .take(1)
+        .last()
+        .unwrap()
+        .2;
+
+    assert_eq!(
+        "digraph {
+    0 [ label = \"TP\" ]
+    1 [ label = \"TP\" ]
+    2 [ label = \"T'\" ]
+    3 [ label = \"t\" ]
+    4 [ label = \"ε\" ]
+    5 [ label = \"T\" ]
+    6 [ label = \"ε\" ]
+    7 [ label = \"T\" ]
+    0 -> 1 [ label = \"\" ]
+    0 -> 2 [ label = \"\" ]
+    2 -> 3 [ label = \"\" ]
+    3 -> 1 [ label = \"\" ]
+    1 -> 5 [ label = \"\" ]
+    5 -> 4 [ label = \"\" ]
+    2 -> 7 [ label = \"\" ]
+    7 -> 6 [ label = \"\" ]
+}
+",
+        format!(
+            "{}",
+            petgraph::dot::Dot::new(&tree_building::build_tree(&lex, &rules))
+        )
+    );
     Ok(())
 }

@@ -34,6 +34,7 @@ pub enum Rule {
         child_id: usize,
         stored_id: usize,
         parent: usize,
+        storage: usize,
     },
 }
 
@@ -308,6 +309,7 @@ fn unmove_from_mover<
                                 parent: moment.tree.id,
                                 child_id: beam.top_id + 1,
                                 stored_id: beam.top_id + 2,
+                                storage: moment.movers[mover_id].id,
                             },
                         ),
                         top_id: beam.top_id + 2,

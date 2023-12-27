@@ -86,11 +86,10 @@ where
                 parent,
                 child_id,
                 stored_id,
+                storage,
             } => {
                 id2node.insert(*child_id, id2node[parent]);
-                let temp = g.add_node("temp".to_string());
-                g.add_edge(id2node[parent], temp, Empty {});
-                id2node.insert(*stored_id, temp);
+                id2node.insert(*stored_id, id2node[storage]);
             }
             Rule::Unmove {
                 child_id,
@@ -108,7 +107,10 @@ where
                 let node = g.add_node(node.to_string());
                 let parent_node = g.add_node(parent_category.to_string());
 
-                if g[id2node[parent]] != format!("{parent_category}P")
+                if g[id2node[parent]] == "temp" {
+                    g[id2node[parent]] = format!("{parent_category}P");
+                    g.add_edge(id2node[parent], parent_node, Empty {});
+                } else if g[id2node[parent]] != format!("{parent_category}P")
                     && g[id2node[parent]] != format!("{parent_category}'")
                 {
                     let p = g.add_node(format!("{parent_category}P"));

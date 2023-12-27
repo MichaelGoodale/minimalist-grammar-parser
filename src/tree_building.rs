@@ -6,7 +6,6 @@ use crate::parsing::Rule;
 
 use petgraph::dot::Dot;
 use petgraph::graph::DiGraph;
-use petgraph::visit::EdgeRef;
 
 struct Empty {}
 impl Display for Empty {

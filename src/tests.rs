@@ -13,14 +13,15 @@ const CONFIG: ParsingConfig = ParsingConfig {
     min_log_prob: -64.0,
     merge_log_prob: -LN_2,
     move_log_prob: -LN_2,
-    max_parses: 1000,
+    max_parses: 1,
 };
 
 #[test]
 fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
     let lexicon = Lexicon::new(v);
-    parse(&lexicon, 'h', vec!["hello"], &CONFIG)
+    parse(&lexicon, 'h', vec!["hello"], &CONFIG)?;
+    Ok(())
 }
 
 #[test]
@@ -139,7 +140,16 @@ fn generation() -> Result<()> {
         .map(SimpleLexicalEntry::parse)
         .collect::<Result<Vec<_>>>()?;
     let lex = Lexicon::new(v);
-    let v = generate(&lex, 'C', &CONFIG);
+    let v = generate(
+        &lex,
+        'C',
+        &ParsingConfig {
+            min_log_prob: -64.0,
+            merge_log_prob: -LN_2,
+            move_log_prob: -LN_2,
+            max_parses: 1000,
+        },
+    );
 
     let x = vec![
         (
@@ -192,7 +202,7 @@ fn generation() -> Result<()> {
         ),
     ];
 
-    for ((p, sentence), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
+    for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p, &sentence), (correct_p, &correct_sentence));
         parse(&lex, 'C', sentence, &CONFIG)?;

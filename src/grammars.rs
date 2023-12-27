@@ -20,3 +20,11 @@ queen::N
 king::N
 the::N= D
 which::N= D -W";
+
+#[allow(dead_code)]
+pub const COPY_LANGUAGE: &str = "::=T +r +l T
+::T -r -l
+a::=A +l T -l
+a::=T +r A -r
+b::=B +l T -l
+b::=T +r B -r";

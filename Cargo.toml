@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.76"
 petgraph = "0.6.4"
+
+[dev-dependencies]
+itertools = "0.12.0"

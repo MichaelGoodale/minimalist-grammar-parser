@@ -99,8 +99,8 @@ impl<Category: Display + Eq> Display for Feature<Category> {
             Feature::Category(x) => write!(f, "{}", x),
             Feature::Selector(x, Direction::Left) => write!(f, "={}", x),
             Feature::Selector(x, Direction::Right) => write!(f, "{}=", x),
-            Feature::Licensor(x) => write!(f, "-{}", x),
-            Feature::Licensee(x) => write!(f, "+{}", x),
+            Feature::Licensor(x) => write!(f, "+{}", x),
+            Feature::Licensee(x) => write!(f, "-{}", x),
         }
     }
 }
@@ -108,6 +108,7 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 #[derive(Debug)]
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
+    root: NodeIndex,
 }
 
 impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Category> {
@@ -147,7 +148,10 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
                 }
             }
         }
-        Lexicon { graph }
+        Lexicon {
+            graph,
+            root: root_index,
+        }
     }
 
     pub fn find_category(&self, category: Category) -> Result<NodeIndex> {
@@ -159,11 +163,12 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
     }
 
     pub fn find_licensee(&self, category: Category) -> Result<NodeIndex> {
-        let category = FeatureOrLemma::Feature(Feature::Licensee(category));
+        let category = &FeatureOrLemma::Feature(Feature::Licensee(category));
         self.graph
-            .node_references()
-            .find_map(|(i, x)| if *x == category { Some(i) } else { None })
-            .with_context(|| format!("{category:?} is not a valid licencee in the lexicon!"))
+            .edges_directed(self.root, petgraph::Direction::Outgoing)
+            .map(|e| (e.target(), &self.graph[e.target()]))
+            .find_map(move |(i, x)| if x == category { Some(i) } else { None })
+            .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
     }
 
     pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, f64)> {
@@ -314,7 +319,7 @@ mod tests {
         );
     }
 
-    use crate::grammars::STABLER2011;
+    use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use petgraph::dot::Dot;
     #[test]
     fn initialize_lexicon() -> anyhow::Result<()> {
@@ -330,7 +335,7 @@ mod tests {
     1 [ label = \"C\" ]
     2 [ label = \"V=\" ]
     3 [ label = \"ε\" ]
-    4 [ label = \"-W\" ]
+    4 [ label = \"+W\" ]
     5 [ label = \"V=\" ]
     6 [ label = \"ε\" ]
     7 [ label = \"V\" ]
@@ -349,7 +354,7 @@ mod tests {
     20 [ label = \"D\" ]
     21 [ label = \"N=\" ]
     22 [ label = \"the\" ]
-    23 [ label = \"+W\" ]
+    23 [ label = \"-W\" ]
     24 [ label = \"D\" ]
     25 [ label = \"N=\" ]
     26 [ label = \"which\" ]
@@ -381,6 +386,67 @@ mod tests {
     25 -> 26 [ label = \"-0\" ]
 }
 "
+        );
+
+        let v: Vec<_> = COPY_LANGUAGE
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?;
+        let lex = Lexicon::new(v);
+        assert_eq!(
+            "digraph {
+    0 [ label = \"root\" ]
+    1 [ label = \"T\" ]
+    2 [ label = \"+l\" ]
+    3 [ label = \"+r\" ]
+    4 [ label = \"=T\" ]
+    5 [ label = \"ε\" ]
+    6 [ label = \"-l\" ]
+    7 [ label = \"-r\" ]
+    8 [ label = \"T\" ]
+    9 [ label = \"ε\" ]
+    10 [ label = \"T\" ]
+    11 [ label = \"+l\" ]
+    12 [ label = \"=A\" ]
+    13 [ label = \"a\" ]
+    14 [ label = \"-r\" ]
+    15 [ label = \"A\" ]
+    16 [ label = \"+r\" ]
+    17 [ label = \"=T\" ]
+    18 [ label = \"a\" ]
+    19 [ label = \"=B\" ]
+    20 [ label = \"b\" ]
+    21 [ label = \"B\" ]
+    22 [ label = \"+r\" ]
+    23 [ label = \"=T\" ]
+    24 [ label = \"b\" ]
+    0 -> 1 [ label = \"-1.0986122886681098\" ]
+    1 -> 2 [ label = \"-0\" ]
+    2 -> 3 [ label = \"-0\" ]
+    3 -> 4 [ label = \"-0\" ]
+    4 -> 5 [ label = \"-0\" ]
+    0 -> 6 [ label = \"-1.0986122886681098\" ]
+    6 -> 7 [ label = \"-0.6931471805599453\" ]
+    7 -> 8 [ label = \"-0\" ]
+    8 -> 9 [ label = \"-0\" ]
+    6 -> 10 [ label = \"-0.6931471805599453\" ]
+    10 -> 11 [ label = \"-0\" ]
+    11 -> 12 [ label = \"-0.6931471805599453\" ]
+    12 -> 13 [ label = \"-0\" ]
+    0 -> 14 [ label = \"-1.0986122886681098\" ]
+    14 -> 15 [ label = \"-0.6931471805599453\" ]
+    15 -> 16 [ label = \"-0\" ]
+    16 -> 17 [ label = \"-0\" ]
+    17 -> 18 [ label = \"-0\" ]
+    11 -> 19 [ label = \"-0.6931471805599453\" ]
+    19 -> 20 [ label = \"-0\" ]
+    14 -> 21 [ label = \"-0.6931471805599453\" ]
+    21 -> 22 [ label = \"-0\" ]
+    22 -> 23 [ label = \"-0\" ]
+    23 -> 24 [ label = \"-0\" ]
+}
+",
+            format!("{}", Dot::new(&lex.graph))
         );
         Ok(())
     }

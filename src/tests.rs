@@ -5,12 +5,12 @@ use crate::{
     grammars::SIMPLESTABLER2011,
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
-use std::f64::consts::LN_2;
+use std::{collections::HashSet, f64::consts::LN_2};
 
 use super::*;
 
 const CONFIG: ParsingConfig = ParsingConfig {
-    min_log_prob: -64.0,
+    min_log_prob: -256.0,
     merge_log_prob: -LN_2,
     move_log_prob: -LN_2,
 };
@@ -211,10 +211,42 @@ fn generation() -> Result<()> {
         ),
     ];
 
+    assert_eq!(v.len(), x.len());
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p, &sentence), (correct_p, &correct_sentence));
         Parser::new(&lex, 'C', &sentence, &CONFIG)?.next().unwrap();
     }
+    Ok(())
+}
+use grammars::COPY_LANGUAGE;
+use itertools::{self, Itertools};
+
+#[test]
+fn copy_language() -> anyhow::Result<()> {
+    let v: Vec<_> = COPY_LANGUAGE
+        .split('\n')
+        .map(SimpleLexicalEntry::parse)
+        .collect::<Result<Vec<_>>>()?;
+    let lex = Lexicon::new(v);
+    let mut strings = HashSet::<Vec<&str>>::new();
+    strings.insert(vec![]);
+
+    for i in 1..=5 {
+        strings.extend(
+            itertools::repeat_n(vec!["a", "b"].into_iter(), i)
+                .multi_cartesian_product()
+                .map(|mut x| {
+                    x.append(&mut x.clone());
+                    x
+                }),
+        );
+    }
+
+    let generated: HashSet<_> = Generator::new(&lex, 'T', &CONFIG)?
+        .take(strings.len())
+        .map(|(_, s, _)| s)
+        .collect();
+    assert_eq!(generated, strings);
     Ok(())
 }

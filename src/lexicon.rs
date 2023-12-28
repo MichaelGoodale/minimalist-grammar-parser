@@ -7,7 +7,7 @@ use petgraph::{
 };
 use std::fmt::Display;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature<Category: Eq> {
     Category(Category),
     Selector(Category, Direction),
@@ -48,7 +48,7 @@ impl Feature<char> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(Option<T>),
@@ -65,7 +65,7 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LexicalEntry<T: Eq, Category: Eq> {
     pub lemma: Option<T>,
     pub features: Vec<Feature<Category>>,

@@ -38,7 +38,7 @@ impl<T: Eq + std::fmt::Debug> Ord for Beam<T> {
     }
 }
 
-impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
+impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
     pub fn pop(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)
@@ -47,7 +47,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
         }
     }
 
-    pub fn new_empty<Category: Eq + std::fmt::Debug>(
+    pub fn new_empty<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
     ) -> Result<Beam<T>> {
@@ -71,7 +71,7 @@ impl<'a, T: Eq + std::fmt::Debug> Beam<T> {
             top_id: 0,
         })
     }
-    pub fn new<Category: Eq + std::fmt::Debug>(
+    pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentence: Vec<&'a T>,

@@ -16,8 +16,8 @@ impl Display for Empty {
 pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &[Rule]) -> DiGraph<String, Empty>
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
-    T: Eq + std::fmt::Debug,
-    C: Eq + std::fmt::Debug,
+    T: Eq + std::fmt::Debug + std::clone::Clone,
+    C: Eq + std::fmt::Debug + std::clone::Clone,
 {
     let mut g = DiGraph::<String, Empty>::new();
     let mut id2node = HashMap::new();

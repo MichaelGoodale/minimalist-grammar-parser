@@ -7,7 +7,7 @@ use petgraph::{
 };
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Feature<Category: Eq> {
     Category(Category),
     Selector(Category, Direction),
@@ -48,7 +48,7 @@ impl Feature<char> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(Option<T>),
@@ -86,7 +86,10 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
         } else {
             write!(f, "ε::")?;
         }
-        for feature in self.features.iter() {
+        for (i, feature) in self.features.iter().enumerate() {
+            if i > 0 {
+                write!(f, " ")?;
+            }
             write!(f, "{}", feature)?;
         }
         Ok(())
@@ -105,16 +108,63 @@ impl<Category: Display + Eq> Display for Feature<Category> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
     root: NodeIndex,
+    leaves: Vec<NodeIndex>,
 }
 
-impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Category> {
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
+    for Lexicon<T, Category>
+{
+    //Super inefficient but we can leave it for now
+    fn eq(&self, other: &Self) -> bool {
+        let lexemes = self.lexemes().unwrap();
+        for other_l in other.lexemes().unwrap() {
+            if !lexemes.contains(&other_l) {
+                return false;
+            }
+        }
+        true
+    }
+}
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
+    for Lexicon<T, Category>
+{
+}
+
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+    pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
+        let mut v = vec![];
+        for leaf in self.leaves.iter() {
+            if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
+                let mut features = vec![];
+                let mut nx = *leaf;
+                while let Some(parent) = self.parent_of(nx) {
+                    if parent == self.root {
+                        break;
+                    } else if let FeatureOrLemma::Feature(f) = &self.graph[parent] {
+                        features.push(f.clone());
+                    }
+                    nx = parent;
+                }
+
+                v.push(LexicalEntry {
+                    lemma: lemma.as_ref().cloned(),
+                    features,
+                })
+            } else {
+                bail!("Bad lexicon!");
+            }
+        }
+        Ok(v)
+    }
+
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
         let mut graph = DiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
+        let mut leaves = vec![];
 
         for lexeme in items.into_iter() {
             let lexeme: Vec<FeatureOrLemma<T, Category>> = lexeme.into();
@@ -132,7 +182,10 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
                     let new_node_index = graph.add_node(feature);
                     graph.add_edge(node_index, new_node_index, 0.0);
                     new_node_index
-                }
+                };
+                if let FeatureOrLemma::Lemma(_) = graph[node_index] {
+                    leaves.push(node_index);
+                };
             }
 
             //Renormalise probabilities to sum to one.
@@ -150,6 +203,7 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
         }
         Lexicon {
             graph,
+            leaves,
             root: root_index,
         }
     }
@@ -184,12 +238,11 @@ impl<T: Eq + std::fmt::Debug, Category: Eq + std::fmt::Debug> Lexicon<T, Categor
             None
         }
     }
-    pub fn parent_of(&self, nx: NodeIndex) -> NodeIndex {
+    pub fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
         self.graph
             .edges_directed(nx, petgraph::Direction::Incoming)
             .next()
-            .unwrap()
-            .source()
+            .map(|e| e.source())
     }
 
     pub fn get_category(&self, mut nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
@@ -323,11 +376,23 @@ mod tests {
     use petgraph::dot::Dot;
     #[test]
     fn initialize_lexicon() -> anyhow::Result<()> {
-        let v: Vec<_> = STABLER2011
-            .split('\n')
+        let strings: Vec<&str> = STABLER2011.split('\n').collect();
+        let v: Vec<_> = strings
+            .iter()
+            .copied()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?;
+
         let lex = Lexicon::new(v);
+        for lex in lex.lexemes()? {
+            assert!(
+                strings.contains(&format!("{}", lex).as_str())
+                    || strings.contains(&format!("{}", lex).replace('ε', "").as_str())
+            )
+        }
+        let lex_2 = Lexicon::new(lex.lexemes().unwrap());
+        assert_eq!(lex, lex_2);
+
         assert_eq!(
             format!("{}", Dot::new(&lex.graph)),
             "digraph {
@@ -393,6 +458,7 @@ mod tests {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
+        assert_ne!(lex, lex_2);
         assert_eq!(
             "digraph {
     0 [ label = \"root\" ]

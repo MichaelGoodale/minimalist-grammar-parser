@@ -133,7 +133,7 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
 fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug,
+    Category: Eq + std::fmt::Debug + Clone,
 >(
     v: &mut Vec<Beam<T>>,
     lexicon: &Lexicon<U, Category>,
@@ -260,7 +260,7 @@ fn unmerge<
 fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug,
+    Category: Eq + std::fmt::Debug + Clone,
 >(
     v: &mut Vec<Beam<T>>,
     lexicon: &Lexicon<U, Category>,

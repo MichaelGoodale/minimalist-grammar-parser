@@ -12,6 +12,7 @@ pub struct Beam<T> {
     pub sentence: Vec<T>,
     pub rules: Vec<Rule>,
     pub top_id: usize,
+    pub steps: usize,
 }
 
 impl<T: Eq + std::fmt::Debug> PartialEq for Beam<T> {
@@ -69,6 +70,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
             queue,
             rules: vec![Rule::Start(category_index)],
             top_id: 0,
+            steps: 0,
         })
     }
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
@@ -94,6 +96,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
             queue,
             rules: vec![Rule::Start(category_index)],
             top_id: 0,
+            steps: 0,
         })
     }
 

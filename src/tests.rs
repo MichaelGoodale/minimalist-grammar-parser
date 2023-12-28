@@ -13,6 +13,7 @@ const CONFIG: ParsingConfig = ParsingConfig {
     min_log_prob: -256.0,
     merge_log_prob: -LN_2,
     move_log_prob: -LN_2,
+    max_steps: 100,
 };
 
 #[test]
@@ -156,6 +157,7 @@ fn generation() -> Result<()> {
             min_log_prob: -64.0,
             merge_log_prob: -LN_2,
             move_log_prob: -LN_2,
+            max_steps: 100,
         },
     )?
     .collect();

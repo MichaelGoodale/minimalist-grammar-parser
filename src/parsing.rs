@@ -67,6 +67,7 @@ fn scan<T: Eq + std::fmt::Debug + Clone>(
                         },
                     ),
                     top_id: beam.top_id,
+                    steps: beam.steps + 1,
                 })
             }
         } else {
@@ -83,6 +84,7 @@ fn scan<T: Eq + std::fmt::Debug + Clone>(
                     },
                 ),
                 top_id: beam.top_id,
+                steps: beam.steps + 1,
             });
         }
     };
@@ -110,6 +112,7 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
                 },
             ),
             top_id: beam.top_id,
+            steps: beam.steps + 1,
         });
     } else {
         //Invisible word to scan
@@ -125,6 +128,7 @@ fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
                 },
             ),
             top_id: beam.top_id,
+            steps: beam.steps + 1,
         })
     };
 }
@@ -190,6 +194,7 @@ fn unmerge_from_mover<
                             },
                         ),
                         top_id: beam.top_id + 2,
+                        steps: beam.steps + 1,
                     });
                 }
                 _ => (),
@@ -253,6 +258,7 @@ fn unmerge<
             },
         ),
         top_id: beam.top_id + 2,
+        steps: beam.steps + 1,
     });
 }
 
@@ -313,6 +319,7 @@ fn unmove_from_mover<
                             },
                         ),
                         top_id: beam.top_id + 2,
+                        steps: beam.steps + 1,
                     });
                 }
                 _ => (),
@@ -367,6 +374,7 @@ fn unmove<
             },
         ),
         top_id: beam.top_id + 2,
+        steps: beam.steps + 1,
     });
 }
 

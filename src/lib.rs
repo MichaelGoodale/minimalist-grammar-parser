@@ -27,6 +27,7 @@ pub struct ParsingConfig {
     pub min_log_prob: f64,
     pub merge_log_prob: f64,
     pub move_log_prob: f64,
+    pub max_steps: usize,
 }
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
@@ -75,7 +76,8 @@ where
                         self.config.merge_log_prob,
                         self.config.move_log_prob,
                     )
-                    .filter(|b| b.log_probability > self.config.min_log_prob),
+                    .filter(|b| b.log_probability > self.config.min_log_prob)
+                    .filter(|b| b.steps < self.config.max_steps),
                 )
             } else if beam.good_parse() {
                 return Some((beam.log_probability, beam.rules));
@@ -129,7 +131,8 @@ where
                         self.config.merge_log_prob,
                         self.config.move_log_prob,
                     )
-                    .filter(|b| b.log_probability > self.config.min_log_prob),
+                    .filter(|b| b.log_probability > self.config.min_log_prob)
+                    .filter(|b| b.steps < self.config.max_steps),
                 )
             } else if beam.queue.is_empty() {
                 return Some((beam.log_probability, beam.sentence, beam.rules));

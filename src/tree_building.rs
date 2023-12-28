@@ -142,6 +142,7 @@ mod tests {
         min_log_prob: -64.0,
         merge_log_prob: -LN_2,
         move_log_prob: -LN_2,
+        max_steps: 10000,
     };
 
     #[test]

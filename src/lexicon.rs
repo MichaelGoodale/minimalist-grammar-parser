@@ -261,6 +261,12 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         None
     }
 
+    pub fn n_children(&self, nx: NodeIndex) -> usize {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Outgoing)
+            .count()
+    }
+
     pub fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)

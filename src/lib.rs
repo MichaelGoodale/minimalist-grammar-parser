@@ -48,7 +48,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::new();
-        let sentence: Vec<_> = sentence.iter().collect();
+        let sentence: Vec<_> = sentence.iter().rev().collect();
         parse_heap.push(Beam::new(lexicon, initial_category, sentence)?);
         Ok(Parser {
             lexicon,
@@ -132,7 +132,7 @@ where
                 self.parse_heap.extend(
                     expand_generate(
                         &moment,
-                        &beam,
+                        beam,
                         self.lexicon,
                         self.config.merge_log_prob,
                         self.config.move_log_prob,

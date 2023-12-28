@@ -22,6 +22,7 @@ impl Direction {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct ParsingConfig {
     pub min_log_prob: f64,
     pub merge_log_prob: f64,

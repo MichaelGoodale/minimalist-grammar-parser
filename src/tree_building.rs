@@ -143,6 +143,7 @@ mod tests {
         merge_log_prob: -LN_2,
         move_log_prob: -LN_2,
         max_steps: 10000,
+        max_beams: 100,
     };
 
     #[test]

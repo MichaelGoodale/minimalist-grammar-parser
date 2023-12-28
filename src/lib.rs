@@ -1,8 +1,7 @@
-use std::collections::BinaryHeap;
-
 use anyhow::Result;
 use lexicon::Lexicon;
 
+use min_max_heap::MinMaxHeap;
 use parsing::beam::Beam;
 use parsing::Rule;
 use parsing::{expand_generate, expand_parse};
@@ -28,12 +27,13 @@ pub struct ParsingConfig {
     pub merge_log_prob: f64,
     pub move_log_prob: f64,
     pub max_steps: usize,
+    pub max_beams: usize,
 }
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
-    parse_heap: BinaryHeap<Beam<&'a T>>,
+    parse_heap: MinMaxHeap<Beam<&'a T>>,
 }
 
 impl<'a, T, Category> Parser<'a, T, Category>
@@ -47,7 +47,7 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = BinaryHeap::new();
+        let mut parse_heap = MinMaxHeap::new();
         let sentence: Vec<_> = sentence.iter().collect();
         parse_heap.push(Beam::new(lexicon, initial_category, sentence)?);
         Ok(Parser {
@@ -66,7 +66,7 @@ where
     type Item = (f64, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(mut beam) = self.parse_heap.pop() {
+        while let Some(mut beam) = self.parse_heap.pop_max() {
             if let Some(moment) = beam.pop() {
                 self.parse_heap.extend(
                     expand_parse(
@@ -78,7 +78,13 @@ where
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),
-                )
+                );
+                if self.parse_heap.len() > self.config.max_beams {
+                    let n_to_remove = self.parse_heap.len() - self.config.max_beams;
+                    for _ in 0..n_to_remove {
+                        self.parse_heap.pop_min();
+                    }
+                };
             } else if beam.good_parse() {
                 return Some((beam.log_probability, beam.rules));
             }
@@ -90,7 +96,7 @@ where
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
-    parse_heap: BinaryHeap<Beam<T>>,
+    parse_heap: MinMaxHeap<Beam<T>>,
 }
 
 impl<'a, T, Category> Generator<'a, T, Category>
@@ -103,7 +109,7 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = BinaryHeap::new();
+        let mut parse_heap = MinMaxHeap::new();
         parse_heap.push(Beam::new_empty(lexicon, initial_category)?);
         Ok(Generator {
             lexicon,
@@ -121,7 +127,7 @@ where
     type Item = (f64, Vec<T>, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(mut beam) = self.parse_heap.pop() {
+        while let Some(mut beam) = self.parse_heap.pop_max() {
             if let Some(moment) = beam.pop() {
                 self.parse_heap.extend(
                     expand_generate(
@@ -133,7 +139,13 @@ where
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),
-                )
+                );
+                if self.parse_heap.len() > self.config.max_beams {
+                    let n_to_remove = self.parse_heap.len() - self.config.max_beams;
+                    for _ in 0..n_to_remove {
+                        self.parse_heap.pop_min();
+                    }
+                };
             } else if beam.queue.is_empty() {
                 return Some((beam.log_probability, beam.sentence, beam.rules));
             }

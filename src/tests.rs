@@ -14,6 +14,7 @@ const CONFIG: ParsingConfig = ParsingConfig {
     merge_log_prob: -LN_2,
     move_log_prob: -LN_2,
     max_steps: 100,
+    max_beams: 1000,
 };
 
 #[test]
@@ -150,7 +151,7 @@ fn generation() -> Result<()> {
         .map(SimpleLexicalEntry::parse)
         .collect::<Result<Vec<_>>>()?;
     let lex = Lexicon::new(v);
-    let v: Vec<_> = Generator::new(
+    let mut v: Vec<_> = Generator::new(
         &lex,
         'C',
         &ParsingConfig {
@@ -158,11 +159,12 @@ fn generation() -> Result<()> {
             merge_log_prob: -LN_2,
             move_log_prob: -LN_2,
             max_steps: 100,
+            max_beams: 1000,
         },
     )?
     .collect();
 
-    let x = vec![
+    let mut x = vec![
         (
             -2.0794415416798357,
             vec!["the", "queen", "likes", "the", "king"],
@@ -214,6 +216,8 @@ fn generation() -> Result<()> {
     ];
 
     assert_eq!(v.len(), x.len());
+    x.sort_by(|a, b| a.1.cmp(&b.1));
+    v.sort_by(|a, b| a.1.cmp(&b.1));
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p, &sentence), (correct_p, &correct_sentence));
@@ -289,5 +293,31 @@ fn degenerate_grammar() -> Result<()> {
     let lexicon = Lexicon::new(vec![LexicalEntry::parse("a::=c c")?]);
     let x: Vec<_> = Generator::new(&lexicon, 'c', &CONFIG)?.take(50).collect();
     assert_eq!(x, vec![]);
+    Ok(())
+}
+
+#[test]
+fn capped_beams() -> Result<()> {
+    let lexicon = Lexicon::new(vec![
+        LexicalEntry::parse("a::=b c")?,
+        LexicalEntry::parse("a::=d c")?,
+        LexicalEntry::parse("b::=c b")?,
+        LexicalEntry::parse("d::=c d")?,
+    ]);
+    let max_beams = 12;
+    let g: Vec<_> = Generator::new(
+        &lexicon,
+        'c',
+        &ParsingConfig {
+            min_log_prob: -128.0,
+            merge_log_prob: -LN_2,
+            move_log_prob: -LN_2,
+            max_steps: 100,
+            max_beams,
+        },
+    )?
+    .take(50)
+    .collect();
+    assert_eq!(g, vec![]);
     Ok(())
 }

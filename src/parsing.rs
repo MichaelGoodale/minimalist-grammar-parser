@@ -348,7 +348,6 @@ pub fn expand_generate<
             let mut v: Vec<_> = vec![];
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    let beam = beam.clone();
                     reverse_scan(&mut v, moment, beam, s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
@@ -367,7 +366,6 @@ pub fn expand_generate<
                     } else {
                         0_f64
                     };
-                    let beam = beam.clone();
                     unmerge(
                         &mut v, lexicon, moment, beam, cat, dir, child_node, child_prob, rule_prob,
                     );
@@ -388,7 +386,6 @@ pub fn expand_generate<
                     } else {
                         0_f64
                     };
-                    let beam = beam.clone();
                     unmove(
                         &mut v, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
                     );

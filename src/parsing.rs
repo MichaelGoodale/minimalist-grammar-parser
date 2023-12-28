@@ -5,7 +5,7 @@ use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use trees::{FutureTree, ParseMoment};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
     Start(NodeIndex),
     Scan {

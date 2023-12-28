@@ -283,3 +283,11 @@ fn copy_language() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn degenerate_grammar() -> Result<()> {
+    let lexicon = Lexicon::new(vec![LexicalEntry::parse("a::=c c")?]);
+    let x: Vec<_> = Generator::new(&lexicon, 'c', &CONFIG)?.take(50).collect();
+    assert_eq!(x, vec![]);
+    Ok(())
+}

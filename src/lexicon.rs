@@ -162,43 +162,60 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
+        let n_items = items.len();
+        Self::new_with_weights(items, std::iter::repeat(1.0).take(n_items).collect())
+    }
+
+    pub fn new_with_weights(items: Vec<LexicalEntry<T, Category>>, weights: Vec<f64>) -> Self {
         let mut graph = DiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
 
-        for lexeme in items.into_iter() {
+        for (lexeme, weight) in items.into_iter().zip(weights.into_iter()) {
             let lexeme: Vec<FeatureOrLemma<T, Category>> = lexeme.into();
             let mut node_index = root_index;
 
             for feature in lexeme.into_iter().rev() {
                 //We go down the feature list and add nodes and edges corresponding to features
                 //If they exist already, we just follow the path until we have to start adding.
-                node_index = if let Some(edge_index) = graph
+                node_index = if let Some((nx, edge_index)) = graph
                     .edges_directed(node_index, petgraph::Direction::Outgoing)
                     .find(|x| graph[x.target()] == feature)
+                    .map(|x| (x.target(), x.id()))
                 {
-                    edge_index.target()
+                    graph[edge_index] += weight;
+                    nx
                 } else {
                     let new_node_index = graph.add_node(feature);
-                    graph.add_edge(node_index, new_node_index, 0.0);
+                    graph.add_edge(node_index, new_node_index, weight);
                     new_node_index
                 };
+
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
                     leaves.push(node_index);
                 };
             }
+        }
+        //Renormalise probabilities to sum to one.
+        for node_index in graph.node_indices() {
+            let edges: Vec<_> = graph
+                .edges_directed(node_index, petgraph::Direction::Outgoing)
+                .map(|e| (*e.weight(), e.id()))
+                .collect();
 
-            //Renormalise probabilities to sum to one.
-            //TODO: Add way to make this variable.
-            for node_index in graph.node_indices() {
-                let edges: Vec<_> = graph
-                    .edges_directed(node_index, petgraph::Direction::Outgoing)
-                    .map(|x| x.id())
-                    .collect();
-                let uniform_edge_p = -(edges.len() as f64).ln();
-                for edge in edges {
-                    graph[edge] = uniform_edge_p;
+            match edges.len().cmp(&1) {
+                std::cmp::Ordering::Equal => {
+                    for (_, edge) in edges {
+                        graph[edge] = 0.0;
+                    }
                 }
+                std::cmp::Ordering::Greater => {
+                    let n: f64 = edges.iter().map(|(w, _)| w).sum::<f64>().ln();
+                    for (weight, edge) in edges {
+                        graph[edge] = weight.ln() - n;
+                    }
+                }
+                _ => (),
             }
         }
         Lexicon {
@@ -429,32 +446,32 @@ mod tests {
     24 [ label = \"D\" ]
     25 [ label = \"N=\" ]
     26 [ label = \"which\" ]
-    0 -> 1 [ label = \"-1.6094379124341003\" ]
+    0 -> 1 [ label = \"-1.791759469228055\" ]
     1 -> 2 [ label = \"-0.6931471805599453\" ]
-    2 -> 3 [ label = \"-0\" ]
+    2 -> 3 [ label = \"0\" ]
     1 -> 4 [ label = \"-0.6931471805599453\" ]
-    4 -> 5 [ label = \"-0\" ]
-    5 -> 6 [ label = \"-0\" ]
-    0 -> 7 [ label = \"-1.6094379124341003\" ]
-    7 -> 8 [ label = \"-0\" ]
+    4 -> 5 [ label = \"0\" ]
+    5 -> 6 [ label = \"0\" ]
+    0 -> 7 [ label = \"-1.0986122886681098\" ]
+    7 -> 8 [ label = \"0\" ]
     8 -> 9 [ label = \"-0.6931471805599453\" ]
     9 -> 10 [ label = \"-0.6931471805599453\" ]
     9 -> 11 [ label = \"-0.6931471805599453\" ]
     8 -> 12 [ label = \"-0.6931471805599453\" ]
     12 -> 13 [ label = \"-0.6931471805599453\" ]
     12 -> 14 [ label = \"-0.6931471805599453\" ]
-    0 -> 15 [ label = \"-1.6094379124341003\" ]
+    0 -> 15 [ label = \"-1.0986122886681098\" ]
     15 -> 16 [ label = \"-1.3862943611198906\" ]
     15 -> 17 [ label = \"-1.3862943611198906\" ]
     15 -> 18 [ label = \"-1.3862943611198906\" ]
     15 -> 19 [ label = \"-1.3862943611198906\" ]
-    0 -> 20 [ label = \"-1.6094379124341003\" ]
-    20 -> 21 [ label = \"-0\" ]
-    21 -> 22 [ label = \"-0\" ]
-    0 -> 23 [ label = \"-1.6094379124341003\" ]
-    23 -> 24 [ label = \"-0\" ]
-    24 -> 25 [ label = \"-0\" ]
-    25 -> 26 [ label = \"-0\" ]
+    0 -> 20 [ label = \"-2.4849066497880004\" ]
+    20 -> 21 [ label = \"0\" ]
+    21 -> 22 [ label = \"0\" ]
+    0 -> 23 [ label = \"-2.4849066497880004\" ]
+    23 -> 24 [ label = \"0\" ]
+    24 -> 25 [ label = \"0\" ]
+    25 -> 26 [ label = \"0\" ]
 }
 "
         );
@@ -464,6 +481,7 @@ mod tests {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
+        println!("{}", Dot::new(&lex.graph));
         assert_ne!(lex, lex_2);
         assert_eq!(
             "digraph {
@@ -492,30 +510,30 @@ mod tests {
     22 [ label = \"+r\" ]
     23 [ label = \"=T\" ]
     24 [ label = \"b\" ]
-    0 -> 1 [ label = \"-1.0986122886681098\" ]
-    1 -> 2 [ label = \"-0\" ]
-    2 -> 3 [ label = \"-0\" ]
-    3 -> 4 [ label = \"-0\" ]
-    4 -> 5 [ label = \"-0\" ]
-    0 -> 6 [ label = \"-1.0986122886681098\" ]
-    6 -> 7 [ label = \"-0.6931471805599453\" ]
-    7 -> 8 [ label = \"-0\" ]
-    8 -> 9 [ label = \"-0\" ]
-    6 -> 10 [ label = \"-0.6931471805599453\" ]
-    10 -> 11 [ label = \"-0\" ]
+    0 -> 1 [ label = \"-1.791759469228055\" ]
+    1 -> 2 [ label = \"0\" ]
+    2 -> 3 [ label = \"0\" ]
+    3 -> 4 [ label = \"0\" ]
+    4 -> 5 [ label = \"0\" ]
+    0 -> 6 [ label = \"-0.6931471805599452\" ]
+    6 -> 7 [ label = \"-1.0986122886681098\" ]
+    7 -> 8 [ label = \"0\" ]
+    8 -> 9 [ label = \"0\" ]
+    6 -> 10 [ label = \"-0.4054651081081645\" ]
+    10 -> 11 [ label = \"0\" ]
     11 -> 12 [ label = \"-0.6931471805599453\" ]
-    12 -> 13 [ label = \"-0\" ]
-    0 -> 14 [ label = \"-1.0986122886681098\" ]
+    12 -> 13 [ label = \"0\" ]
+    0 -> 14 [ label = \"-1.0986122886681096\" ]
     14 -> 15 [ label = \"-0.6931471805599453\" ]
-    15 -> 16 [ label = \"-0\" ]
-    16 -> 17 [ label = \"-0\" ]
-    17 -> 18 [ label = \"-0\" ]
+    15 -> 16 [ label = \"0\" ]
+    16 -> 17 [ label = \"0\" ]
+    17 -> 18 [ label = \"0\" ]
     11 -> 19 [ label = \"-0.6931471805599453\" ]
-    19 -> 20 [ label = \"-0\" ]
+    19 -> 20 [ label = \"0\" ]
     14 -> 21 [ label = \"-0.6931471805599453\" ]
-    21 -> 22 [ label = \"-0\" ]
-    22 -> 23 [ label = \"-0\" ]
-    23 -> 24 [ label = \"-0\" ]
+    21 -> 22 [ label = \"0\" ]
+    22 -> 23 [ label = \"0\" ]
+    23 -> 24 [ label = \"0\" ]
 }
 ",
             format!("{}", Dot::new(&lex.graph))

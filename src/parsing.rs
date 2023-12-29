@@ -1,5 +1,6 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
 use crate::Direction;
+use anyhow::Result;
 use beam::Beam;
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
@@ -177,8 +178,8 @@ fn unmerge<
     child_node: NodeIndex,
     child_prob: f64,
     rule_prob: f64,
-) {
-    let complement = lexicon.find_category(cat.clone()).unwrap();
+) -> Result<()> {
+    let complement = lexicon.find_category(cat.clone())?;
     beam.queue.push(Reverse(ParseMoment {
         tree: FutureTree {
             node: complement,
@@ -212,6 +213,7 @@ fn unmerge<
     beam.top_id += 2;
     beam.steps += 1;
     v.push(beam);
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -285,8 +287,8 @@ fn unmove<
     child_node: NodeIndex,
     child_prob: f64,
     rule_prob: f64,
-) {
-    let stored = lexicon.find_licensee(cat.clone()).unwrap();
+) -> Result<()> {
+    let stored = lexicon.find_licensee(cat.clone())?;
 
     beam.queue.push(Reverse(ParseMoment {
         tree: FutureTree {
@@ -313,6 +315,7 @@ fn unmove<
     beam.top_id += 2;
     beam.steps += 1;
     v.push(beam);
+    Ok(())
 }
 
 pub fn expand_generate<
@@ -366,7 +369,8 @@ pub fn expand_generate<
                     } else {
                         0_f64
                     };
-                    unmerge(
+                    //Right now we just ignore the error, it means no beam will be added.
+                    let _ = unmerge(
                         &mut v, lexicon, moment, beam, cat, dir, child_node, child_prob, rule_prob,
                     );
                 }
@@ -386,7 +390,7 @@ pub fn expand_generate<
                     } else {
                         0_f64
                     };
-                    unmove(
+                    let _ = unmove(
                         &mut v, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
                     );
                 }
@@ -442,7 +446,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                     } else {
                         0_f64
                     };
-                    unmerge(
+                    let _ = unmerge(
                         &mut v, lexicon, &moment, beam, cat, dir, child_node, child_prob, rule_prob,
                     );
                 }
@@ -462,7 +466,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                     } else {
                         0_f64
                     };
-                    unmove(
+                    let _ = unmove(
                         &mut v, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,
                     );
                 }

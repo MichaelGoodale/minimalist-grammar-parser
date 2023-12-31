@@ -481,7 +481,6 @@ mod tests {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
-        println!("{}", Dot::new(&lex.graph));
         assert_ne!(lex, lex_2);
         assert_eq!(
             "digraph {

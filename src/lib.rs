@@ -76,8 +76,8 @@ where
                         moment,
                         beam,
                         self.lexicon,
-                        self.merge_log_prob,
                         self.move_log_prob,
+                        self.merge_log_prob,
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),
@@ -96,6 +96,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
@@ -141,8 +142,8 @@ where
                         &moment,
                         beam,
                         self.lexicon,
-                        self.merge_log_prob,
                         self.move_log_prob,
+                        self.merge_log_prob,
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),

@@ -5,7 +5,7 @@ use crate::{
     grammars::SIMPLESTABLER2011,
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, f64::consts::LN_2};
 
 use super::*;
 
@@ -165,51 +165,48 @@ fn generation() -> Result<()> {
     let mut x = vec![
         (
             -2.0794415416798357,
-            vec!["the", "queen", "likes", "the", "king"],
+            ["the", "king", "likes", "the", "queen"],
+        ),
+        (-2.0794415416798357, ["the", "king", "likes", "the", "king"]),
+        (
+            -2.0794415416798357,
+            ["the", "queen", "likes", "the", "king"],
         ),
         (
             -2.0794415416798357,
-            vec!["the", "queen", "likes", "the", "queen"],
-        ),
-        (
-            -2.0794415416798357,
-            vec!["the", "king", "likes", "the", "king"],
-        ),
-        (
-            -2.0794415416798357,
-            vec!["the", "king", "likes", "the", "queen"],
+            ["the", "queen", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            vec!["which", "queen", "likes", "the", "king"],
+            ["which", "king", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            vec!["which", "king", "likes", "the", "king"],
+            ["which", "queen", "likes", "the", "king"],
         ),
         (
             -2.772588722239781,
-            vec!["which", "king", "likes", "the", "queen"],
+            ["which", "queen", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            vec!["which", "queen", "likes", "the", "queen"],
+            ["which", "king", "likes", "the", "king"],
         ),
         (
-            -2.772588722239781,
-            vec!["which", "king", "the", "king", "likes"],
+            -3.4657359027997265,
+            ["which", "queen", "the", "queen", "likes"],
         ),
         (
-            -2.772588722239781,
-            vec!["which", "king", "the", "queen", "likes"],
+            -3.4657359027997265,
+            ["which", "king", "the", "queen", "likes"],
         ),
         (
-            -2.772588722239781,
-            vec!["which", "queen", "the", "queen", "likes"],
+            -3.4657359027997265,
+            ["which", "king", "the", "king", "likes"],
         ),
         (
-            -2.772588722239781,
-            vec!["which", "queen", "the", "king", "likes"],
+            -3.4657359027997265,
+            ["which", "queen", "the", "king", "likes"],
         ),
     ];
 
@@ -316,5 +313,46 @@ fn capped_beams() -> Result<()> {
     .take(50)
     .collect();
     assert_eq!(g, vec![]);
+    Ok(())
+}
+
+#[test]
+fn proper_distributions() -> Result<()> {
+    let lexicon = ["a::1= +3 0", "a::1= 1", "ε::1 -3"];
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?,
+    );
+    let v = vec![
+        (-LN_2, vec!["a"]),
+        (-1.3862943611198906, vec!["a", "a"]),
+        (-2.0794415416798357, vec!["a", "a", "a"]),
+        (-2.772588722239781, vec!["a", "a", "a", "a"]),
+        (-3.4657359027997265, vec!["a", "a", "a", "a", "a"]),
+        (-4.1588830833596715, vec!["a", "a", "a", "a", "a", "a"]),
+        (-4.852030263919617, vec!["a", "a", "a", "a", "a", "a", "a"]),
+        (
+            -5.545177444479562,
+            vec!["a", "a", "a", "a", "a", "a", "a", "a"],
+        ),
+    ];
+
+    let g: Vec<_> = Generator::new(
+        &lexicon,
+        '0',
+        &ParsingConfig {
+            min_log_prob: -128.0,
+            move_prob: 0.5,
+            max_steps: 100,
+            max_beams: 50,
+        },
+    )?
+    .take(8)
+    .map(|(p, s, _)| (p, s))
+    .collect();
+
+    assert_eq!(v, g);
     Ok(())
 }

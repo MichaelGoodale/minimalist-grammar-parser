@@ -349,6 +349,7 @@ pub fn expand_generate<
         .zip(new_beams)
         .flat_map(move |((child_node, (child, child_prob)), beam)| {
             let mut v: Vec<_> = vec![];
+            let old_len = v.len();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
                     reverse_scan(&mut v, moment, beam, s, child_node, child_prob);
@@ -364,7 +365,7 @@ pub fn expand_generate<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 1 {
+                    let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
                         0_f64
@@ -385,7 +386,7 @@ pub fn expand_generate<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 1 {
+                    let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
                         0_f64
@@ -426,6 +427,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
         .zip(new_beams)
         .flat_map(move |((child_node, (child, child_prob)), beam)| {
             let mut v: Vec<_> = vec![];
+            let old_len = v.len();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
                     scan(&mut v, &moment, beam, &s.as_ref(), child_node, child_prob);
@@ -441,7 +443,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 1 {
+                    let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
                         0_f64
@@ -461,7 +463,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 1 {
+                    let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
                         0_f64

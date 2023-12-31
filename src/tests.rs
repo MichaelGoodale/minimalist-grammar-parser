@@ -5,14 +5,13 @@ use crate::{
     grammars::SIMPLESTABLER2011,
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
-use std::{collections::HashSet, f64::consts::LN_2};
+use std::collections::HashSet;
 
 use super::*;
 
 const CONFIG: ParsingConfig = ParsingConfig {
     min_log_prob: -256.0,
-    merge_log_prob: -LN_2,
-    move_log_prob: -LN_2,
+    move_prob: 0.5,
     max_steps: 100,
     max_beams: 1000,
 };
@@ -156,8 +155,7 @@ fn generation() -> Result<()> {
         'C',
         &ParsingConfig {
             min_log_prob: -64.0,
-            merge_log_prob: -LN_2,
-            move_log_prob: -LN_2,
+            move_prob: 0.5,
             max_steps: 100,
             max_beams: 1000,
         },
@@ -310,8 +308,7 @@ fn capped_beams() -> Result<()> {
         'c',
         &ParsingConfig {
             min_log_prob: -128.0,
-            merge_log_prob: -LN_2,
-            move_log_prob: -LN_2,
+            move_prob: 0.5,
             max_steps: 100,
             max_beams,
         },

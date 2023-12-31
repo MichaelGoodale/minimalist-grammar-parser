@@ -24,8 +24,7 @@ impl Direction {
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct ParsingConfig {
     pub min_log_prob: f64,
-    pub merge_log_prob: f64,
-    pub move_log_prob: f64,
+    pub move_prob: f64,
     pub max_steps: usize,
     pub max_beams: usize,
 }
@@ -34,6 +33,8 @@ pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + st
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
     parse_heap: MinMaxHeap<Beam<&'a T>>,
+    move_log_prob: f64,
+    merge_log_prob: f64,
 }
 
 impl<'a, T, Category> Parser<'a, T, Category>
@@ -52,6 +53,8 @@ where
         parse_heap.push(Beam::new(lexicon, initial_category, sentence)?);
         Ok(Parser {
             lexicon,
+            move_log_prob: config.move_prob.ln(),
+            merge_log_prob: (1.0 - config.move_prob).ln(),
             config,
             parse_heap,
         })
@@ -73,8 +76,8 @@ where
                         moment,
                         beam,
                         self.lexicon,
-                        self.config.merge_log_prob,
-                        self.config.move_log_prob,
+                        self.merge_log_prob,
+                        self.move_log_prob,
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),
@@ -97,6 +100,8 @@ pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone +
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
     parse_heap: MinMaxHeap<Beam<T>>,
+    move_log_prob: f64,
+    merge_log_prob: f64,
 }
 
 impl<'a, T, Category> Generator<'a, T, Category>
@@ -113,6 +118,8 @@ where
         parse_heap.push(Beam::new_empty(lexicon, initial_category)?);
         Ok(Generator {
             lexicon,
+            move_log_prob: config.move_prob.ln(),
+            merge_log_prob: (1.0 - config.move_prob).ln(),
             config,
             parse_heap,
         })
@@ -134,8 +141,8 @@ where
                         &moment,
                         beam,
                         self.lexicon,
-                        self.config.merge_log_prob,
-                        self.config.move_log_prob,
+                        self.merge_log_prob,
+                        self.move_log_prob,
                     )
                     .filter(|b| b.log_probability > self.config.min_log_prob)
                     .filter(|b| b.steps < self.config.max_steps),

@@ -136,12 +136,10 @@ mod tests {
     use crate::{Parser, ParsingConfig};
     use anyhow::Result;
     use petgraph::dot::Dot;
-    use std::f64::consts::LN_2;
 
     const CONFIG: ParsingConfig = ParsingConfig {
         min_log_prob: -64.0,
-        merge_log_prob: -LN_2,
-        move_log_prob: -LN_2,
+        move_prob: 0.5,
         max_steps: 10000,
         max_beams: 100,
     };

@@ -248,7 +248,11 @@ fn copy_language() -> anyhow::Result<()> {
         .take(strings.len())
         .map(|(_, s, _)| s)
         .collect();
+
     assert_eq!(generated, strings);
+    for s in strings.iter() {
+        Parser::new(&lex, 'T', s, &CONFIG)?.next().unwrap();
+    }
     let rules = Generator::new(&lex, 'T', &CONFIG)?
         .take(1)
         .last()
@@ -338,6 +342,23 @@ fn proper_distributions() -> Result<()> {
             vec!["a", "a", "a", "a", "a", "a", "a", "a"],
         ),
     ];
+
+    for (prob, s) in v.iter() {
+        let (p, _) = Parser::new(
+            &lexicon,
+            '0',
+            s,
+            &ParsingConfig {
+                min_log_prob: -128.0,
+                move_prob: 0.5,
+                max_steps: 100,
+                max_beams: 50,
+            },
+        )?
+        .next()
+        .unwrap();
+        assert_eq!(p, *prob);
+    }
 
     let g: Vec<_> = Generator::new(
         &lexicon,

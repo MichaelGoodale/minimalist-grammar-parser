@@ -1,10 +1,6 @@
 use crate::Direction;
 use anyhow::{bail, Context, Result};
-use petgraph::{
-    graph::DiGraph,
-    graph::NodeIndex,
-    visit::{EdgeRef, IntoNodeReferences},
-};
+use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use std::fmt::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -228,8 +224,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     pub fn find_category(&self, category: Category) -> Result<NodeIndex> {
         let category = FeatureOrLemma::Feature(Feature::Category(category));
         self.graph
-            .node_references()
-            .find_map(|(i, x)| if *x == category { Some(i) } else { None })
+            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
+            .find(|i| self.graph[*i] == category)
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 
@@ -288,6 +284,17 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
             .map(|e| e.target())
+    }
+}
+
+impl<T, Category> std::fmt::Display for Lexicon<T, Category>
+where
+    T: Eq,
+    Category: Eq,
+    FeatureOrLemma<T, Category>: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", petgraph::dot::Dot::new(&self.graph))
     }
 }
 

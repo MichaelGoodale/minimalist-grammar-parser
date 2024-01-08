@@ -319,6 +319,36 @@ fn capped_beams() -> Result<()> {
     assert_eq!(g, vec![]);
     Ok(())
 }
+#[test]
+fn simple_movement() -> Result<()> {
+    let lexicon = [
+        "john::d -k",
+        "will::v= +k t",
+        "eat::d= d= v",
+        "the::n= d",
+        "cake::n",
+    ];
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?,
+    );
+    let v: Vec<_> = Generator::new(&lexicon, 't', &CONFIG)?
+        .take(50)
+        .map(|(_, s, _)| s)
+        .collect();
+    assert_eq!(v, vec![["john", "will", "eat", "the", "cake"]]);
+    Parser::new(
+        &lexicon,
+        't',
+        &["john", "will", "eat", "the", "cake"],
+        &CONFIG,
+    )?
+    .next()
+    .unwrap();
+    Ok(())
+}
 
 #[test]
 fn proper_distributions() -> Result<()> {

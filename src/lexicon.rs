@@ -1,6 +1,10 @@
 use crate::Direction;
 use anyhow::{bail, Context, Result};
-use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
+use petgraph::{
+    graph::DiGraph,
+    graph::NodeIndex,
+    visit::{EdgeRef, IntoNodeReferences},
+};
 use std::fmt::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -274,6 +278,20 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         None
     }
 
+    pub fn categories(&self) -> impl Iterator<Item = &Category> {
+        self.graph.node_references().filter_map(|(_, x)| match x {
+            FeatureOrLemma::Feature(Feature::Category(x)) => Some(x),
+            _ => None,
+        })
+    }
+
+    pub fn licensors(&self) -> impl Iterator<Item = &Category> {
+        self.graph.node_references().filter_map(|(_, x)| match x {
+            FeatureOrLemma::Feature(Feature::Licensor(x)) => Some(x),
+            _ => None,
+        })
+    }
+
     pub fn n_children(&self, nx: NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
@@ -338,6 +356,8 @@ impl std::fmt::Display for FeatureOrLemma<&str, char> {
 
 #[cfg(test)]
 mod tests {
+
+    use std::collections::HashSet;
 
     use anyhow::Result;
 
@@ -482,6 +502,10 @@ mod tests {
 }
 "
         );
+        let n_categories = lex.categories().collect::<HashSet<_>>().len();
+        assert_eq!(4, n_categories);
+        let n_licensors = lex.licensors().collect::<HashSet<_>>().len();
+        assert_eq!(1, n_licensors);
 
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -544,6 +568,10 @@ mod tests {
 ",
             format!("{}", Dot::new(&lex.graph))
         );
+        let n_categories = lex.categories().collect::<HashSet<_>>().len();
+        assert_eq!(3, n_categories);
+        let n_licensors = lex.licensors().collect::<HashSet<_>>().len();
+        assert_eq!(2, n_licensors);
         Ok(())
     }
 }

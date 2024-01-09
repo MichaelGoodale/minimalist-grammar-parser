@@ -161,6 +161,13 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         Ok(v)
     }
 
+    pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
+        self.leaves.iter().filter_map(|x| match &self.graph[*x] {
+            FeatureOrLemma::Lemma(x) => Some(x),
+            _ => None,
+        })
+    }
+
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
         let n_items = items.len();
         Self::new_with_weights(items, std::iter::repeat(1.0).take(n_items).collect())
@@ -506,6 +513,25 @@ mod tests {
         assert_eq!(4, n_categories);
         let n_licensors = lex.licensors().collect::<HashSet<_>>().len();
         assert_eq!(1, n_licensors);
+        let mut lemmas: Vec<_> = lex.lemmas().collect();
+        lemmas.sort();
+        assert_eq!(
+            lemmas,
+            vec![
+                &None,
+                &None,
+                &Some("beer"),
+                &Some("drinks"),
+                &Some("king"),
+                &Some("knows"),
+                &Some("prefers"),
+                &Some("queen"),
+                &Some("says"),
+                &Some("the"),
+                &Some("which"),
+                &Some("wine")
+            ]
+        );
 
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')

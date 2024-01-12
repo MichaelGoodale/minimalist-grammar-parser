@@ -112,7 +112,7 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
     root: NodeIndex,
-    leaves: Vec<NodeIndex>,
+    leaves: Vec<(NodeIndex, f64)>,
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
@@ -137,14 +137,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
     pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
         let mut v = vec![];
-        for leaf in self.leaves.iter() {
-            let weight = *self
-                .graph
-                .edges_directed(*leaf, petgraph::Direction::Incoming)
-                .next()
-                .unwrap()
-                .weight();
-
+        for (leaf, weight) in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut features = vec![];
                 let mut nx = *leaf;
@@ -162,7 +155,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                         lemma: lemma.as_ref().cloned(),
                         features,
                     },
-                    weight,
+                    *weight,
                 ))
             } else {
                 bail!("Bad lexicon!");
@@ -172,10 +165,12 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
-        self.leaves.iter().filter_map(|x| match &self.graph[*x] {
-            FeatureOrLemma::Lemma(x) => Some(x),
-            _ => None,
-        })
+        self.leaves
+            .iter()
+            .filter_map(|(x, _w)| match &self.graph[*x] {
+                FeatureOrLemma::Lemma(x) => Some(x),
+                _ => None,
+            })
     }
 
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
@@ -209,7 +204,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 };
 
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
-                    leaves.push(node_index);
+                    leaves.push((node_index, weight));
                 };
             }
         }
@@ -451,7 +446,8 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
 
         let lex = Lexicon::new(v);
-        for (lex, _weight) in lex.lexemes()? {
+        for (lex, weight) in lex.lexemes()? {
+            assert_eq!(weight, 1.0);
             assert!(
                 strings.contains(&format!("{}", lex).as_str())
                     || strings.contains(&format!("{}", lex).replace('ε', "").as_str())

@@ -135,9 +135,16 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
-    pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
+    pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
         let mut v = vec![];
         for leaf in self.leaves.iter() {
+            let weight = *self
+                .graph
+                .edges_directed(*leaf, petgraph::Direction::Incoming)
+                .next()
+                .unwrap()
+                .weight();
+
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut features = vec![];
                 let mut nx = *leaf;
@@ -150,10 +157,13 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     nx = parent;
                 }
 
-                v.push(LexicalEntry {
-                    lemma: lemma.as_ref().cloned(),
-                    features,
-                })
+                v.push((
+                    LexicalEntry {
+                        lemma: lemma.as_ref().cloned(),
+                        features,
+                    },
+                    weight,
+                ))
             } else {
                 bail!("Bad lexicon!");
             }
@@ -441,13 +451,19 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
 
         let lex = Lexicon::new(v);
-        for lex in lex.lexemes()? {
+        for (lex, _weight) in lex.lexemes()? {
             assert!(
                 strings.contains(&format!("{}", lex).as_str())
                     || strings.contains(&format!("{}", lex).replace('ε', "").as_str())
             )
         }
-        let lex_2 = Lexicon::new(lex.lexemes().unwrap());
+        let lex_2 = Lexicon::new(
+            lex.lexemes()
+                .unwrap()
+                .into_iter()
+                .map(|(word, _weight)| word)
+                .collect::<Vec<_>>(),
+        );
         assert_eq!(lex, lex_2);
 
         assert_eq!(

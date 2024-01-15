@@ -389,7 +389,7 @@ mod tests {
         let lex = Lexicon::new(v);
 
         assert_eq!(vec![&'C'], lex.categories().collect::<Vec<_>>());
-        let mut lice = lex.licensors().collect::<Vec<_>>();
+        let mut lice = lex.licensor_types().collect::<Vec<_>>();
         lice.sort();
         assert_eq!(vec![&'W', &'Z'], lice);
         Ok(())
@@ -544,7 +544,7 @@ mod tests {
         );
         let n_categories = lex.categories().collect::<HashSet<_>>().len();
         assert_eq!(4, n_categories);
-        let n_licensors = lex.licensors().collect::<HashSet<_>>().len();
+        let n_licensors = lex.licensor_types().collect::<HashSet<_>>().len();
         assert_eq!(1, n_licensors);
         let mut lemmas: Vec<_> = lex.lemmas().collect();
         lemmas.sort();
@@ -629,7 +629,7 @@ mod tests {
         );
         let n_categories = lex.categories().collect::<HashSet<_>>().len();
         assert_eq!(3, n_categories);
-        let n_licensors = lex.licensors().collect::<HashSet<_>>().len();
+        let n_licensors = lex.licensor_types().collect::<HashSet<_>>().len();
         assert_eq!(2, n_licensors);
         Ok(())
     }

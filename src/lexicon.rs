@@ -164,6 +164,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         Ok(v)
     }
 
+    pub fn size(&self) -> usize {
+        self.graph.node_count()
+    }
+
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
         self.leaves
             .iter()

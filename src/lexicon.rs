@@ -297,9 +297,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
-    pub fn licensors(&self) -> impl Iterator<Item = &Category> {
+    pub fn licensor_types(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
-            FeatureOrLemma::Feature(Feature::Licensor(x)) => Some(x),
+            FeatureOrLemma::Feature(Feature::Licensor(x))
+            | FeatureOrLemma::Feature(Feature::Licensee(x)) => Some(x),
             _ => None,
         })
     }
@@ -376,6 +377,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn categories() -> Result<()> {
+        let g: &str = "::V= +Z C -W";
+
+        let strings: Vec<&str> = g.split('\n').collect();
+        let v: Vec<_> = strings
+            .iter()
+            .copied()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()?;
+        let lex = Lexicon::new(v);
+
+        assert_eq!(vec![&'C'], lex.categories().collect::<Vec<_>>());
+        let mut lice = lex.licensors().collect::<Vec<_>>();
+        lice.sort();
+        assert_eq!(vec![&'W', &'Z'], lice);
+        Ok(())
+    }
+
+    #[test]
     fn parsing() {
         assert_eq!(
             SimpleLexicalEntry::parse("John::d").unwrap(),
@@ -436,6 +456,7 @@ mod tests {
 
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use petgraph::dot::Dot;
+
     #[test]
     fn initialize_lexicon() -> anyhow::Result<()> {
         let strings: Vec<&str> = STABLER2011.split('\n').collect();

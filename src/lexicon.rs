@@ -180,7 +180,6 @@ impl<
         let mut lemma_costs: u16 = 0;
 
         for (leaf, _weight) in self.leaves.iter() {
-            println!("{:?}", self.graph[*leaf]);
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut nx = *leaf;
                 let lemma_cost: u16 = if let Some(lemma) = lemma {
@@ -194,7 +193,6 @@ impl<
                     if parent == self.root {
                         break;
                     } else if let FeatureOrLemma::Feature(f) = &self.graph[parent] {
-                        println!("{:?}", f);
                         category_symbols.insert(match f {
                             Feature::Category(c) | Feature::Licensor(c) | Feature::Licensee(c) => c,
                             Feature::Selector(c, _d) => c,

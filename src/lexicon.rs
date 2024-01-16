@@ -155,6 +155,12 @@ impl SymbolCost for char {
     }
 }
 
+impl SymbolCost for u8 {
+    fn symbol_cost(&self) -> Result<u16> {
+        Ok(1)
+    }
+}
+
 ///Number of types of features, e.g. the space of possible features in [``Feature``] enum.
 ///Here it is five to account for left and right attachment.
 const MG_TYPES: u16 = 5;

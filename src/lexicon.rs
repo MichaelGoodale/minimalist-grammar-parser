@@ -1,11 +1,12 @@
 use crate::Direction;
+use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
 use petgraph::{
     graph::DiGraph,
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature<Category: Eq> {
@@ -134,6 +135,84 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 {
 }
 
+pub trait SymbolCost {
+    ///This is the length of a member where each sub-unit has [``n_phonemes``] possible encodings.
+    /// # Example
+    /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``mdl_score``].
+    /// The string, abcabc should have symbol_cost 6.
+    fn symbol_cost(&self) -> Result<u16>;
+}
+
+impl SymbolCost for &str {
+    fn symbol_cost(&self) -> Result<u16> {
+        Ok(self.len().try_into()?)
+    }
+}
+
+impl SymbolCost for char {
+    fn symbol_cost(&self) -> Result<u16> {
+        Ok(1)
+    }
+}
+
+///Number of types of features, e.g. the space of possible features in [``Feature``] enum.
+///Here it is five to account for left and right attachment.
+const MG_TYPES: u16 = 5;
+
+impl<
+        T: Eq + std::fmt::Debug + Clone + SymbolCost,
+        Category: Eq + std::fmt::Debug + Clone + Hash,
+    > Lexicon<T, Category>
+{
+    ///Returns the MDL Score of the lexicon as per Ermolaeva 2021
+    ///
+    /// # Arguments
+    /// * `n_phonemes` - The size of required to encode a symbol of the phonology. E.g.
+    /// in English orthography, it would be 26.
+    pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64> {
+        let mut category_symbols = AHashSet::new();
+        let mut lemma_costs: u16 = 0;
+
+        for (leaf, _weight) in self.leaves.iter() {
+            println!("{:?}", self.graph[*leaf]);
+            if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
+                let mut nx = *leaf;
+                let lemma_cost: u16 = if let Some(lemma) = lemma {
+                    lemma.symbol_cost()?
+                } else {
+                    0
+                };
+
+                let mut n_features = 0;
+                while let Some(parent) = self.parent_of(nx) {
+                    if parent == self.root {
+                        break;
+                    } else if let FeatureOrLemma::Feature(f) = &self.graph[parent] {
+                        println!("{:?}", f);
+                        category_symbols.insert(match f {
+                            Feature::Category(c) | Feature::Licensor(c) | Feature::Licensee(c) => c,
+                            Feature::Selector(c, _d) => c,
+                        });
+                        n_features += 1;
+                    }
+                    nx = parent;
+                }
+
+                lemma_costs += lemma_cost + 2 * n_features + 1;
+            } else {
+                bail!("Bad lexicon!");
+            }
+        }
+        let n_categories: u16 = category_symbols.len().try_into()?;
+        let symbol_cost: f64 = (MG_TYPES + n_categories + n_phonemes + 1).try_into()?;
+        let symbol_cost = symbol_cost.log2();
+
+        let lemma_costs: f64 = lemma_costs.try_into()?;
+
+        Ok(lemma_costs * symbol_cost)
+    }
+}
+
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
     pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
         let mut v = vec![];
@@ -162,10 +241,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             }
         }
         Ok(v)
-    }
-
-    pub fn size(&self) -> usize {
-        self.graph.node_count()
     }
 
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
@@ -377,6 +452,7 @@ mod tests {
     use std::collections::HashSet;
 
     use anyhow::Result;
+    use approx::assert_relative_eq;
 
     use super::*;
 
@@ -635,6 +711,35 @@ mod tests {
         assert_eq!(3, n_categories);
         let n_licensors = lex.licensor_types().collect::<HashSet<_>>().len();
         assert_eq!(2, n_licensors);
+        Ok(())
+    }
+
+    #[test]
+    fn mdl_score_test() -> Result<()> {
+        let ga: &str = "mary::d -k
+laughs::=d +k t
+laughed::=d +k t
+jumps::=d +k t
+jumped::=d +k t";
+        let gb: &str = "mary::d -k
+laugh::=d v
+jump::=d v
+s::=v +k t
+ed::=v +k t";
+        for (g, n_categories, size) in [(ga, 3, 61_f64), (gb, 4, 45_f64)] {
+            let strings: Vec<&str> = g.split('\n').collect();
+            let v: Vec<_> = strings
+                .iter()
+                .copied()
+                .map(SimpleLexicalEntry::parse)
+                .collect::<Result<Vec<_>>>()?;
+            let lex = Lexicon::new(v);
+            for alphabet_size in [26, 32, 37] {
+                let bit_per_symbol: f64 =
+                    (MG_TYPES + n_categories + alphabet_size + 1).try_into()?;
+                assert_relative_eq!(lex.mdl_score(alphabet_size)?, size * bit_per_symbol.log2());
+            }
+        }
         Ok(())
     }
 }

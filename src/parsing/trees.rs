@@ -1,6 +1,7 @@
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
+use thin_vec::ThinVec;
 use tinyvec::TinyVec;
 
 impl Default for Direction {
@@ -49,7 +50,7 @@ impl Ord for FutureTree {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseMoment {
     pub tree: FutureTree,
-    pub movers: Vec<FutureTree>,
+    pub movers: ThinVec<FutureTree>,
 }
 
 impl ParseMoment {

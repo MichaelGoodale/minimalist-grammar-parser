@@ -6,7 +6,7 @@ use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use tinyvec::tiny_vec;
+use thin_vec::thin_vec;
 
 pub trait Beam<T>: Sized {
     fn log_probability(&self) -> &LogProb<f64>;
@@ -151,7 +151,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
                 index: GornIndex::default(),
                 id: 0,
             },
-            movers: vec![],
+            movers: thin_vec![],
         }));
 
         Ok(ParseBeam {
@@ -277,7 +277,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
                 index: GornIndex::default(),
                 id: 0,
             },
-            movers: vec![],
+            movers: thin_vec![],
         }));
 
         Ok(GeneratorBeam {

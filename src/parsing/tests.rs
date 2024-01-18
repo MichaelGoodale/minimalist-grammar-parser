@@ -2,6 +2,7 @@ use super::trees::{FutureTree, GornIndex, ParseMoment};
 use crate::Direction;
 use anyhow::Result;
 use petgraph::graph::NodeIndex;
+use thin_vec::thin_vec;
 use tinyvec::tiny_vec;
 
 #[test]
@@ -32,7 +33,7 @@ fn index_order() -> Result<()> {
                 index: tiny_vec!(Direction::Left, Direction::Right),
             },
         },
-        movers: vec![FutureTree {
+        movers: thin_vec![FutureTree {
             node: NodeIndex::new(0),
             id: 0,
             index: GornIndex {

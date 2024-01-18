@@ -4,7 +4,7 @@ use anyhow::Result;
 use beam::Beam;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use tinyvec::{tiny_vec, TinyVec};
+use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, ParseMoment};
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
@@ -40,8 +40,8 @@ pub enum Rule {
     },
 }
 
-fn clone_push<T: Clone + Default>(v: &[T], x: T) -> Vec<T> {
-    let mut v = v.to_vec();
+fn clone_push<T: Clone + Default>(v: &[T], x: T) -> ThinVec<T> {
+    let mut v: ThinVec<T> = ThinVec::from(v);
     v.push(x);
     v
 }
@@ -74,7 +74,7 @@ fn unmerge_from_mover<
                             index: moment.tree.index.clone(),
                             id: beam.top_id() + 1,
                         },
-                        movers: vec![],
+                        movers: thin_vec![],
                     });
                     beam.push_moment(ParseMoment {
                         tree: FutureTree {
@@ -134,7 +134,7 @@ fn unmerge<
         },
         movers: match dir {
             Direction::Right => moment.movers.clone(),
-            Direction::Left => vec![],
+            Direction::Left => thin_vec![],
         },
     });
     beam.push_moment(ParseMoment {
@@ -144,7 +144,7 @@ fn unmerge<
             id: beam.top_id() + 2,
         },
         movers: match dir {
-            Direction::Right => vec![],
+            Direction::Right => thin_vec![],
             Direction::Left => moment.movers.clone(),
         },
     });

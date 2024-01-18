@@ -15,6 +15,7 @@ pub struct GornIndex {
 }
 
 impl GornIndex {
+    #[inline]
     pub fn clone_push(&self, d: Direction) -> Self {
         let mut v = self.clone();
         v.index.push(d);
@@ -22,7 +23,7 @@ impl GornIndex {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FutureTree {
     pub node: NodeIndex,
     pub index: GornIndex,

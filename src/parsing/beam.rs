@@ -6,6 +6,7 @@ use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use tinyvec::tiny_vec;
 
 pub trait Beam<T>: Sized {
     fn log_probability(&self) -> &LogProb<f64>;
@@ -142,7 +143,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
         sentence: &'a [T],
     ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
-        let category_index = lexicon.find_category(initial_category)?;
+        let category_index = lexicon.find_category(&initial_category)?;
 
         queue.push(Reverse(ParseMoment {
             tree: FutureTree {
@@ -268,7 +269,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         initial_category: Category,
     ) -> Result<GeneratorBeam<T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
-        let category_index = lexicon.find_category(initial_category)?;
+        let category_index = lexicon.find_category(&initial_category)?;
 
         queue.push(Reverse(ParseMoment {
             tree: FutureTree {

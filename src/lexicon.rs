@@ -324,21 +324,24 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn find_category(&self, category: Category) -> Result<NodeIndex> {
-        let category = FeatureOrLemma::Feature(Feature::Category(category));
+    pub fn find_category(&self, category: &Category) -> Result<NodeIndex> {
         self.graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| self.graph[*i] == category)
+            .find(|i| match &self.graph[*i] {
+                FeatureOrLemma::Feature(Feature::Category(c)) => c == category,
+                _ => false,
+            })
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 
-    pub fn find_licensee(&self, category: Category) -> Result<NodeIndex> {
-        let category = &FeatureOrLemma::Feature(Feature::Licensee(category));
+    pub fn find_licensee(&self, category: &Category) -> Result<NodeIndex> {
         self.graph
-            .edges_directed(self.root, petgraph::Direction::Outgoing)
-            .map(|e| (e.target(), &self.graph[e.target()]))
-            .find_map(move |(i, x)| if x == category { Some(i) } else { None })
-            .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
+            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
+            .find(|i| match &self.graph[*i] {
+                FeatureOrLemma::Feature(Feature::Licensee(c)) => c == category,
+                _ => false,
+            })
+            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 
     pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {

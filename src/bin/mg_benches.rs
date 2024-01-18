@@ -14,7 +14,7 @@ fn main() {
         max_steps: 100,
         max_beams: 1000,
     };
-    for _ in 0..100 {
+    for _ in 0..500 {
         parse_long_sentence(&config);
         parse_copy_language(&config);
         generate_sentence(&config);

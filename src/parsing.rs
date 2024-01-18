@@ -61,8 +61,8 @@ fn unmerge_from_mover<
     child_prob: LogProb<f64>,
     rule_prob: LogProb<f64>,
 ) {
-    for mover_id in 0..moment.movers.len() {
-        for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
+    for mover in moment.movers.iter() {
+        for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
             match stored {
                 FeatureOrLemma::Feature(Feature::Category(stored)) if stored == cat => {
@@ -78,15 +78,14 @@ fn unmerge_from_mover<
                     beam.push_moment(ParseMoment {
                         tree: FutureTree {
                             node: stored_child_node,
-                            index: moment.movers[mover_id].index.clone(),
+                            index: mover.index.clone(),
                             id: beam.top_id() + 2,
                         },
                         movers: moment
                             .movers
                             .iter()
-                            .enumerate()
-                            .filter(|&(i, _v)| i != mover_id)
-                            .map(|(_, v)| v.clone())
+                            .filter(|&v| v != mover)
+                            .cloned()
                             .collect(),
                     });
 
@@ -96,7 +95,7 @@ fn unmerge_from_mover<
                         child_id: beam.top_id() + 1,
                         stored_id: beam.top_id() + 2,
                         parent: moment.tree.id,
-                        storage: moment.movers[mover_id].id,
+                        storage: mover.id,
                     });
                     *beam.top_id_mut() += 2;
                     beam.inc();

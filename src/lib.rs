@@ -162,7 +162,7 @@ where
     }
 }
 
-mod grammars;
+pub mod grammars;
 pub mod lexicon;
 mod parsing;
 pub mod tree_building;

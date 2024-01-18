@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 pub const STABLER2011: &str = "::V= C
 ::V= +W C
 knows::C= =D V
@@ -12,7 +11,6 @@ queen::N
 the::N= D
 which::N= D -W";
 
-#[allow(dead_code)]
 pub const SIMPLESTABLER2011: &str = "::V= C
 ::V= +W C
 likes::D= =D V
@@ -21,7 +19,6 @@ king::N
 the::N= D
 which::N= D -W";
 
-#[allow(dead_code)]
 pub const COPY_LANGUAGE: &str = "::=T +r +l T
 ::T -r -l
 a::=A +l T -l

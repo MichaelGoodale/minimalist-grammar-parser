@@ -7,8 +7,9 @@ use parsing::beam::{GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
+    #[default]
     Left,
     Right,
 }
@@ -50,7 +51,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::new();
-        parse_heap.push(ParseBeam::new(lexicon, initial_category, &sentence)?);
+        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence)?);
         Ok(Parser {
             lexicon,
             move_log_prob: config.move_prob,

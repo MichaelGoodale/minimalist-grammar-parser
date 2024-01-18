@@ -255,7 +255,7 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
     }
 }
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
+impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
     pub fn pop(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)

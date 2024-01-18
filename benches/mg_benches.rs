@@ -8,7 +8,7 @@ use itertools::Itertools;
 use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
-    Parser, ParsingConfig,
+    Generator, Parser, ParsingConfig,
 };
 
 fn get_grammar() -> Lexicon<&'static str, char> {
@@ -42,6 +42,17 @@ fn parse_long_sentence() {
 }
 
 #[divan::bench]
+fn generate_sentence() {
+    let g = divan::black_box(get_grammar());
+    let sentence: Vec<&str> = divan::black_box(
+        "which king knows the queen knows which beer the king drinks"
+            .split(' ')
+            .collect(),
+    );
+    Generator::new(&g, 'C', &CONFIG).unwrap().take(100).count();
+}
+
+#[divan::bench]
 fn parse_copy_language() {
     let (lex, strings) = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
@@ -70,4 +81,21 @@ fn parse_copy_language() {
     for s in strings.iter() {
         Parser::new(&lex, 'T', s, &CONFIG).unwrap().next().unwrap();
     }
+}
+
+#[divan::bench]
+fn generate_copy_language() {
+    let lex = divan::black_box({
+        let v: Vec<_> = COPY_LANGUAGE
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        Lexicon::new(v)
+    });
+
+    Generator::new(&lex, 'T', &CONFIG)
+        .unwrap()
+        .take(100)
+        .count();
 }

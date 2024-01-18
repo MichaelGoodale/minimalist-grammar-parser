@@ -1,10 +1,17 @@
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
+use tinyvec::TinyVec;
+
+impl Default for Direction {
+    fn default() -> Self {
+        Direction::Left
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Default)]
 pub struct GornIndex {
-    pub index: Vec<Direction>,
+    pub index: TinyVec<[Direction; 5]>,
 }
 
 impl GornIndex {

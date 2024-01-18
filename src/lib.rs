@@ -4,8 +4,8 @@ use lexicon::Lexicon;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use parsing::beam::{GeneratorBeam, ParseBeam};
+use parsing::expand;
 use parsing::Rule;
-use parsing::{expand_generate, expand_parse};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Direction {
@@ -72,7 +72,7 @@ where
         while let Some(mut beam) = self.parse_heap.pop_max() {
             if let Some(moment) = beam.pop() {
                 self.parse_heap.extend(
-                    expand_parse(
+                    expand(
                         moment,
                         beam,
                         self.lexicon,
@@ -138,8 +138,8 @@ where
         while let Some(mut beam) = self.parse_heap.pop_max() {
             if let Some(moment) = beam.pop() {
                 self.parse_heap.extend(
-                    expand_generate(
-                        &moment,
+                    expand(
+                        moment,
                         beam,
                         self.lexicon,
                         self.move_log_prob,

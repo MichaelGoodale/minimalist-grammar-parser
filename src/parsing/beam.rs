@@ -3,10 +3,11 @@ use super::Rule;
 use crate::lexicon::Lexicon;
 use anyhow::Result;
 use logprob::LogProb;
+use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-pub trait Beam<T> {
+pub trait Beam<T>: Sized {
     fn log_probability(&self) -> &LogProb<f64>;
 
     fn log_probability_mut(&mut self) -> &mut LogProb<f64>;
@@ -14,6 +15,15 @@ pub trait Beam<T> {
     fn push_moment(&mut self, x: ParseMoment);
 
     fn push_rule(&mut self, x: Rule);
+
+    fn scan(
+        v: &mut Vec<Self>,
+        moment: &ParseMoment,
+        beam: Self,
+        s: &Option<T>,
+        child_node: NodeIndex,
+        child_prob: LogProb<f64>,
+    );
 
     fn inc(&mut self);
 
@@ -57,7 +67,10 @@ impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
     }
 }
 
-impl<T> Beam<T> for ParseBeam<'_, T> {
+impl<T> Beam<T> for ParseBeam<'_, T>
+where
+    T: std::cmp::PartialEq,
+{
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -84,6 +97,33 @@ impl<T> Beam<T> for ParseBeam<'_, T> {
 
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
+    }
+
+    fn scan(
+        v: &mut Vec<Self>,
+        moment: &ParseMoment,
+        mut beam: Self,
+        s: &Option<T>,
+        child_node: NodeIndex,
+        child_prob: LogProb<f64>,
+    ) {
+        let should_push = match s {
+            Some(s) if *s == beam.sentence[beam.sentence_position] => {
+                beam.sentence_position += 1;
+                true
+            }
+            None => true,
+            _ => false,
+        };
+        if should_push {
+            beam.log_probability += child_prob;
+            beam.rules.push(Rule::Scan {
+                node: child_node,
+                parent: moment.tree.id,
+            });
+            beam.steps += 1;
+            v.push(beam);
+        };
     }
 }
 
@@ -163,7 +203,7 @@ impl<T: Eq + std::fmt::Debug> Ord for GeneratorBeam<T> {
     }
 }
 
-impl<T> Beam<T> for GeneratorBeam<T> {
+impl<T: Clone> Beam<T> for GeneratorBeam<T> {
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -190,6 +230,27 @@ impl<T> Beam<T> for GeneratorBeam<T> {
 
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
+    }
+
+    fn scan(
+        v: &mut Vec<Self>,
+        moment: &ParseMoment,
+        mut beam: Self,
+        s: &Option<T>,
+        child_node: NodeIndex,
+        child_prob: LogProb<f64>,
+    ) {
+        if let Some(s) = s {
+            //If the word was None then adding it does nothing
+            beam.sentence.push(s.clone());
+        }
+        beam.log_probability += child_prob;
+        beam.rules.push(Rule::Scan {
+            node: child_node,
+            parent: moment.tree.id,
+        });
+        beam.steps += 1;
+        v.push(beam);
     }
 }
 

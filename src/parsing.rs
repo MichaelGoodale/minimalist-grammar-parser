@@ -1,12 +1,10 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
 use crate::Direction;
 use anyhow::Result;
-use beam::{Beam, ParseBeam};
+use beam::Beam;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use trees::{FutureTree, ParseMoment};
-
-use self::beam::GeneratorBeam;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
@@ -45,62 +43,6 @@ fn clone_push<T: Clone>(v: &[T], x: T) -> Vec<T> {
     let mut v = v.to_vec();
     v.push(x);
     v
-}
-
-fn scan<'a, T: Eq + std::fmt::Debug + Clone>(
-    v: &mut Vec<ParseBeam<'a, T>>,
-    moment: &ParseMoment,
-    mut beam: ParseBeam<'a, T>,
-    s: &Option<T>,
-    child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-) {
-    let should_push = if let Some(s) = s {
-        if let Some(x) = beam.sentence.get(beam.sentence_position) {
-            if s == x {
-                beam.sentence_position += 1;
-                true
-            } else {
-                //The word was the wrong word.
-                false
-            }
-        } else {
-            //The sentence is empty but we need a word.
-            false
-        }
-    } else {
-        //Invisible word to scan
-        true
-    };
-    if should_push {
-        beam.log_probability += child_prob;
-        beam.rules.push(Rule::Scan {
-            node: child_node,
-            parent: moment.tree.id,
-        });
-        beam.steps += 1;
-        v.push(beam);
-    };
-}
-fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
-    v: &mut Vec<GeneratorBeam<T>>,
-    moment: &ParseMoment,
-    mut beam: GeneratorBeam<T>,
-    s: &Option<T>,
-    child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-) {
-    if let Some(s) = s {
-        //If the word was None then adding it does nothing
-        beam.sentence.push(s.clone());
-    }
-    beam.log_probability += child_prob;
-    beam.rules.push(Rule::Scan {
-        node: child_node,
-        parent: moment.tree.id,
-    });
-    beam.steps += 1;
-    v.push(beam);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -324,95 +266,18 @@ fn unmove<
     Ok(())
 }
 
-pub fn expand_generate<
+pub fn expand<
     'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    B: Beam<T> + Clone + 'a,
 >(
-    moment: &'a ParseMoment,
-    beam: GeneratorBeam<T>,
-    lexicon: &'a Lexicon<T, Category>,
-    probability_of_moving: LogProb<f64>,
-    probability_of_merging: LogProb<f64>,
-) -> impl Iterator<Item = GeneratorBeam<T>> + 'a {
-    #[cfg(test)]
-    {
-        assert_eq!(
-            probability_of_moving
-                .add_log_prob(probability_of_merging)
-                .unwrap(),
-            LogProb::new(0.0).unwrap()
-        )
-    }
-
-    let children = lexicon
-        .children_of(moment.tree.node)
-        .map(|nx| (nx, lexicon.get(nx).unwrap()));
-    let new_beams = itertools::repeat_n(beam, lexicon.n_children(moment.tree.node));
-
-    children
-        .zip(new_beams)
-        .flat_map(move |((child_node, (child, child_prob)), beam)| {
-            let mut v: Vec<_> = vec![];
-            let old_len = v.len();
-            match &child {
-                FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    reverse_scan(&mut v, moment, beam, s, child_node, child_prob);
-                }
-                FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                    unmerge_from_mover(
-                        &mut v,
-                        lexicon,
-                        moment,
-                        &beam,
-                        cat,
-                        child_node,
-                        child_prob,
-                        probability_of_moving,
-                    );
-                    let rule_prob = if v.len() > old_len {
-                        probability_of_merging
-                    } else {
-                        LogProb::new(0_f64).unwrap()
-                    };
-                    //Right now we just ignore the error, it means no beam will be added.
-                    let _ = unmerge(
-                        &mut v, lexicon, moment, beam, cat, dir, child_node, child_prob, rule_prob,
-                    );
-                }
-                FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                    unmove_from_mover(
-                        &mut v,
-                        lexicon,
-                        moment,
-                        &beam,
-                        cat,
-                        child_node,
-                        child_prob,
-                        probability_of_moving,
-                    );
-                    let rule_prob = if v.len() > old_len {
-                        probability_of_merging
-                    } else {
-                        LogProb::new(0_f64).unwrap()
-                    };
-                    let _ = unmove(
-                        &mut v, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
-                    );
-                }
-                _ => (),
-            }
-            v.into_iter()
-        })
-}
-
-pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
     moment: ParseMoment,
-    beam: ParseBeam<'a, T>,
+    beam: B,
     lexicon: &'a Lexicon<T, Category>,
     probability_of_moving: LogProb<f64>,
     probability_of_merging: LogProb<f64>,
-) -> impl Iterator<Item = ParseBeam<'a, T>> {
+) -> impl Iterator<Item = B> + 'a {
     #[cfg(test)]
     {
         assert_eq!(
@@ -427,14 +292,14 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
         .map(|nx| (nx, lexicon.get(nx).unwrap()));
     let new_beams = itertools::repeat_n(beam, lexicon.n_children(moment.tree.node));
 
+    let mut v: Vec<_> = vec![];
     children
         .zip(new_beams)
-        .flat_map(move |((child_node, (child, child_prob)), beam)| {
-            let mut v: Vec<_> = vec![];
+        .for_each(|((child_node, (child, child_prob)), beam)| {
             let old_len = v.len();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    scan(&mut v, &moment, beam, &s, child_node, child_prob);
+                    B::scan(&mut v, &moment, beam, s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
                     unmerge_from_mover(
@@ -478,8 +343,8 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                 }
                 _ => (),
             }
-            v.into_iter()
-        })
+        });
+    v.into_iter()
 }
 
 pub mod beam;

@@ -1,6 +1,7 @@
 use crate::Direction;
 use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
+use logprob::LogProb;
 use petgraph::{
     graph::DiGraph,
     graph::NodeIndex,
@@ -111,7 +112,7 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 
 #[derive(Debug, Clone)]
 pub struct Lexicon<T: Eq, Category: Eq> {
-    graph: DiGraph<FeatureOrLemma<T, Category>, f64>,
+    graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
     leaves: Vec<(NodeIndex, f64)>,
 }
@@ -313,6 +314,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 _ => (),
             }
         }
+
+        //TODO: Get rid of this annoying clone.
+        let graph = graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap());
         Lexicon {
             graph,
             leaves,
@@ -337,7 +341,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
     }
 
-    pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, f64)> {
+    pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
         if let Some(x) = self.graph.node_weight(nx) {
             let p = self
                 .graph

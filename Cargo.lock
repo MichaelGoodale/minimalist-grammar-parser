@@ -176,6 +176,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
 name = "libc"
 version = "0.2.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -186,6 +192,15 @@ name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
+
+[[package]]
+name = "logprob"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a77d6f4e8b1d84c2826c10e80b238281e3f927cdef37e3e8899ef0664e48b4fb"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "min-max-heap"
@@ -202,6 +217,8 @@ dependencies = [
  "approx",
  "divan",
  "itertools",
+ "lazy_static",
+ "logprob",
  "min-max-heap",
  "petgraph",
 ]

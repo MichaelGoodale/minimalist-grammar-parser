@@ -135,14 +135,18 @@ mod tests {
     use crate::lexicon::SimpleLexicalEntry;
     use crate::{Parser, ParsingConfig};
     use anyhow::Result;
+    use lazy_static::lazy_static;
+    use logprob::LogProb;
     use petgraph::dot::Dot;
 
-    const CONFIG: ParsingConfig = ParsingConfig {
-        min_log_prob: -64.0,
-        move_prob: 0.5,
-        max_steps: 10000,
-        max_beams: 100,
-    };
+    lazy_static! {
+        static ref CONFIG: ParsingConfig = ParsingConfig {
+            min_log_prob: LogProb::new(-128.0).unwrap(),
+            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
+            max_steps: 10000,
+            max_beams: 100,
+        };
+    }
 
     #[test]
     fn tree_building() -> Result<()> {

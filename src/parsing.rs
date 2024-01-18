@@ -1,10 +1,12 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
 use crate::Direction;
 use anyhow::Result;
-use beam::Beam;
+use beam::{Beam, ParseBeam};
+use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use std::cmp::Reverse;
 use trees::{FutureTree, ParseMoment};
+
+use self::beam::GeneratorBeam;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
@@ -45,18 +47,18 @@ fn clone_push<T: Clone>(v: &[T], x: T) -> Vec<T> {
     v
 }
 
-fn scan<T: Eq + std::fmt::Debug + Clone>(
-    v: &mut Vec<Beam<T>>,
+fn scan<'a, T: Eq + std::fmt::Debug + Clone>(
+    v: &mut Vec<ParseBeam<'a, T>>,
     moment: &ParseMoment,
-    mut beam: Beam<T>,
+    mut beam: ParseBeam<'a, T>,
     s: &Option<T>,
     child_node: NodeIndex,
-    child_prob: f64,
+    child_prob: LogProb<f64>,
 ) {
     let should_push = if let Some(s) = s {
-        if let Some(x) = beam.sentence.last() {
+        if let Some(x) = beam.sentence.get(beam.sentence_position) {
             if s == x {
-                beam.sentence.pop();
+                beam.sentence_position += 1;
                 true
             } else {
                 //The word was the wrong word.
@@ -81,12 +83,12 @@ fn scan<T: Eq + std::fmt::Debug + Clone>(
     };
 }
 fn reverse_scan<T: Eq + std::fmt::Debug + Clone>(
-    v: &mut Vec<Beam<T>>,
+    v: &mut Vec<GeneratorBeam<T>>,
     moment: &ParseMoment,
-    mut beam: Beam<T>,
+    mut beam: GeneratorBeam<T>,
     s: &Option<T>,
     child_node: NodeIndex,
-    child_prob: f64,
+    child_prob: LogProb<f64>,
 ) {
     if let Some(s) = s {
         //If the word was None then adding it does nothing
@@ -106,15 +108,16 @@ fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    B: Beam<T> + Clone,
 >(
-    v: &mut Vec<Beam<T>>,
+    v: &mut Vec<B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    beam: &Beam<T>,
+    beam: &B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: f64,
-    rule_prob: f64,
+    child_prob: LogProb<f64>,
+    rule_prob: LogProb<f64>,
 ) {
     for mover_id in 0..moment.movers.len() {
         for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
@@ -122,19 +125,19 @@ fn unmerge_from_mover<
             match stored {
                 FeatureOrLemma::Feature(Feature::Category(stored)) if stored == cat => {
                     let mut beam = beam.clone();
-                    beam.queue.push(Reverse(ParseMoment {
+                    beam.push_moment(ParseMoment {
                         tree: FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
-                            id: beam.top_id + 1,
+                            id: beam.top_id() + 1,
                         },
                         movers: vec![],
-                    }));
-                    beam.queue.push(Reverse(ParseMoment {
+                    });
+                    beam.push_moment(ParseMoment {
                         tree: FutureTree {
                             node: stored_child_node,
                             index: moment.movers[mover_id].index.clone(),
-                            id: beam.top_id + 2,
+                            id: beam.top_id() + 2,
                         },
                         movers: moment
                             .movers
@@ -143,18 +146,18 @@ fn unmerge_from_mover<
                             .filter(|&(i, _v)| i != mover_id)
                             .map(|(_, v)| v.clone())
                             .collect(),
-                    }));
+                    });
 
-                    beam.log_probability += stored_prob + child_prob + rule_prob;
-                    beam.rules.push(Rule::UnmergeFromMover {
+                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    beam.push_rule(Rule::UnmergeFromMover {
                         child: child_node,
-                        child_id: beam.top_id + 1,
-                        stored_id: beam.top_id + 2,
+                        child_id: beam.top_id() + 1,
+                        stored_id: beam.top_id() + 2,
                         parent: moment.tree.id,
                         storage: moment.movers[mover_id].id,
                     });
-                    beam.top_id += 2;
-                    beam.steps += 1;
+                    *beam.top_id_mut() += 2;
+                    beam.inc();
                     v.push(beam);
                 }
                 _ => (),
@@ -168,50 +171,51 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    B: Beam<T>,
 >(
-    v: &mut Vec<Beam<T>>,
+    v: &mut Vec<B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    mut beam: Beam<T>,
+    mut beam: B,
     cat: &Category,
     dir: &Direction,
     child_node: NodeIndex,
-    child_prob: f64,
-    rule_prob: f64,
+    child_prob: LogProb<f64>,
+    rule_prob: LogProb<f64>,
 ) -> Result<()> {
     let complement = lexicon.find_category(cat.clone())?;
-    beam.queue.push(Reverse(ParseMoment {
+    beam.push_moment(ParseMoment {
         tree: FutureTree {
             node: complement,
             index: moment.tree.index.clone_push(*dir),
-            id: beam.top_id + 1,
+            id: beam.top_id() + 1,
         },
         movers: match dir {
             Direction::Right => moment.movers.clone(),
             Direction::Left => vec![],
         },
-    }));
-    beam.queue.push(Reverse(ParseMoment {
+    });
+    beam.push_moment(ParseMoment {
         tree: FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(dir.flip()),
-            id: beam.top_id + 2,
+            id: beam.top_id() + 2,
         },
         movers: match dir {
             Direction::Right => vec![],
             Direction::Left => moment.movers.clone(),
         },
-    }));
+    });
 
-    beam.log_probability += child_prob + rule_prob;
-    beam.rules.push(Rule::Unmerge {
+    *beam.log_probability_mut() += child_prob + rule_prob;
+    beam.push_rule(Rule::Unmerge {
         child: child_node,
         parent: moment.tree.id,
-        child_id: beam.top_id + 2,
-        complement_id: beam.top_id + 1,
+        child_id: beam.top_id() + 2,
+        complement_id: beam.top_id() + 1,
     });
-    beam.top_id += 2;
-    beam.steps += 1;
+    *beam.top_id_mut() += 2;
+    beam.inc();
     v.push(beam);
     Ok(())
 }
@@ -221,15 +225,16 @@ fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    B: Beam<T> + Clone,
 >(
-    v: &mut Vec<Beam<T>>,
+    v: &mut Vec<B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    beam: &Beam<T>,
+    beam: &B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: f64,
-    rule_prob: f64,
+    child_prob: LogProb<f64>,
+    rule_prob: LogProb<f64>,
 ) {
     for mover_id in 0..moment.movers.len() {
         for stored_child_node in lexicon.children_of(moment.movers[mover_id].node) {
@@ -237,11 +242,11 @@ fn unmove_from_mover<
             match stored {
                 FeatureOrLemma::Feature(Feature::Licensee(s)) if cat == s => {
                     let mut beam = beam.clone();
-                    beam.queue.push(Reverse(ParseMoment {
+                    beam.push_moment(ParseMoment {
                         tree: FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
-                            id: beam.top_id + 1,
+                            id: beam.top_id() + 1,
                         },
                         movers: moment
                             .movers
@@ -252,19 +257,19 @@ fn unmove_from_mover<
                             .chain(std::iter::once(FutureTree {
                                 node: stored_child_node,
                                 index: moment.movers[mover_id].index.clone(),
-                                id: beam.top_id + 2,
+                                id: beam.top_id() + 2,
                             }))
                             .collect(),
-                    }));
-                    beam.log_probability += stored_prob + child_prob + rule_prob;
-                    beam.rules.push(Rule::UnmoveFromMover {
+                    });
+                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    beam.push_rule(Rule::UnmoveFromMover {
                         parent: moment.tree.id,
-                        child_id: beam.top_id + 1,
-                        stored_id: beam.top_id + 2,
+                        child_id: beam.top_id() + 1,
+                        stored_id: beam.top_id() + 2,
                         storage: moment.movers[mover_id].id,
                     });
-                    beam.top_id += 2;
-                    beam.steps += 1;
+                    *beam.top_id_mut() += 2;
+                    beam.inc();
                     v.push(beam);
                 }
                 _ => (),
@@ -278,42 +283,43 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    B: Beam<T>,
 >(
-    v: &mut Vec<Beam<T>>,
+    v: &mut Vec<B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    mut beam: Beam<T>,
+    mut beam: B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: f64,
-    rule_prob: f64,
+    child_prob: LogProb<f64>,
+    rule_prob: LogProb<f64>,
 ) -> Result<()> {
     let stored = lexicon.find_licensee(cat.clone())?;
 
-    beam.queue.push(Reverse(ParseMoment {
+    beam.push_moment(ParseMoment {
         tree: FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(Direction::Right),
-            id: beam.top_id + 1,
+            id: beam.top_id() + 1,
         },
         movers: clone_push(
             &moment.movers,
             FutureTree {
                 node: stored,
                 index: moment.tree.index.clone_push(Direction::Left),
-                id: beam.top_id + 2,
+                id: beam.top_id() + 2,
             },
         ),
-    }));
+    });
 
-    beam.log_probability += child_prob + rule_prob;
-    beam.rules.push(Rule::Unmove {
-        child_id: beam.top_id + 1,
-        stored_id: beam.top_id + 2,
+    *beam.log_probability_mut() += child_prob + rule_prob;
+    beam.push_rule(Rule::Unmove {
+        child_id: beam.top_id() + 1,
+        stored_id: beam.top_id() + 2,
         parent: moment.tree.id,
     });
-    beam.top_id += 2;
-    beam.steps += 1;
+    *beam.top_id_mut() += 2;
+    beam.inc();
     v.push(beam);
     Ok(())
 }
@@ -324,20 +330,19 @@ pub fn expand_generate<
     Category: Eq + std::fmt::Debug + Clone,
 >(
     moment: &'a ParseMoment,
-    beam: Beam<T>,
+    beam: GeneratorBeam<T>,
     lexicon: &'a Lexicon<T, Category>,
-    probability_of_moving: f64,
-    probability_of_merging: f64,
-) -> impl Iterator<Item = Beam<T>> + 'a {
+    probability_of_moving: LogProb<f64>,
+    probability_of_merging: LogProb<f64>,
+) -> impl Iterator<Item = GeneratorBeam<T>> + 'a {
     #[cfg(test)]
     {
-        let c = if probability_of_moving > probability_of_merging {
+        assert_eq!(
             probability_of_moving
-        } else {
-            probability_of_merging
-        };
-        let n = c + ((probability_of_merging - c).exp() + (probability_of_moving - c).exp()).ln();
-        assert_eq!(n, 0.0_f64)
+                .add_log_prob(probability_of_merging)
+                .unwrap(),
+            LogProb::new(0.0).unwrap()
+        )
     }
 
     let children = lexicon
@@ -368,7 +373,7 @@ pub fn expand_generate<
                     let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
-                        0_f64
+                        LogProb::new(0_f64).unwrap()
                     };
                     //Right now we just ignore the error, it means no beam will be added.
                     let _ = unmerge(
@@ -389,7 +394,7 @@ pub fn expand_generate<
                     let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
-                        0_f64
+                        LogProb::new(0_f64).unwrap()
                     };
                     let _ = unmove(
                         &mut v, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
@@ -403,20 +408,19 @@ pub fn expand_generate<
 
 pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone>(
     moment: ParseMoment,
-    beam: Beam<&'a T>,
+    beam: ParseBeam<'a, T>,
     lexicon: &'a Lexicon<T, Category>,
-    probability_of_moving: f64,
-    probability_of_merging: f64,
-) -> impl Iterator<Item = Beam<&'a T>> + 'a {
+    probability_of_moving: LogProb<f64>,
+    probability_of_merging: LogProb<f64>,
+) -> impl Iterator<Item = ParseBeam<'a, T>> {
     #[cfg(test)]
     {
-        let c = if probability_of_moving > probability_of_merging {
+        assert_eq!(
             probability_of_moving
-        } else {
-            probability_of_merging
-        };
-        let n = c + ((probability_of_merging - c).exp() + (probability_of_moving - c).exp()).ln();
-        assert_eq!(n, 0.0_f64)
+                .add_log_prob(probability_of_merging)
+                .unwrap(),
+            LogProb::new(0.0).unwrap()
+        )
     }
     let children = lexicon
         .children_of(moment.tree.node)
@@ -430,7 +434,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
             let old_len = v.len();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
-                    scan(&mut v, &moment, beam, &s.as_ref(), child_node, child_prob);
+                    scan(&mut v, &moment, beam, &s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
                     unmerge_from_mover(
@@ -446,7 +450,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                     let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
-                        0_f64
+                        LogProb::new(0_f64).unwrap()
                     };
                     let _ = unmerge(
                         &mut v, lexicon, &moment, beam, cat, dir, child_node, child_prob, rule_prob,
@@ -466,7 +470,7 @@ pub fn expand_parse<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt
                     let rule_prob = if v.len() > old_len {
                         probability_of_merging
                     } else {
-                        0_f64
+                        LogProb::new(0_f64).unwrap()
                     };
                     let _ = unmove(
                         &mut v, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,

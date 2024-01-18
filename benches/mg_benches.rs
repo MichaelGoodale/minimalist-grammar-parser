@@ -1,15 +1,17 @@
-fn main() {
-    // Run registered benchmarks.
-    divan::main();
-}
-
 use anyhow::Result;
 use itertools::Itertools;
+use lazy_static::lazy_static;
+use logprob::LogProb;
 use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
     Generator, Parser, ParsingConfig,
 };
+
+fn main() {
+    // Run registered benchmarks.
+    divan::main();
+}
 
 fn get_grammar() -> Lexicon<&'static str, char> {
     let v: Vec<_> = STABLER2011
@@ -20,12 +22,14 @@ fn get_grammar() -> Lexicon<&'static str, char> {
     Lexicon::new(v)
 }
 
-const CONFIG: ParsingConfig = ParsingConfig {
-    min_log_prob: -256.0,
-    move_prob: 0.5,
-    max_steps: 100,
-    max_beams: 1000,
-};
+lazy_static! {
+    static ref CONFIG: ParsingConfig = ParsingConfig {
+        min_log_prob: LogProb::new(-256.0).unwrap(),
+        move_prob: LogProb::from_raw_prob(0.5).unwrap(),
+        max_steps: 100,
+        max_beams: 1000,
+    };
+}
 
 #[divan::bench]
 fn parse_long_sentence() {
@@ -44,11 +48,6 @@ fn parse_long_sentence() {
 #[divan::bench]
 fn generate_sentence() {
     let g = divan::black_box(get_grammar());
-    let sentence: Vec<&str> = divan::black_box(
-        "which king knows the queen knows which beer the king drinks"
-            .split(' ')
-            .collect(),
-    );
     Generator::new(&g, 'C', &CONFIG).unwrap().take(100).count();
 }
 

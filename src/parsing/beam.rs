@@ -2,20 +2,38 @@ use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::Lexicon;
 use anyhow::Result;
+use logprob::LogProb;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+pub trait Beam<T> {
+    fn log_probability(&self) -> &LogProb<f64>;
+
+    fn log_probability_mut(&mut self) -> &mut LogProb<f64>;
+
+    fn push_moment(&mut self, x: ParseMoment);
+
+    fn push_rule(&mut self, x: Rule);
+
+    fn inc(&mut self);
+
+    fn top_id(&self) -> usize;
+
+    fn top_id_mut(&mut self) -> &mut usize;
+}
+
 #[derive(Debug, Clone)]
-pub struct Beam<T> {
-    pub log_probability: f64,
+pub struct ParseBeam<'a, T> {
+    pub log_probability: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
-    pub sentence: Vec<T>,
+    pub sentence: &'a [T],
+    pub sentence_position: usize,
     pub rules: Vec<Rule>,
     pub top_id: usize,
     pub steps: usize,
 }
 
-impl<T: Eq + std::fmt::Debug> PartialEq for Beam<T> {
+impl<T: Eq + std::fmt::Debug> PartialEq for ParseBeam<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.log_probability == other.log_probability
             && self.sentence == other.sentence
@@ -23,15 +41,15 @@ impl<T: Eq + std::fmt::Debug> PartialEq for Beam<T> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug> PartialOrd for Beam<T> {
+impl<T: Eq + std::fmt::Debug> PartialOrd for ParseBeam<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Eq + std::fmt::Debug> Eq for Beam<T> {}
+impl<T: Eq + std::fmt::Debug> Eq for ParseBeam<'_, T> {}
 
-impl<T: Eq + std::fmt::Debug> Ord for Beam<T> {
+impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.log_probability
             .partial_cmp(&other.log_probability)
@@ -39,7 +57,37 @@ impl<T: Eq + std::fmt::Debug> Ord for Beam<T> {
     }
 }
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
+impl<T> Beam<T> for ParseBeam<'_, T> {
+    fn log_probability(&self) -> &LogProb<f64> {
+        &self.log_probability
+    }
+
+    fn log_probability_mut(&mut self) -> &mut LogProb<f64> {
+        &mut self.log_probability
+    }
+
+    fn push_moment(&mut self, x: ParseMoment) {
+        self.queue.push(Reverse(x))
+    }
+
+    fn push_rule(&mut self, x: Rule) {
+        self.rules.push(x)
+    }
+
+    fn inc(&mut self) {
+        self.steps += 1;
+    }
+
+    fn top_id(&self) -> usize {
+        self.top_id
+    }
+
+    fn top_id_mut(&mut self) -> &mut usize {
+        &mut self.top_id
+    }
+}
+
+impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
     pub fn pop(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)
@@ -48,36 +96,11 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
         }
     }
 
-    pub fn new_empty<Category: Eq + std::fmt::Debug + Clone>(
-        lexicon: &Lexicon<T, Category>,
-        initial_category: Category,
-    ) -> Result<Beam<T>> {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
-        let category_index = lexicon.find_category(initial_category)?;
-
-        queue.push(Reverse(ParseMoment {
-            tree: FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            movers: vec![],
-        }));
-
-        Ok(Beam {
-            log_probability: 0_f64,
-            sentence: vec![],
-            queue,
-            rules: vec![Rule::Start(category_index)],
-            top_id: 0,
-            steps: 0,
-        })
-    }
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
-        sentence: Vec<&'a T>,
-    ) -> Result<Beam<&'a T>> {
+        sentence: &'a [T],
+    ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(initial_category)?;
 
@@ -90,8 +113,9 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
             movers: vec![],
         }));
 
-        Ok(Beam {
-            log_probability: 0_f64,
+        Ok(ParseBeam {
+            log_probability: LogProb::new(0_f64).unwrap(),
+            sentence_position: 0,
             sentence,
             queue,
             rules: vec![Rule::Start(category_index)],
@@ -101,6 +125,106 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> Beam<T> {
     }
 
     pub fn good_parse(&self) -> bool {
-        self.queue.is_empty() && self.sentence.is_empty()
+        self.queue.is_empty() && self.sentence_position == self.sentence.len()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratorBeam<T> {
+    pub log_probability: LogProb<f64>,
+    pub queue: BinaryHeap<Reverse<ParseMoment>>,
+    pub sentence: Vec<T>,
+    pub rules: Vec<Rule>,
+    pub top_id: usize,
+    pub steps: usize,
+}
+
+impl<T: Eq + std::fmt::Debug> PartialEq for GeneratorBeam<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.log_probability == other.log_probability
+            && self.sentence == other.sentence
+            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
+    }
+}
+
+impl<T: Eq + std::fmt::Debug> PartialOrd for GeneratorBeam<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Eq + std::fmt::Debug> Eq for GeneratorBeam<T> {}
+
+impl<T: Eq + std::fmt::Debug> Ord for GeneratorBeam<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.log_probability
+            .partial_cmp(&other.log_probability)
+            .unwrap()
+    }
+}
+
+impl<T> Beam<T> for GeneratorBeam<T> {
+    fn log_probability(&self) -> &LogProb<f64> {
+        &self.log_probability
+    }
+
+    fn log_probability_mut(&mut self) -> &mut LogProb<f64> {
+        &mut self.log_probability
+    }
+
+    fn push_moment(&mut self, x: ParseMoment) {
+        self.queue.push(Reverse(x))
+    }
+
+    fn push_rule(&mut self, x: Rule) {
+        self.rules.push(x)
+    }
+
+    fn inc(&mut self) {
+        self.steps += 1;
+    }
+
+    fn top_id(&self) -> usize {
+        self.top_id
+    }
+
+    fn top_id_mut(&mut self) -> &mut usize {
+        &mut self.top_id
+    }
+}
+
+impl<'a, T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
+    pub fn pop(&mut self) -> Option<ParseMoment> {
+        if let Some(Reverse(x)) = self.queue.pop() {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
+    pub fn new<Category: Eq + std::fmt::Debug + Clone>(
+        lexicon: &Lexicon<T, Category>,
+        initial_category: Category,
+    ) -> Result<GeneratorBeam<T>> {
+        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
+        let category_index = lexicon.find_category(initial_category)?;
+
+        queue.push(Reverse(ParseMoment {
+            tree: FutureTree {
+                node: category_index,
+                index: GornIndex::default(),
+                id: 0,
+            },
+            movers: vec![],
+        }));
+
+        Ok(GeneratorBeam {
+            log_probability: LogProb::new(0_f64).unwrap(),
+            sentence: vec![],
+            queue,
+            rules: vec![Rule::Start(category_index)],
+            top_id: 0,
+            steps: 0,
+        })
     }
 }

@@ -1,20 +1,22 @@
 use crate::lexicon::Feature;
 use anyhow::Result;
 
+use super::*;
 use crate::{
     grammars::SIMPLESTABLER2011,
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
+use lazy_static::lazy_static;
 use std::{collections::HashSet, f64::consts::LN_2};
 
-use super::*;
-
-const CONFIG: ParsingConfig = ParsingConfig {
-    min_log_prob: -256.0,
-    move_prob: 0.5,
-    max_steps: 100,
-    max_beams: 1000,
-};
+lazy_static! {
+    static ref CONFIG: ParsingConfig = ParsingConfig {
+        min_log_prob: LogProb::new(-256.0).unwrap(),
+        move_prob: LogProb::from_raw_prob(0.5).unwrap(),
+        max_steps: 100,
+        max_beams: 1000,
+    };
+}
 
 #[test]
 fn simple_scan() -> Result<()> {
@@ -154,8 +156,8 @@ fn generation() -> Result<()> {
         &lex,
         'C',
         &ParsingConfig {
-            min_log_prob: -64.0,
-            move_prob: 0.5,
+            min_log_prob: LogProb::new(-64.0).unwrap(),
+            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams: 1000,
         },
@@ -215,7 +217,7 @@ fn generation() -> Result<()> {
     v.sort_by(|a, b| a.1.cmp(&b.1));
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
-        assert_eq!((p, &sentence), (correct_p, &correct_sentence));
+        assert_eq!((p.into_inner(), &sentence), (correct_p, &correct_sentence));
         Parser::new(&lex, 'C', &sentence, &CONFIG)?.next().unwrap();
     }
     Ok(())
@@ -308,8 +310,8 @@ fn capped_beams() -> Result<()> {
         &lexicon,
         'c',
         &ParsingConfig {
-            min_log_prob: -128.0,
-            move_prob: 0.5,
+            min_log_prob: LogProb::new(-128.0).unwrap(),
+            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams,
         },
@@ -379,29 +381,29 @@ fn proper_distributions() -> Result<()> {
             '0',
             s,
             &ParsingConfig {
-                min_log_prob: -128.0,
-                move_prob: 0.5,
+                min_log_prob: LogProb::new(-128.0).unwrap(),
+                move_prob: LogProb::from_raw_prob(0.5).unwrap(),
                 max_steps: 100,
                 max_beams: 50,
             },
         )?
         .next()
         .unwrap();
-        assert_eq!(p, *prob);
+        assert_eq!(p.into_inner(), *prob);
     }
 
     let g: Vec<_> = Generator::new(
         &lexicon,
         '0',
         &ParsingConfig {
-            min_log_prob: -128.0,
-            move_prob: 0.5,
+            min_log_prob: LogProb::new(-128.0).unwrap(),
+            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams: 50,
         },
     )?
     .take(8)
-    .map(|(p, s, _)| (p, s))
+    .map(|(p, s, _)| (p.into_inner(), s))
     .collect();
 
     assert_eq!(v, g);

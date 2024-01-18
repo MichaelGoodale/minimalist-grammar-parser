@@ -1,8 +1,9 @@
 use anyhow::Result;
 use lexicon::Lexicon;
 
+use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::beam::Beam;
+use parsing::beam::{GeneratorBeam, ParseBeam};
 use parsing::Rule;
 use parsing::{expand_generate, expand_parse};
 
@@ -23,8 +24,8 @@ impl Direction {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct ParsingConfig {
-    pub min_log_prob: f64,
-    pub move_prob: f64,
+    pub min_log_prob: LogProb<f64>,
+    pub move_prob: LogProb<f64>,
     pub max_steps: usize,
     pub max_beams: usize,
 }
@@ -32,9 +33,9 @@ pub struct ParsingConfig {
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
-    parse_heap: MinMaxHeap<Beam<&'a T>>,
-    move_log_prob: f64,
-    merge_log_prob: f64,
+    parse_heap: MinMaxHeap<ParseBeam<'a, T>>,
+    move_log_prob: LogProb<f64>,
+    merge_log_prob: LogProb<f64>,
 }
 
 impl<'a, T, Category> Parser<'a, T, Category>
@@ -49,12 +50,11 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::new();
-        let sentence: Vec<_> = sentence.iter().rev().collect();
-        parse_heap.push(Beam::new(lexicon, initial_category, sentence)?);
+        parse_heap.push(ParseBeam::new(lexicon, initial_category, &sentence)?);
         Ok(Parser {
             lexicon,
-            move_log_prob: config.move_prob.ln(),
-            merge_log_prob: (1.0 - config.move_prob).ln(),
+            move_log_prob: config.move_prob,
+            merge_log_prob: LogProb::new((-config.move_prob.into_inner().exp()).ln_1p()).unwrap(),
             config,
             parse_heap,
         })
@@ -66,7 +66,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = (f64, Vec<Rule>);
+    type Item = (LogProb<f64>, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop_max() {
@@ -100,9 +100,9 @@ where
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     config: &'a ParsingConfig,
-    parse_heap: MinMaxHeap<Beam<T>>,
-    move_log_prob: f64,
-    merge_log_prob: f64,
+    parse_heap: MinMaxHeap<GeneratorBeam<T>>,
+    move_log_prob: LogProb<f64>,
+    merge_log_prob: LogProb<f64>,
 }
 
 impl<'a, T, Category> Generator<'a, T, Category>
@@ -116,11 +116,11 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::new();
-        parse_heap.push(Beam::new_empty(lexicon, initial_category)?);
+        parse_heap.push(GeneratorBeam::new(lexicon, initial_category)?);
         Ok(Generator {
             lexicon,
-            move_log_prob: config.move_prob.ln(),
-            merge_log_prob: (1.0 - config.move_prob).ln(),
+            move_log_prob: config.move_prob,
+            merge_log_prob: LogProb::new((-config.move_prob.into_inner().exp()).ln_1p()).unwrap(),
             config,
             parse_heap,
         })
@@ -132,7 +132,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = (f64, Vec<T>, Vec<Rule>);
+    type Item = (LogProb<f64>, Vec<T>, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop_max() {

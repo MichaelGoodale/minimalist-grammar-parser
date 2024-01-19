@@ -47,6 +47,7 @@ fn clone_push<T: Clone + Default>(v: &[T], x: T) -> ThinVec<T> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
@@ -109,6 +110,7 @@ fn unmerge_from_mover<
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
@@ -163,6 +165,7 @@ fn unmerge<
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
@@ -220,6 +223,7 @@ fn unmove_from_mover<
 }
 
 #[allow(clippy::too_many_arguments)]
+#[inline]
 fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,

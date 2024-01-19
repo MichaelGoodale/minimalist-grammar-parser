@@ -69,27 +69,27 @@ fn unmerge_from_mover<
             match stored {
                 FeatureOrLemma::Feature(Feature::Category(stored)) if stored == cat => {
                     let mut beam = beam.clone();
-                    beam.push_moment(ParseMoment {
-                        tree: FutureTree {
+                    beam.push_moment(ParseMoment::new(
+                        FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
                             id: beam.top_id() + 1,
                         },
-                        movers: thin_vec![],
-                    });
-                    beam.push_moment(ParseMoment {
-                        tree: FutureTree {
+                        thin_vec![],
+                    ));
+                    beam.push_moment(ParseMoment::new(
+                        FutureTree {
                             node: stored_child_node,
                             index: mover.index.clone(),
                             id: beam.top_id() + 2,
                         },
-                        movers: moment
+                        moment
                             .movers
                             .iter()
                             .filter(|&v| v != mover)
                             .cloned()
                             .collect(),
-                    });
+                    ));
 
                     *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
                     beam.push_rule(Rule::UnmergeFromMover {
@@ -290,16 +290,14 @@ pub fn expand<
             LogProb::new(0.0).unwrap()
         )
     }
-    let children = lexicon
-        .children_of(moment.tree.node)
-        .map(|nx| (nx, lexicon.get(nx).unwrap()));
     let n_children = lexicon.n_children(moment.tree.node);
     let new_beams = itertools::repeat_n(beam, n_children);
 
-    children
-        .zip(new_beams)
-        .flat_map(move |((child_node, (child, child_prob)), beam)| {
+    new_beams
+        .zip(lexicon.children_of(moment.tree.node))
+        .flat_map(move |(beam, child_node)| {
             let mut v: Vec<_> = vec![];
+            let (child, child_prob) = lexicon.get(child_node).unwrap();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.no_movers() => {
                     B::scan(&mut v, &moment, beam, s, child_node, child_prob);

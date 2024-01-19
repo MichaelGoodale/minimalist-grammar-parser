@@ -25,22 +25,22 @@ fn index_order() -> Result<()> {
     };
     assert!(a < b);
 
-    let a = ParseMoment {
-        tree: FutureTree {
+    let a = ParseMoment::new(
+        FutureTree {
             node: NodeIndex::new(0),
             id: 0,
             index: GornIndex {
                 index: tiny_vec!(Direction::Left, Direction::Right),
             },
         },
-        movers: thin_vec![FutureTree {
+        thin_vec![FutureTree {
             node: NodeIndex::new(0),
             id: 0,
             index: GornIndex {
                 index: tiny_vec!([Direction; 5] => Direction::Right),
             },
         }],
-    };
+    );
 
     assert_eq!(
         a.least_index(),

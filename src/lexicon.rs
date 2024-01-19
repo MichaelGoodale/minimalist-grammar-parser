@@ -136,17 +136,17 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 {
 }
 
-pub trait SymbolCost {
+pub trait SymbolCost: Sized {
     ///This is the length of a member where each sub-unit has [``n_phonemes``] possible encodings.
     /// # Example
     /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``mdl_score``].
     /// The string, abcabc should have symbol_cost 6.
-    fn symbol_cost(&self) -> Result<u16>;
+    fn symbol_cost(x: &Option<Self>) -> Result<u16>;
 }
 
-impl SymbolCost for Option<&str> {
-    fn symbol_cost(&self) -> Result<u16> {
-        if let Some(x) = self {
+impl SymbolCost for &str {
+    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+        if let Some(x) = x {
             Ok(x.len().try_into()?)
         } else {
             Ok(1)
@@ -155,13 +155,13 @@ impl SymbolCost for Option<&str> {
 }
 
 impl SymbolCost for char {
-    fn symbol_cost(&self) -> Result<u16> {
+    fn symbol_cost(_x: &Option<Self>) -> Result<u16> {
         Ok(1)
     }
 }
 
 impl SymbolCost for u8 {
-    fn symbol_cost(&self) -> Result<u16> {
+    fn symbol_cost(_x: &Option<Self>) -> Result<u16> {
         Ok(1)
     }
 }
@@ -170,10 +170,10 @@ impl SymbolCost for u8 {
 ///Here it is five to account for left and right attachment.
 const MG_TYPES: u16 = 5;
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash>
-    Lexicon<T, Category>
-where
-    Option<T>: SymbolCost,
+impl<
+        T: Eq + std::fmt::Debug + Clone + SymbolCost,
+        Category: Eq + std::fmt::Debug + Clone + Hash,
+    > Lexicon<T, Category>
 {
     ///Returns the MDL Score of the lexicon as per Ermolaeva 2021
     ///
@@ -187,7 +187,7 @@ where
         for (leaf, _weight) in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut nx = *leaf;
-                let lemma_cost: u16 = lemma.symbol_cost()?;
+                let lemma_cost: u16 = T::symbol_cost(lemma)?;
 
                 let mut n_features = 0;
                 while let Some(parent) = self.parent_of(nx) {

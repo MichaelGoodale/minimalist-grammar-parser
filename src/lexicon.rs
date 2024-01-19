@@ -144,9 +144,13 @@ pub trait SymbolCost {
     fn symbol_cost(&self) -> Result<u16>;
 }
 
-impl SymbolCost for &str {
+impl SymbolCost for Option<&str> {
     fn symbol_cost(&self) -> Result<u16> {
-        Ok(self.len().try_into()?)
+        if let Some(x) = self {
+            Ok(x.len().try_into()?)
+        } else {
+            Ok(1)
+        }
     }
 }
 
@@ -166,10 +170,10 @@ impl SymbolCost for u8 {
 ///Here it is five to account for left and right attachment.
 const MG_TYPES: u16 = 5;
 
-impl<
-        T: Eq + std::fmt::Debug + Clone + SymbolCost,
-        Category: Eq + std::fmt::Debug + Clone + Hash,
-    > Lexicon<T, Category>
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash>
+    Lexicon<T, Category>
+where
+    Option<T>: SymbolCost,
 {
     ///Returns the MDL Score of the lexicon as per Ermolaeva 2021
     ///
@@ -183,11 +187,7 @@ impl<
         for (leaf, _weight) in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut nx = *leaf;
-                let lemma_cost: u16 = if let Some(lemma) = lemma {
-                    lemma.symbol_cost()?
-                } else {
-                    0
-                };
+                let lemma_cost: u16 = lemma.symbol_cost()?;
 
                 let mut n_features = 0;
                 while let Some(parent) = self.parent_of(nx) {

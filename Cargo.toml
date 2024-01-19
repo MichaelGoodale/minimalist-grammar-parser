@@ -27,3 +27,7 @@ harness = false
 name = "mg_benches"
 bench = false
 test = false
+
+[profile.profiling]
+inherits = "release"
+debug = true

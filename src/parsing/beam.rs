@@ -142,7 +142,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
-        //movement_storage: MovementStorage,
         sentence: &'a [T],
     ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();

@@ -50,7 +50,7 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::new();
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence)?);
         Ok(Parser {
             lexicon,
@@ -116,7 +116,7 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::new();
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(GeneratorBeam::new(lexicon, initial_category)?);
         Ok(Generator {
             lexicon,

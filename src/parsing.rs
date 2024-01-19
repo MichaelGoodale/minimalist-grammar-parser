@@ -7,6 +7,8 @@ use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, ParseMoment};
 
+use self::trees::MovementStorage;
+
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
     Start(NodeIndex),
@@ -128,28 +130,28 @@ fn unmerge<
     rule_prob: LogProb<f64>,
 ) -> Result<()> {
     let complement = lexicon.find_category(cat)?;
-    beam.push_moment(ParseMoment {
-        tree: FutureTree {
+    beam.push_moment(ParseMoment::new(
+        FutureTree {
             node: complement,
             index: moment.tree.index.clone_push(*dir),
             id: beam.top_id() + 1,
         },
-        movers: match dir {
+        match dir {
             Direction::Right => moment.movers.clone(),
             Direction::Left => thin_vec![],
         },
-    });
-    beam.push_moment(ParseMoment {
-        tree: FutureTree {
+    ));
+    beam.push_moment(ParseMoment::new(
+        FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(dir.flip()),
             id: beam.top_id() + 2,
         },
-        movers: match dir {
+        match dir {
             Direction::Right => thin_vec![],
             Direction::Left => moment.movers.clone(),
         },
-    });
+    ));
 
     *beam.log_probability_mut() += child_prob + rule_prob;
     beam.push_rule(Rule::Unmerge {
@@ -187,13 +189,13 @@ fn unmove_from_mover<
             match stored {
                 FeatureOrLemma::Feature(Feature::Licensee(s)) if cat == s => {
                     let mut beam = beam.clone();
-                    beam.push_moment(ParseMoment {
-                        tree: FutureTree {
+                    beam.push_moment(ParseMoment::new(
+                        FutureTree {
                             node: child_node,
                             index: moment.tree.index.clone(),
                             id: beam.top_id() + 1,
                         },
-                        movers: moment
+                        moment
                             .movers
                             .iter()
                             .filter(|&v| v != mover)
@@ -204,7 +206,7 @@ fn unmove_from_mover<
                                 id: beam.top_id() + 2,
                             }))
                             .collect(),
-                    });
+                    ));
                     *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
                     beam.push_rule(Rule::UnmoveFromMover {
                         parent: moment.tree.id,
@@ -241,13 +243,13 @@ fn unmove<
 ) -> Result<()> {
     let stored = lexicon.find_licensee(cat)?;
 
-    beam.push_moment(ParseMoment {
-        tree: FutureTree {
+    beam.push_moment(ParseMoment::new(
+        FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(Direction::Right),
             id: beam.top_id() + 1,
         },
-        movers: clone_push(
+        clone_push(
             &moment.movers,
             FutureTree {
                 node: stored,
@@ -255,7 +257,7 @@ fn unmove<
                 id: beam.top_id() + 2,
             },
         ),
-    });
+    ));
 
     *beam.log_probability_mut() += child_prob + rule_prob;
     beam.push_rule(Rule::Unmove {
@@ -277,6 +279,7 @@ pub fn expand<
 >(
     moment: ParseMoment,
     beam: B,
+    // movement_storage: &mut MovementStorage,
     lexicon: &'a Lexicon<T, Category>,
     probability_of_moving: LogProb<f64>,
     probability_of_merging: LogProb<f64>,
@@ -301,7 +304,7 @@ pub fn expand<
         .flat_map(move |((child_node, (child, child_prob)), beam)| {
             let mut v: Vec<_> = vec![];
             match &child {
-                FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
+                FeatureOrLemma::Lemma(s) if moment.no_movers() => {
                     B::scan(&mut v, &moment, beam, s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {

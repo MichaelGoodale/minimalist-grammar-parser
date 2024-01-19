@@ -1,4 +1,4 @@
-use super::trees::{FutureTree, GornIndex, ParseMoment};
+use super::trees::{FutureTree, GornIndex, MovementStorage, ParseMoment};
 use super::Rule;
 use crate::lexicon::Lexicon;
 use anyhow::Result;
@@ -142,19 +142,20 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
+        //movement_storage: MovementStorage,
         sentence: &'a [T],
     ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
-        queue.push(Reverse(ParseMoment {
-            tree: FutureTree {
+        queue.push(Reverse(ParseMoment::new(
+            FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
                 id: 0,
             },
-            movers: thin_vec![],
-        }));
+            thin_vec![],
+        )));
 
         Ok(ParseBeam {
             log_probability: LogProb::new(0_f64).unwrap(),
@@ -273,14 +274,14 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
-        queue.push(Reverse(ParseMoment {
-            tree: FutureTree {
+        queue.push(Reverse(ParseMoment::new(
+            FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
                 id: 0,
             },
-            movers: thin_vec![],
-        }));
+            thin_vec![],
+        )));
 
         Ok(GeneratorBeam {
             log_probability: LogProb::new(0_f64).unwrap(),

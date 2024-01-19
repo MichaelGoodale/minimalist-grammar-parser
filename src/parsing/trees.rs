@@ -57,6 +57,13 @@ impl ParseMoment {
         }
         least
     }
+
+    pub fn new(tree: FutureTree, movers: ThinVec<FutureTree>) -> Self {
+        ParseMoment { tree, movers }
+    }
+    pub fn no_movers(&self) -> bool {
+        self.movers.is_empty()
+    }
 }
 
 impl PartialOrd for ParseMoment {
@@ -68,5 +75,17 @@ impl PartialOrd for ParseMoment {
 impl Ord for ParseMoment {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.least_index().cmp(other.least_index())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovementStorage {
+    storage: Vec<ThinVec<FutureTree>>,
+}
+
+impl MovementStorage {
+    fn new_movement(&mut self, v: ThinVec<FutureTree>) -> &ThinVec<FutureTree> {
+        self.storage.push(v);
+        self.storage.last().unwrap()
     }
 }

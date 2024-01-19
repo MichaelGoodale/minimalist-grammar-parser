@@ -55,7 +55,7 @@ where
         Ok(Parser {
             lexicon,
             move_log_prob: config.move_prob,
-            merge_log_prob: LogProb::new((-config.move_prob.into_inner().exp()).ln_1p()).unwrap(),
+            merge_log_prob: config.move_prob.opposite_prob(),
             config,
             parse_heap,
         })
@@ -121,7 +121,7 @@ where
         Ok(Generator {
             lexicon,
             move_log_prob: config.move_prob,
-            merge_log_prob: LogProb::new((-config.move_prob.into_inner().exp()).ln_1p()).unwrap(),
+            merge_log_prob: config.move_prob.opposite_prob(),
             config,
             parse_heap,
         })

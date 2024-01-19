@@ -110,6 +110,7 @@ where
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
+        beam.queue.shrink_to_fit();
         let should_push = match s {
             Some(s) if *s == beam.sentence[beam.sentence_position] => {
                 beam.sentence_position += 1;
@@ -243,6 +244,7 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
+        beam.queue.shrink_to_fit();
         if let Some(s) = s {
             //If the word was None then adding it does nothing
             beam.sentence.push(s.clone());

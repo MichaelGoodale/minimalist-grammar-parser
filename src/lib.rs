@@ -3,7 +3,7 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::beam::{GeneratorBeam, ParseBeam};
+use parsing::beam::{Beam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
 
@@ -71,7 +71,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop_max() {
-            if let Some(moment) = beam.pop() {
+            if let Some(moment) = beam.pop_moment() {
                 self.parse_heap.extend(
                     expand(
                         moment,
@@ -137,7 +137,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop_max() {
-            if let Some(moment) = beam.pop() {
+            if let Some(moment) = beam.pop_moment() {
                 self.parse_heap.extend(
                     expand(
                         moment,

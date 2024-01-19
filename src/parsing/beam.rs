@@ -13,6 +13,8 @@ pub trait Beam<T>: Sized {
 
     fn log_probability_mut(&mut self) -> &mut LogProb<f64>;
 
+    fn pop_moment(&mut self) -> Option<ParseMoment>;
+
     fn push_moment(&mut self, x: ParseMoment);
 
     fn push_rule(&mut self, x: Rule);
@@ -126,17 +128,17 @@ where
             v.push(beam);
         };
     }
-}
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
-    pub fn pop(&mut self) -> Option<ParseMoment> {
+    fn pop_moment(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)
         } else {
             None
         }
     }
+}
 
+impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
@@ -253,17 +255,17 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
         beam.steps += 1;
         v.push(beam);
     }
-}
 
-impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
-    pub fn pop(&mut self) -> Option<ParseMoment> {
+    fn pop_moment(&mut self) -> Option<ParseMoment> {
         if let Some(Reverse(x)) = self.queue.pop() {
             Some(x)
         } else {
             None
         }
     }
+}
 
+impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,

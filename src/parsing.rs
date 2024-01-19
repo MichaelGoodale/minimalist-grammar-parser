@@ -293,12 +293,13 @@ pub fn expand<
     let children = lexicon
         .children_of(moment.tree.node)
         .map(|nx| (nx, lexicon.get(nx).unwrap()));
-    let new_beams = itertools::repeat_n(beam, lexicon.n_children(moment.tree.node));
+    let n_children = lexicon.n_children(moment.tree.node);
+    let new_beams = itertools::repeat_n(beam, n_children);
+
     children
         .zip(new_beams)
         .flat_map(move |((child_node, (child, child_prob)), beam)| {
             let mut v: Vec<_> = vec![];
-            let old_len = v.len();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.movers.is_empty() => {
                     B::scan(&mut v, &moment, beam, s, child_node, child_prob);
@@ -314,7 +315,7 @@ pub fn expand<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > old_len {
+                    let rule_prob = if v.len() > 0 {
                         probability_of_merging
                     } else {
                         LogProb::new(0_f64).unwrap()
@@ -334,7 +335,7 @@ pub fn expand<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > old_len {
+                    let rule_prob = if v.len() > 0 {
                         probability_of_merging
                     } else {
                         LogProb::new(0_f64).unwrap()
@@ -345,6 +346,20 @@ pub fn expand<
                 }
                 _ => (),
             }
+            if n_children == 1 && v.len() == 1 {
+                let moment = v[0].pop_moment();
+                if let Some(moment) = moment {
+                    let beam = v.pop().unwrap();
+                    v.extend(expand(
+                        moment,
+                        beam,
+                        lexicon,
+                        probability_of_moving,
+                        probability_of_merging,
+                    ))
+                }
+            };
+
             v.into_iter()
         })
 }

@@ -77,15 +77,3 @@ impl Ord for ParseMoment {
         self.least_index().cmp(other.least_index())
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MovementStorage {
-    storage: Vec<ThinVec<FutureTree>>,
-}
-
-impl MovementStorage {
-    fn new_movement(&mut self, v: ThinVec<FutureTree>) -> &ThinVec<FutureTree> {
-        self.storage.push(v);
-        self.storage.last().unwrap()
-    }
-}

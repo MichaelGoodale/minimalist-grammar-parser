@@ -7,8 +7,6 @@ use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, ParseMoment};
 
-use self::trees::MovementStorage;
-
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
     Start(NodeIndex),
@@ -279,7 +277,6 @@ pub fn expand<
 >(
     moment: ParseMoment,
     beam: B,
-    // movement_storage: &mut MovementStorage,
     lexicon: &'a Lexicon<T, Category>,
     probability_of_moving: LogProb<f64>,
     probability_of_merging: LogProb<f64>,
@@ -349,19 +346,6 @@ pub fn expand<
                 }
                 _ => (),
             }
-            if n_children == 1 && v.len() == 1 {
-                let moment = v[0].pop_moment();
-                if let Some(moment) = moment {
-                    let beam = v.pop().unwrap();
-                    v.extend(expand(
-                        moment,
-                        beam,
-                        lexicon,
-                        probability_of_moving,
-                        probability_of_merging,
-                    ))
-                }
-            };
 
             v.into_iter()
         })

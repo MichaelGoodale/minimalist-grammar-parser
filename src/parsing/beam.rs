@@ -1,4 +1,4 @@
-use super::trees::{FutureTree, GornIndex, MovementStorage, ParseMoment};
+use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::Lexicon;
 use anyhow::Result;

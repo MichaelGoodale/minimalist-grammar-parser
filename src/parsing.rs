@@ -313,7 +313,7 @@ pub fn expand<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 0 {
+                    let rule_prob = if !v.is_empty() {
                         probability_of_merging
                     } else {
                         LogProb::new(0_f64).unwrap()
@@ -333,7 +333,7 @@ pub fn expand<
                         child_prob,
                         probability_of_moving,
                     );
-                    let rule_prob = if v.len() > 0 {
+                    let rule_prob = if !v.is_empty() {
                         probability_of_merging
                     } else {
                         LogProb::new(0_f64).unwrap()

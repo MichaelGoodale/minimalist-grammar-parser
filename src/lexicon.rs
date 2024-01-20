@@ -1,7 +1,7 @@
 use crate::Direction;
 use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
-use logprob::LogProb;
+use logprob::{LogProb, Softmax};
 use petgraph::{
     graph::DiGraph,
     graph::NodeIndex,
@@ -306,9 +306,15 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     }
                 }
                 std::cmp::Ordering::Greater => {
-                    let n: f64 = edges.iter().map(|(w, _)| w).sum::<f64>().ln();
-                    for (weight, edge) in edges {
-                        graph[edge] = weight.ln() - n;
+                    let dist = edges
+                        .iter()
+                        .map(|(w, _edge)| *w)
+                        .softmax()
+                        .unwrap()
+                        .map(|x| x.into_inner());
+
+                    for (new_weight, (_weight, edge)) in dist.zip(edges.iter()) {
+                        graph[*edge] = new_weight;
                     }
                 }
                 _ => (),
@@ -573,7 +579,6 @@ mod tests {
                 .collect::<Vec<_>>(),
         );
         assert_eq!(lex, lex_2);
-
         assert_eq!(
             format!("{}", Dot::new(&lex.graph)),
             "digraph {
@@ -604,29 +609,29 @@ mod tests {
     24 [ label = \"D\" ]
     25 [ label = \"N=\" ]
     26 [ label = \"which\" ]
-    0 -> 1 [ label = \"-1.791759469228055\" ]
+    0 -> 1 [ label = \"-2.8042006992676702\" ]
     1 -> 2 [ label = \"-0.6931471805599453\" ]
     2 -> 3 [ label = \"0\" ]
     1 -> 4 [ label = \"-0.6931471805599453\" ]
     4 -> 5 [ label = \"0\" ]
     5 -> 6 [ label = \"0\" ]
-    0 -> 7 [ label = \"-1.0986122886681098\" ]
+    0 -> 7 [ label = \"-0.8042006992676702\" ]
     7 -> 8 [ label = \"0\" ]
-    8 -> 9 [ label = \"-0.6931471805599453\" ]
+    8 -> 9 [ label = \"-0.6931471805599454\" ]
     9 -> 10 [ label = \"-0.6931471805599453\" ]
     9 -> 11 [ label = \"-0.6931471805599453\" ]
-    8 -> 12 [ label = \"-0.6931471805599453\" ]
+    8 -> 12 [ label = \"-0.6931471805599454\" ]
     12 -> 13 [ label = \"-0.6931471805599453\" ]
     12 -> 14 [ label = \"-0.6931471805599453\" ]
-    0 -> 15 [ label = \"-1.0986122886681098\" ]
+    0 -> 15 [ label = \"-0.8042006992676702\" ]
     15 -> 16 [ label = \"-1.3862943611198906\" ]
     15 -> 17 [ label = \"-1.3862943611198906\" ]
     15 -> 18 [ label = \"-1.3862943611198906\" ]
     15 -> 19 [ label = \"-1.3862943611198906\" ]
-    0 -> 20 [ label = \"-2.4849066497880004\" ]
+    0 -> 20 [ label = \"-3.8042006992676702\" ]
     20 -> 21 [ label = \"0\" ]
     21 -> 22 [ label = \"0\" ]
-    0 -> 23 [ label = \"-2.4849066497880004\" ]
+    0 -> 23 [ label = \"-3.8042006992676702\" ]
     23 -> 24 [ label = \"0\" ]
     24 -> 25 [ label = \"0\" ]
     25 -> 26 [ label = \"0\" ]
@@ -690,20 +695,20 @@ mod tests {
     22 [ label = \"+r\" ]
     23 [ label = \"=T\" ]
     24 [ label = \"b\" ]
-    0 -> 1 [ label = \"-1.791759469228055\" ]
+    0 -> 1 [ label = \"-2.4076059644443806\" ]
     1 -> 2 [ label = \"0\" ]
     2 -> 3 [ label = \"0\" ]
     3 -> 4 [ label = \"0\" ]
     4 -> 5 [ label = \"0\" ]
-    0 -> 6 [ label = \"-0.6931471805599452\" ]
-    6 -> 7 [ label = \"-1.0986122886681098\" ]
+    0 -> 6 [ label = \"-0.4076059644443806\" ]
+    6 -> 7 [ label = \"-1.3132616875182228\" ]
     7 -> 8 [ label = \"0\" ]
     8 -> 9 [ label = \"0\" ]
-    6 -> 10 [ label = \"-0.4054651081081645\" ]
+    6 -> 10 [ label = \"-0.3132616875182228\" ]
     10 -> 11 [ label = \"0\" ]
     11 -> 12 [ label = \"-0.6931471805599453\" ]
     12 -> 13 [ label = \"0\" ]
-    0 -> 14 [ label = \"-1.0986122886681096\" ]
+    0 -> 14 [ label = \"-1.4076059644443804\" ]
     14 -> 15 [ label = \"-0.6931471805599453\" ]
     15 -> 16 [ label = \"0\" ]
     16 -> 17 [ label = \"0\" ]

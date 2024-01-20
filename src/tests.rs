@@ -298,6 +298,26 @@ fn degenerate_grammar() -> Result<()> {
 }
 
 #[test]
+fn degenerate_strings() -> Result<()> {
+    let s = "a::c
+b::c
+d::a= c
+e::c -d
+f::+g c";
+    let s = s
+        .split('\n')
+        .map(LexicalEntry::parse)
+        .collect::<Result<Vec<_>>>()?;
+    let lexicon = Lexicon::new(s);
+    let x: Vec<_> = Generator::new(&lexicon, 'c', &CONFIG)?
+        .take(50)
+        .map(|(_, x, _)| x)
+        .collect();
+    assert_eq!(x, vec![vec!["a"], vec!["b"]]);
+    Ok(())
+}
+
+#[test]
 fn capped_beams() -> Result<()> {
     let lexicon = Lexicon::new(vec![
         LexicalEntry::parse("a::=b c")?,

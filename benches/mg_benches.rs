@@ -31,28 +31,39 @@ lazy_static! {
     };
 }
 
-#[divan::bench]
-fn parse_long_sentence() {
+#[divan::bench(args = [true, false])]
+fn parse_long_sentence(record_rules: bool) {
     let g = divan::black_box(get_grammar());
     let sentence: Vec<&str> = divan::black_box(
         "which king knows the queen knows which beer the king drinks"
             .split(' ')
             .collect(),
     );
-    Parser::new(&g, 'C', &sentence, &CONFIG)
-        .unwrap()
-        .next()
-        .unwrap();
+    divan::black_box(if record_rules {
+        Parser::new
+    } else {
+        Parser::new_skip_rules
+    })(&g, 'C', &sentence, &CONFIG)
+    .unwrap()
+    .next()
+    .unwrap();
 }
 
-#[divan::bench]
-fn generate_sentence() {
+#[divan::bench(args=[true, false])]
+fn generate_sentence(record_rules: bool) {
     let g = divan::black_box(get_grammar());
-    Generator::new(&g, 'C', &CONFIG).unwrap().take(100).count();
+    divan::black_box(if record_rules {
+        Generator::new
+    } else {
+        Generator::new_skip_rules
+    })(&g, 'C', &CONFIG)
+    .unwrap()
+    .take(100)
+    .count();
 }
 
-#[divan::bench]
-fn parse_copy_language() {
+#[divan::bench(args = [true, false])]
+fn parse_copy_language(record_rules: bool) {
     let (lex, strings) = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -78,12 +89,19 @@ fn parse_copy_language() {
     });
 
     for s in strings.iter() {
-        Parser::new(&lex, 'T', s, &CONFIG).unwrap().next().unwrap();
+        divan::black_box(if record_rules {
+            Parser::new
+        } else {
+            Parser::new_skip_rules
+        })(&lex, 'T', s, &CONFIG)
+        .unwrap()
+        .next()
+        .unwrap();
     }
 }
 
-#[divan::bench]
-fn generate_copy_language() {
+#[divan::bench(args = [true, false])]
+fn generate_copy_language(record_rules: bool) {
     let lex = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -93,8 +111,12 @@ fn generate_copy_language() {
         Lexicon::new(v)
     });
 
-    Generator::new(&lex, 'T', &CONFIG)
-        .unwrap()
-        .take(100)
-        .count();
+    divan::black_box(if record_rules {
+        Generator::new
+    } else {
+        Generator::new_skip_rules
+    })(&lex, 'T', &CONFIG)
+    .unwrap()
+    .take(100)
+    .count();
 }

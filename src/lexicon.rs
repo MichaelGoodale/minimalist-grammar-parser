@@ -209,10 +209,10 @@ impl<
             }
         }
         let n_categories: u16 = category_symbols.len().try_into()?;
-        let symbol_cost: f64 = (MG_TYPES + n_categories + n_phonemes + 1).try_into()?;
+        let symbol_cost: f64 = (MG_TYPES + n_categories + n_phonemes + 1).into();
         let symbol_cost = symbol_cost.log2();
 
-        let lemma_costs: f64 = lemma_costs.try_into()?;
+        let lemma_costs: f64 = lemma_costs.into();
 
         Ok(lemma_costs * symbol_cost)
     }

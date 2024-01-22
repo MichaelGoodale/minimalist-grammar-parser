@@ -88,9 +88,9 @@ checksum = "baf0a07a401f374238ab8e2f11a104d2851bf9ce711ec69804834de8af45c7af"
 
 [[package]]
 name = "divan"
-version = "0.1.8"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbf174e1957cfadab3bcb040afb210ea8b7c2ffc094eb88b750be61fc601835e"
+checksum = "5398159ee27f2b123d89b856bad61725442f37df5fb98c30cd570c318d594aee"
 dependencies = [
  "cfg-if",
  "clap",
@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "divan-macros"
-version = "0.1.8"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "510ef69263e119c8ec0213761e397d26a3f6d35e13a454549508446d3578ddc0"
+checksum = "5092f66eb3563a01e85552731ae82c04c934ff4efd7ad1a0deae7b948f4b3ec4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -196,7 +196,7 @@ checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
 [[package]]
 name = "logprob"
 version = "0.2.0"
-source = "git+https://github.com/michaelgoodale/logprob.git#b6517fd8bd07c25dcb38333a1e1408efba92ca18"
+source = "git+https://github.com/michaelgoodale/logprob.git#d8ef5e3bb140aaa7e4b46e9aa83bec9d6cd5e04c"
 dependencies = [
  "num-traits",
 ]
@@ -251,9 +251,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.76"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95fc56cda0b5c3325f5fbbd7ff9fda9e02bb00bb3dac51252d2f1bfa1cb8cc8c"
+checksum = "e2422ad645d89c99f8f3e6b88a9fdeca7fabeac836b1002371c4367c8f984aae"
 dependencies = [
  "unicode-ident",
 ]

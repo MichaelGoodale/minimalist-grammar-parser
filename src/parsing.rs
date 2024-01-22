@@ -92,13 +92,15 @@ fn unmerge_from_mover<
                     ));
 
                     *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
-                    beam.push_rule(Rule::UnmergeFromMover {
-                        child: child_node,
-                        child_id: beam.top_id() + 1,
-                        stored_id: beam.top_id() + 2,
-                        parent: moment.tree.id,
-                        storage: mover.id,
-                    });
+                    if beam.record_rules() {
+                        beam.push_rule(Rule::UnmergeFromMover {
+                            child: child_node,
+                            child_id: beam.top_id() + 1,
+                            stored_id: beam.top_id() + 2,
+                            parent: moment.tree.id,
+                            storage: mover.id,
+                        });
+                    }
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
@@ -152,12 +154,14 @@ fn unmerge<
     ));
 
     *beam.log_probability_mut() += child_prob + rule_prob;
-    beam.push_rule(Rule::Unmerge {
-        child: child_node,
-        parent: moment.tree.id,
-        child_id: beam.top_id() + 2,
-        complement_id: beam.top_id() + 1,
-    });
+    if beam.record_rules() {
+        beam.push_rule(Rule::Unmerge {
+            child: child_node,
+            parent: moment.tree.id,
+            child_id: beam.top_id() + 2,
+            complement_id: beam.top_id() + 1,
+        });
+    }
     *beam.top_id_mut() += 2;
     beam.inc();
     v.push(beam);
@@ -206,12 +210,14 @@ fn unmove_from_mover<
                             .collect(),
                     ));
                     *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
-                    beam.push_rule(Rule::UnmoveFromMover {
-                        parent: moment.tree.id,
-                        child_id: beam.top_id() + 1,
-                        stored_id: beam.top_id() + 2,
-                        storage: mover.id,
-                    });
+                    if beam.record_rules() {
+                        beam.push_rule(Rule::UnmoveFromMover {
+                            parent: moment.tree.id,
+                            child_id: beam.top_id() + 1,
+                            stored_id: beam.top_id() + 2,
+                            storage: mover.id,
+                        });
+                    }
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
@@ -258,11 +264,13 @@ fn unmove<
     ));
 
     *beam.log_probability_mut() += child_prob + rule_prob;
-    beam.push_rule(Rule::Unmove {
-        child_id: beam.top_id() + 1,
-        stored_id: beam.top_id() + 2,
-        parent: moment.tree.id,
-    });
+    if beam.record_rules() {
+        beam.push_rule(Rule::Unmove {
+            child_id: beam.top_id() + 1,
+            stored_id: beam.top_id() + 2,
+            parent: moment.tree.id,
+        });
+    }
     *beam.top_id_mut() += 2;
     beam.inc();
     v.push(beam);

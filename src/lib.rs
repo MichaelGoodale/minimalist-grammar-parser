@@ -51,7 +51,24 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence)?);
+        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence, true)?);
+        Ok(Parser {
+            lexicon,
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
+            parse_heap,
+        })
+    }
+
+    pub fn new_skip_rules(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        sentence: &'a [T],
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>> {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence, false)?);
         Ok(Parser {
             lexicon,
             move_log_prob: config.move_prob,
@@ -90,7 +107,7 @@ where
                     }
                 };
             } else if beam.good_parse() {
-                return Some((beam.log_probability, beam.rules));
+                return Some((beam.log_probability, beam.rules.to_vec()));
             }
         }
         None
@@ -117,7 +134,23 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorBeam::new(lexicon, initial_category)?);
+        parse_heap.push(GeneratorBeam::new(lexicon, initial_category, true)?);
+        Ok(Generator {
+            lexicon,
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
+            parse_heap,
+        })
+    }
+
+    pub fn new_skip_rules(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        config: &'a ParsingConfig,
+    ) -> Result<Generator<'a, T, Category>> {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(GeneratorBeam::new(lexicon, initial_category, false)?);
         Ok(Generator {
             lexicon,
             move_log_prob: config.move_prob,
@@ -156,7 +189,7 @@ where
                     }
                 };
             } else if beam.queue.is_empty() {
-                return Some((beam.log_probability, beam.sentence, beam.rules));
+                return Some((beam.log_probability, beam.sentence, beam.rules.to_vec()));
             }
         }
         None

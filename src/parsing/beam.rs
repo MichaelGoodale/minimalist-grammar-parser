@@ -6,7 +6,7 @@ use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use thin_vec::thin_vec;
+use thin_vec::{thin_vec, ThinVec};
 
 pub trait Beam<T>: Sized {
     fn log_probability(&self) -> &LogProb<f64>;
@@ -18,6 +18,8 @@ pub trait Beam<T>: Sized {
     fn push_moment(&mut self, x: ParseMoment);
 
     fn push_rule(&mut self, x: Rule);
+
+    fn record_rules(&self) -> bool;
 
     fn scan(
         v: &mut Vec<Self>,
@@ -41,9 +43,10 @@ pub struct ParseBeam<'a, T> {
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: &'a [T],
     pub sentence_position: usize,
-    pub rules: Vec<Rule>,
+    pub rules: ThinVec<Rule>,
     pub top_id: usize,
     pub steps: usize,
+    pub record_rules: bool,
 }
 
 impl<T: Eq + std::fmt::Debug> PartialEq for ParseBeam<'_, T> {
@@ -82,6 +85,14 @@ where
         &mut self.log_probability
     }
 
+    fn pop_moment(&mut self) -> Option<ParseMoment> {
+        if let Some(Reverse(x)) = self.queue.pop() {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
     fn push_moment(&mut self, x: ParseMoment) {
         self.queue.push(Reverse(x))
     }
@@ -90,16 +101,8 @@ where
         self.rules.push(x)
     }
 
-    fn inc(&mut self) {
-        self.steps += 1;
-    }
-
-    fn top_id(&self) -> usize {
-        self.top_id
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        &mut self.top_id
+    fn record_rules(&self) -> bool {
+        self.record_rules
     }
 
     fn scan(
@@ -121,21 +124,27 @@ where
         };
         if should_push {
             beam.log_probability += child_prob;
-            beam.rules.push(Rule::Scan {
-                node: child_node,
-                parent: moment.tree.id,
-            });
+            if beam.record_rules() {
+                beam.rules.push(Rule::Scan {
+                    node: child_node,
+                    parent: moment.tree.id,
+                });
+            }
             beam.steps += 1;
             v.push(beam);
         };
     }
 
-    fn pop_moment(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
+    fn inc(&mut self) {
+        self.steps += 1;
+    }
+
+    fn top_id(&self) -> usize {
+        self.top_id
+    }
+
+    fn top_id_mut(&mut self) -> &mut usize {
+        &mut self.top_id
     }
 }
 
@@ -144,6 +153,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentence: &'a [T],
+        record_rules: bool,
     ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
@@ -159,12 +169,17 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'_, T> {
 
         Ok(ParseBeam {
             log_probability: LogProb::new(0_f64).unwrap(),
-            sentence_position: 0,
-            sentence,
             queue,
-            rules: vec![Rule::Start(category_index)],
+            sentence,
+            sentence_position: 0,
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
             top_id: 0,
             steps: 0,
+            record_rules,
         })
     }
 
@@ -178,9 +193,10 @@ pub struct GeneratorBeam<T> {
     pub log_probability: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: Vec<T>,
-    pub rules: Vec<Rule>,
+    pub rules: ThinVec<Rule>,
     pub top_id: usize,
     pub steps: usize,
+    pub record_rules: bool,
 }
 
 impl<T: Eq + std::fmt::Debug> PartialEq for GeneratorBeam<T> {
@@ -216,6 +232,14 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
         &mut self.log_probability
     }
 
+    fn pop_moment(&mut self) -> Option<ParseMoment> {
+        if let Some(Reverse(x)) = self.queue.pop() {
+            Some(x)
+        } else {
+            None
+        }
+    }
+
     fn push_moment(&mut self, x: ParseMoment) {
         self.queue.push(Reverse(x))
     }
@@ -224,16 +248,8 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
         self.rules.push(x)
     }
 
-    fn inc(&mut self) {
-        self.steps += 1;
-    }
-
-    fn top_id(&self) -> usize {
-        self.top_id
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        &mut self.top_id
+    fn record_rules(&self) -> bool {
+        self.record_rules
     }
 
     fn scan(
@@ -250,20 +266,26 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
             beam.sentence.push(s.clone());
         }
         beam.log_probability += child_prob;
-        beam.rules.push(Rule::Scan {
-            node: child_node,
-            parent: moment.tree.id,
-        });
+        if beam.record_rules {
+            beam.rules.push(Rule::Scan {
+                node: child_node,
+                parent: moment.tree.id,
+            });
+        }
         beam.steps += 1;
         v.push(beam);
     }
 
-    fn pop_moment(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
+    fn inc(&mut self) {
+        self.steps += 1;
+    }
+
+    fn top_id(&self) -> usize {
+        self.top_id
+    }
+
+    fn top_id_mut(&mut self) -> &mut usize {
+        &mut self.top_id
     }
 }
 
@@ -271,6 +293,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
+        record_rules: bool,
     ) -> Result<GeneratorBeam<T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
@@ -286,11 +309,16 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
 
         Ok(GeneratorBeam {
             log_probability: LogProb::new(0_f64).unwrap(),
-            sentence: vec![],
             queue,
-            rules: vec![Rule::Start(category_index)],
+            sentence: vec![],
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
             top_id: 0,
             steps: 0,
+            record_rules,
         })
     }
 }

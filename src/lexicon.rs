@@ -146,23 +146,28 @@ pub trait SymbolCost: Sized {
 
 impl SymbolCost for &str {
     fn symbol_cost(x: &Option<Self>) -> Result<u16> {
-        if let Some(x) = x {
-            Ok(x.len().try_into()?)
-        } else {
-            Ok(1)
+        match x {
+            Some(x) => Ok(x.len().try_into()?),
+            None => Ok(0),
         }
     }
 }
 
 impl SymbolCost for char {
-    fn symbol_cost(_x: &Option<Self>) -> Result<u16> {
-        Ok(1)
+    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+        match x {
+            Some(_) => Ok(1),
+            None => Ok(0),
+        }
     }
 }
 
 impl SymbolCost for u8 {
-    fn symbol_cost(_x: &Option<Self>) -> Result<u16> {
-        Ok(1)
+    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+        match x {
+            Some(_) => Ok(1),
+            None => Ok(0),
+        }
     }
 }
 

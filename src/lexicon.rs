@@ -175,20 +175,20 @@ impl<
         Category: Eq + std::fmt::Debug + Clone + Hash,
     > Lexicon<T, Category>
 {
-    ///Returns the MDL Score of the lexicon as per Ermolaeva 2021
+    ///Returns the MDL Score of the lexicon
     ///
     /// # Arguments
     /// * `n_phonemes` - The size of required to encode a symbol of the phonology. E.g.
     /// in English orthography, it would be 26.
     pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64> {
         let mut category_symbols = AHashSet::new();
-        let mut lemma_costs: u16 = 0;
+        let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
         for (leaf, _weight) in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
-                let mut nx = *leaf;
-                let lemma_cost: u16 = T::symbol_cost(lemma)?;
+                let n_phonemes = T::symbol_cost(lemma)?;
 
+                let mut nx = *leaf;
                 let mut n_features = 0;
                 while let Some(parent) = self.parent_of(nx) {
                     if parent == self.root {
@@ -202,19 +202,23 @@ impl<
                     }
                     nx = parent;
                 }
-
-                lemma_costs += lemma_cost + 2 * n_features + 1;
+                lexemes.push((n_phonemes.into(), n_features.into()));
             } else {
                 bail!("Bad lexicon!");
             }
         }
         let n_categories: u16 = category_symbols.len().try_into()?;
-        let symbol_cost: f64 = (MG_TYPES + n_categories + n_phonemes + 1).into();
-        let symbol_cost = symbol_cost.log2();
 
-        let lemma_costs: f64 = lemma_costs.into();
+        let bits_per_feature: f64 = (MG_TYPES + n_categories).into();
+        let bits_per_feature = bits_per_feature.log2();
+        let bits_per_phoneme: f64 = (Into::<f64>::into(n_phonemes)).log2();
 
-        Ok(lemma_costs * symbol_cost)
+        Ok(lexemes
+            .into_iter()
+            .map(|(n_phonemes, n_categories)| {
+                n_phonemes * bits_per_phoneme + bits_per_feature * n_categories
+            })
+            .sum())
     }
 }
 
@@ -742,7 +746,9 @@ laugh::=d v
 jump::=d v
 s::=v +k t
 ed::=v +k t";
-        for (g, n_categories, size) in [(ga, 3, 61_f64), (gb, 4, 45_f64)] {
+        for (g, n_categories, string_size, feature_size) in
+            [(ga, 3, 28_f64, 14_f64), (gb, 4, 16_f64, 12_f64)]
+        {
             let strings: Vec<&str> = g.split('\n').collect();
             let v: Vec<_> = strings
                 .iter()
@@ -751,9 +757,12 @@ ed::=v +k t";
                 .collect::<Result<Vec<_>>>()?;
             let lex = Lexicon::new(v);
             for alphabet_size in [26, 32, 37] {
-                let bit_per_symbol: f64 =
-                    (MG_TYPES + n_categories + alphabet_size + 1).try_into()?;
-                assert_relative_eq!(lex.mdl_score(alphabet_size)?, size * bit_per_symbol.log2());
+                let bits_per_symbol: f64 = (MG_TYPES + n_categories).into();
+                let bits_per_phoneme: f64 = alphabet_size.into();
+                assert_relative_eq!(
+                    lex.mdl_score(alphabet_size)?,
+                    string_size * bits_per_phoneme.log2() + feature_size * bits_per_symbol.log2()
+                );
             }
         }
         Ok(())

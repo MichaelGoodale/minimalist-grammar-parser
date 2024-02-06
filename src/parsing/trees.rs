@@ -8,12 +8,24 @@ use thin_vec::ThinVec;
 
 type IndexArray = BitArray<u64, Lsb0>;
 
-pub const MAX_STEPS: usize = 63;
+pub const MAX_STEPS: usize = 64;
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Ord, Eq, Default)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct GornIndex {
     index: BitArray<u64, Lsb0>,
     size: usize,
+}
+
+impl PartialOrd for GornIndex {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for GornIndex {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.index[..self.size].cmp(&other.index[..other.size])
+    }
 }
 
 impl<T> From<T> for GornIndex
@@ -46,8 +58,8 @@ impl GornIndex {
     #[inline]
     pub fn clone_push(&self, d: Direction) -> Self {
         let mut v = *self;
-        v.size += 1;
         v.index.set(v.size, d.into());
+        v.size += 1;
         v
     }
 }

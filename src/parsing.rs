@@ -72,7 +72,7 @@ fn unmerge_from_mover<
                     beam.push_moment(ParseMoment::new(
                         FutureTree {
                             node: child_node,
-                            index: moment.tree.index.clone(),
+                            index: moment.tree.index,
                             id: beam.top_id() + 1,
                         },
                         thin_vec![],
@@ -80,7 +80,7 @@ fn unmerge_from_mover<
                     beam.push_moment(ParseMoment::new(
                         FutureTree {
                             node: stored_child_node,
-                            index: mover.index.clone(),
+                            index: mover.index,
                             id: beam.top_id() + 2,
                         },
                         moment
@@ -194,7 +194,7 @@ fn unmove_from_mover<
                     beam.push_moment(ParseMoment::new(
                         FutureTree {
                             node: child_node,
-                            index: moment.tree.index.clone(),
+                            index: moment.tree.index,
                             id: beam.top_id() + 1,
                         },
                         moment
@@ -204,7 +204,7 @@ fn unmove_from_mover<
                             .cloned()
                             .chain(std::iter::once(FutureTree {
                                 node: stored_child_node,
-                                index: mover.index.clone(),
+                                index: mover.index,
                                 id: beam.top_id() + 2,
                             }))
                             .collect(),

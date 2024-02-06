@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use anyhow::Result;
 use lexicon::Lexicon;
 
@@ -66,10 +68,35 @@ impl ParsingConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ParseHeap<'a, T, B: Beam<T>> {
+    parse_heap: MinMaxHeap<B>,
+    phantom: PhantomData<T>,
+    config: &'a ParsingConfig,
+}
+
+impl<'a, T, B: Beam<T>> ParseHeap<'a, T, B>
+where
+    B: Ord,
+{
+    fn pop(&mut self) -> Option<B> {
+        self.parse_heap.pop_max()
+    }
+
+    fn push(&mut self, v: B) {
+        if v.log_probability() > &self.config.min_log_prob && v.n_steps() < self.config.max_steps {
+            if self.parse_heap.len() > self.config.max_beams {
+                self.parse_heap.push_pop_min(v);
+            } else {
+                self.parse_heap.push(v);
+            }
+        }
+    }
+}
+
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    config: &'a ParsingConfig,
-    parse_heap: MinMaxHeap<ParseBeam<'a, T>>,
+    parse_heap: ParseHeap<'a, T, ParseBeam<'a, T>>,
     move_log_prob: LogProb<f64>,
     merge_log_prob: LogProb<f64>,
 }
@@ -91,8 +118,11 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            config,
-            parse_heap,
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
         })
     }
 
@@ -108,8 +138,11 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            config,
-            parse_heap,
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
         })
     }
 }
@@ -122,25 +155,16 @@ where
     type Item = (LogProb<f64>, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(mut beam) = self.parse_heap.pop_max() {
+        while let Some(mut beam) = self.parse_heap.pop() {
             if let Some(moment) = beam.pop_moment() {
-                self.parse_heap.extend(
-                    expand(
-                        moment,
-                        beam,
-                        self.lexicon,
-                        self.move_log_prob,
-                        self.merge_log_prob,
-                    )
-                    .filter(|b| b.log_probability > self.config.min_log_prob)
-                    .filter(|b| b.steps < self.config.max_steps),
+                expand(
+                    &mut self.parse_heap,
+                    moment,
+                    beam,
+                    self.lexicon,
+                    self.move_log_prob,
+                    self.merge_log_prob,
                 );
-                if self.parse_heap.len() > self.config.max_beams {
-                    let n_to_remove = self.parse_heap.len() - self.config.max_beams;
-                    for _ in 0..n_to_remove {
-                        self.parse_heap.pop_min();
-                    }
-                };
             } else if beam.good_parse() {
                 return Some((beam.log_probability, beam.rules.to_vec()));
             }
@@ -152,8 +176,7 @@ where
 #[derive(Debug)]
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    config: &'a ParsingConfig,
-    parse_heap: MinMaxHeap<GeneratorBeam<T>>,
+    parse_heap: ParseHeap<'a, T, GeneratorBeam<T>>,
     move_log_prob: LogProb<f64>,
     merge_log_prob: LogProb<f64>,
 }
@@ -174,8 +197,11 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            config,
-            parse_heap,
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
         })
     }
 
@@ -190,8 +216,11 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            config,
-            parse_heap,
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
         })
     }
 }
@@ -204,25 +233,16 @@ where
     type Item = (LogProb<f64>, Vec<T>, Vec<Rule>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(mut beam) = self.parse_heap.pop_max() {
+        while let Some(mut beam) = self.parse_heap.pop() {
             if let Some(moment) = beam.pop_moment() {
-                self.parse_heap.extend(
-                    expand(
-                        moment,
-                        beam,
-                        self.lexicon,
-                        self.move_log_prob,
-                        self.merge_log_prob,
-                    )
-                    .filter(|b| b.log_probability > self.config.min_log_prob)
-                    .filter(|b| b.steps < self.config.max_steps),
+                expand(
+                    &mut self.parse_heap,
+                    moment,
+                    beam,
+                    self.lexicon,
+                    self.move_log_prob,
+                    self.merge_log_prob,
                 );
-                if self.parse_heap.len() > self.config.max_beams {
-                    let n_to_remove = self.parse_heap.len() - self.config.max_beams;
-                    for _ in 0..n_to_remove {
-                        self.parse_heap.pop_min();
-                    }
-                };
             } else if beam.queue.is_empty() {
                 return Some((beam.log_probability, beam.sentence, beam.rules.to_vec()));
             }

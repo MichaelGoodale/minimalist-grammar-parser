@@ -1,5 +1,5 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
-use crate::Direction;
+use crate::{Direction, ParseHeap};
 use anyhow::Result;
 use beam::Beam;
 use logprob::LogProb;
@@ -54,7 +54,7 @@ fn unmerge_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     B: Beam<T> + Clone,
 >(
-    v: &mut Vec<B>,
+    v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
     beam: &B,
@@ -62,7 +62,9 @@ fn unmerge_from_mover<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
     rule_prob: LogProb<f64>,
-) {
+    inverse_rule_prob: LogProb<f64>,
+) -> LogProb<f64> {
+    let mut output = LogProb::new(0.0).unwrap();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -104,11 +106,13 @@ fn unmerge_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
+                    output = inverse_rule_prob;
                 }
                 _ => (),
             }
         }
     }
+    output
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -119,7 +123,7 @@ fn unmerge<
     Category: Eq + std::fmt::Debug + Clone,
     B: Beam<T>,
 >(
-    v: &mut Vec<B>,
+    v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
     mut beam: B,
@@ -176,7 +180,7 @@ fn unmove_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     B: Beam<T> + Clone,
 >(
-    v: &mut Vec<B>,
+    v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
     beam: &B,
@@ -184,7 +188,9 @@ fn unmove_from_mover<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
     rule_prob: LogProb<f64>,
-) {
+    inverse_rule_prob: LogProb<f64>,
+) -> LogProb<f64> {
+    let mut output = LogProb::new(0.0).unwrap();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -221,11 +227,13 @@ fn unmove_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
+                    output = inverse_rule_prob;
                 }
                 _ => (),
             }
         }
     }
+    output
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -236,7 +244,7 @@ fn unmove<
     Category: Eq + std::fmt::Debug + Clone,
     B: Beam<T>,
 >(
-    v: &mut Vec<B>,
+    v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
     mut beam: B,
@@ -283,12 +291,13 @@ pub fn expand<
     Category: Eq + std::fmt::Debug + Clone,
     B: Beam<T> + Clone + 'a,
 >(
+    extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,
     beam: B,
     lexicon: &'a Lexicon<T, Category>,
     probability_of_moving: LogProb<f64>,
     probability_of_merging: LogProb<f64>,
-) -> impl Iterator<Item = B> + 'a {
+) {
     #[cfg(test)]
     {
         assert_eq!(
@@ -303,16 +312,15 @@ pub fn expand<
 
     new_beams
         .zip(lexicon.children_of(moment.tree.node))
-        .flat_map(move |(beam, child_node)| {
-            let mut v: Vec<_> = vec![];
+        .for_each(|(beam, child_node)| {
             let (child, child_prob) = lexicon.get(child_node).unwrap();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.no_movers() => {
-                    B::scan(&mut v, &moment, beam, s, child_node, child_prob);
+                    B::scan(extender, &moment, beam, s, child_node, child_prob);
                 }
                 FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                    unmerge_from_mover(
-                        &mut v,
+                    let rule_prob = unmerge_from_mover(
+                        extender,
                         lexicon,
                         &moment,
                         &beam,
@@ -320,19 +328,16 @@ pub fn expand<
                         child_node,
                         child_prob,
                         probability_of_moving,
+                        probability_of_merging,
                     );
-                    let rule_prob = if !v.is_empty() {
-                        probability_of_merging
-                    } else {
-                        LogProb::new(0_f64).unwrap()
-                    };
                     let _ = unmerge(
-                        &mut v, lexicon, &moment, beam, cat, dir, child_node, child_prob, rule_prob,
+                        extender, lexicon, &moment, beam, cat, dir, child_node, child_prob,
+                        rule_prob,
                     );
                 }
                 FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                    unmove_from_mover(
-                        &mut v,
+                    let rule_prob = unmove_from_mover(
+                        extender,
                         lexicon,
                         &moment,
                         &beam,
@@ -340,21 +345,15 @@ pub fn expand<
                         child_node,
                         child_prob,
                         probability_of_moving,
+                        probability_of_merging,
                     );
-                    let rule_prob = if !v.is_empty() {
-                        probability_of_merging
-                    } else {
-                        LogProb::new(0_f64).unwrap()
-                    };
                     let _ = unmove(
-                        &mut v, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,
+                        extender, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,
                     );
                 }
                 _ => (),
             }
-
-            v.into_iter()
-        })
+        });
 }
 
 pub mod beam;

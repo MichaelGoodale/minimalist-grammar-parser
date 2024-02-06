@@ -1,6 +1,7 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::Lexicon;
+use crate::ParseHeap;
 use anyhow::Result;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -8,7 +9,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use thin_vec::{thin_vec, ThinVec};
 
-pub trait Beam<T>: Sized {
+pub trait Beam<T>: Sized + Ord {
     fn log_probability(&self) -> &LogProb<f64>;
 
     fn log_probability_mut(&mut self) -> &mut LogProb<f64>;
@@ -22,7 +23,7 @@ pub trait Beam<T>: Sized {
     fn record_rules(&self) -> bool;
 
     fn scan(
-        v: &mut Vec<Self>,
+        v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
         beam: Self,
         s: &Option<T>,
@@ -31,6 +32,8 @@ pub trait Beam<T>: Sized {
     );
 
     fn inc(&mut self);
+
+    fn n_steps(&self) -> usize;
 
     fn top_id(&self) -> usize;
 
@@ -75,7 +78,7 @@ impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
 
 impl<T> Beam<T> for ParseBeam<'_, T>
 where
-    T: std::cmp::PartialEq,
+    T: std::cmp::Eq + std::fmt::Debug,
 {
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
@@ -106,7 +109,7 @@ where
     }
 
     fn scan(
-        v: &mut Vec<Self>,
+        v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -137,6 +140,10 @@ where
 
     fn inc(&mut self) {
         self.steps += 1;
+    }
+
+    fn n_steps(&self) -> usize {
+        self.steps
     }
 
     fn top_id(&self) -> usize {
@@ -223,7 +230,10 @@ impl<T: Eq + std::fmt::Debug> Ord for GeneratorBeam<T> {
     }
 }
 
-impl<T: Clone> Beam<T> for GeneratorBeam<T> {
+impl<T: Clone> Beam<T> for GeneratorBeam<T>
+where
+    T: std::cmp::Eq + std::fmt::Debug,
+{
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -253,7 +263,7 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
     }
 
     fn scan(
-        v: &mut Vec<Self>,
+        v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -278,6 +288,10 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T> {
 
     fn inc(&mut self) {
         self.steps += 1;
+    }
+
+    fn n_steps(&self) -> usize {
+        self.steps
     }
 
     fn top_id(&self) -> usize {

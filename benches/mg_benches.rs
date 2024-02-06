@@ -23,12 +23,12 @@ fn get_grammar() -> Lexicon<&'static str, char> {
 }
 
 lazy_static! {
-    static ref CONFIG: ParsingConfig = ParsingConfig {
-        min_log_prob: LogProb::new(-256.0).unwrap(),
-        move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-        max_steps: 100,
-        max_beams: 1000,
-    };
+    static ref CONFIG: ParsingConfig = ParsingConfig::new(
+        LogProb::new(-256.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        100,
+        1000,
+    );
 }
 
 #[divan::bench(args = [true, false])]

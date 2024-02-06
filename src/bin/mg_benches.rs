@@ -8,12 +8,12 @@ use minimalist_grammar_parser::{
 };
 
 fn main() {
-    let config: ParsingConfig = ParsingConfig {
-        min_log_prob: LogProb::new(-256.0).unwrap(),
-        move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-        max_steps: 100,
-        max_beams: 1000,
-    };
+    let config: ParsingConfig = ParsingConfig::new(
+        LogProb::new(-256.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        100,
+        1000,
+    );
     for _ in 0..100 {
         parse_long_sentence(&config);
         parse_copy_language(&config);

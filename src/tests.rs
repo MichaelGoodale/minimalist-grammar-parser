@@ -10,12 +10,12 @@ use lazy_static::lazy_static;
 use std::{collections::HashSet, f64::consts::LN_2};
 
 lazy_static! {
-    static ref CONFIG: ParsingConfig = ParsingConfig {
-        min_log_prob: LogProb::new(-256.0).unwrap(),
-        move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-        max_steps: 100,
-        max_beams: 1000,
-    };
+    static ref CONFIG: ParsingConfig = ParsingConfig::new(
+        LogProb::new(-256.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        100,
+        1000,
+    );
 }
 
 #[test]
@@ -329,12 +329,12 @@ fn capped_beams() -> Result<()> {
     let g: Vec<_> = Generator::new(
         &lexicon,
         'c',
-        &ParsingConfig {
-            min_log_prob: LogProb::new(-128.0).unwrap(),
-            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-            max_steps: 100,
+        &ParsingConfig::new(
+            LogProb::new(-128.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
             max_beams,
-        },
+        ),
     )?
     .take(50)
     .collect();
@@ -400,12 +400,12 @@ fn proper_distributions() -> Result<()> {
             &lexicon,
             '0',
             s,
-            &ParsingConfig {
-                min_log_prob: LogProb::new(-128.0).unwrap(),
-                move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-                max_steps: 100,
-                max_beams: 50,
-            },
+            &ParsingConfig::new(
+                LogProb::new(-128.0).unwrap(),
+                LogProb::from_raw_prob(0.5).unwrap(),
+                100,
+                50,
+            ),
         )?
         .next()
         .unwrap();
@@ -415,12 +415,12 @@ fn proper_distributions() -> Result<()> {
     let g: Vec<_> = Generator::new(
         &lexicon,
         '0',
-        &ParsingConfig {
-            min_log_prob: LogProb::new(-128.0).unwrap(),
-            move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-            max_steps: 100,
-            max_beams: 50,
-        },
+        &ParsingConfig::new(
+            LogProb::new(-128.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            50,
+        ),
     )?
     .take(8)
     .map(|(p, s, _)| (p.into_inner(), s))

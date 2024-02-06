@@ -1,19 +1,53 @@
+use std::borrow::Borrow;
+
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
+use bitvec::prelude::*;
 use thin_vec::ThinVec;
-use tinyvec::TinyVec;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Default)]
+type IndexArray = BitArray<u64, Lsb0>;
+
+pub const MAX_STEPS: usize = 63;
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Ord, Eq, Default)]
 pub struct GornIndex {
-    pub index: TinyVec<[Direction; 5]>,
+    index: BitArray<u64, Lsb0>,
+    size: usize,
+}
+
+impl<T> From<T> for GornIndex
+where
+    T: Borrow<[Direction]>,
+{
+    fn from(value: T) -> Self {
+        let value = value.borrow();
+        let size = value.len();
+        let mut index = IndexArray::default();
+        value
+            .iter()
+            .enumerate()
+            .for_each(|(i, &x)| index.set(i, x.into()));
+        GornIndex { size, index }
+    }
+}
+impl From<GornIndex> for Vec<Direction> {
+    fn from(value: GornIndex) -> Self {
+        value
+            .index
+            .into_iter()
+            .take(value.size)
+            .map(|x| x.into())
+            .collect()
+    }
 }
 
 impl GornIndex {
     #[inline]
     pub fn clone_push(&self, d: Direction) -> Self {
-        let mut v = self.clone();
-        v.index.push(d);
+        let mut v = *self;
+        v.size += 1;
+        v.index.set(v.size, d.into());
         v
     }
 }

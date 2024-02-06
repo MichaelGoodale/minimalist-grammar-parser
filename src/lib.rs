@@ -23,12 +23,47 @@ impl Direction {
     }
 }
 
+impl From<Direction> for bool {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::Left => false,
+            Direction::Right => true,
+        }
+    }
+}
+
+impl From<bool> for Direction {
+    fn from(value: bool) -> Self {
+        match value {
+            false => Direction::Left,
+            true => Direction::Right,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct ParsingConfig {
-    pub min_log_prob: LogProb<f64>,
-    pub move_prob: LogProb<f64>,
-    pub max_steps: usize,
-    pub max_beams: usize,
+    min_log_prob: LogProb<f64>,
+    move_prob: LogProb<f64>,
+    max_steps: usize,
+    max_beams: usize,
+}
+
+impl ParsingConfig {
+    pub fn new(
+        min_log_prob: LogProb<f64>,
+        move_prob: LogProb<f64>,
+        max_steps: usize,
+        max_beams: usize,
+    ) -> ParsingConfig {
+        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob,
+            move_prob,
+            max_steps,
+            max_beams,
+        }
+    }
 }
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {

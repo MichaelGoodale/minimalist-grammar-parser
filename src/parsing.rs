@@ -361,3 +361,4 @@ pub mod beam;
 #[cfg(test)]
 mod tests;
 mod trees;
+pub use trees::MAX_STEPS;

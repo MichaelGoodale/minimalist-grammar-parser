@@ -180,12 +180,20 @@ impl<
         Category: Eq + std::fmt::Debug + Clone + Hash,
     > Lexicon<T, Category>
 {
+    pub fn mdl_score_fixed_category_size(&self, n_phonemes: u16, n_categories: u16) -> Result<f64> {
+        self.mdl_inner(n_phonemes, Some(n_categories))
+    }
+
     ///Returns the MDL Score of the lexicon
     ///
     /// # Arguments
     /// * `n_phonemes` - The size of required to encode a symbol of the phonology. E.g.
     /// in English orthography, it would be 26.
     pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64> {
+        self.mdl_inner(n_phonemes, None)
+    }
+
+    fn mdl_inner(&self, n_phonemes: u16, n_categories: Option<u16>) -> Result<f64> {
         let mut category_symbols = AHashSet::new();
         let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
@@ -212,7 +220,8 @@ impl<
                 bail!("Bad lexicon!");
             }
         }
-        let n_categories: u16 = category_symbols.len().try_into()?;
+        let n_categories: u16 =
+            n_categories.unwrap_or_else(|| category_symbols.len().try_into().unwrap());
 
         let bits_per_feature: f64 = (MG_TYPES + n_categories).into();
         let bits_per_feature = bits_per_feature.log2();

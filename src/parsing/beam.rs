@@ -260,7 +260,7 @@ pub struct FuzzyBeam<'a, T> {
     top_id: usize,
     steps: usize,
     record_rules: bool,
-    n_sentences: usize,
+    n_sentences: f64,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -297,7 +297,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             },
             top_id: 0,
             steps: 0,
-            n_sentences: sentences.len(),
+            n_sentences: (sentences.len() + 1) as f64,
             record_rules,
         })
     }
@@ -335,12 +335,15 @@ impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
 
 impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.log_probability.cmp(&other.log_probability) {
-            std::cmp::Ordering::Equal => {
-                self.sentence_guides.len().cmp(&other.sentence_guides.len())
-            }
-            x => x,
-        }
+        let self_weight: LogProb<f64> =
+            LogProb::from_raw_prob(((1 + self.sentence_guides.len()) as f64) / self.n_sentences)
+                .unwrap()
+                + self.log_probability;
+        let other_weight: LogProb<f64> =
+            LogProb::from_raw_prob(((1 + other.sentence_guides.len()) as f64) / self.n_sentences)
+                .unwrap()
+                + other.log_probability;
+        self_weight.cmp(&other_weight)
     }
 }
 

@@ -252,14 +252,15 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 
 #[derive(Debug, Clone)]
 pub struct FuzzyBeam<'a, T> {
-    pub log_probability: LogProb<f64>,
-    pub queue: BinaryHeap<Reverse<ParseMoment>>,
-    pub generated_sentences: Vec<T>,
-    pub sentence_guides: Vec<(&'a [T], usize)>,
-    pub rules: ThinVec<Rule>,
-    pub top_id: usize,
-    pub steps: usize,
-    pub record_rules: bool,
+    log_probability: LogProb<f64>,
+    queue: BinaryHeap<Reverse<ParseMoment>>,
+    generated_sentences: Vec<T>,
+    sentence_guides: Vec<(&'a [T], usize)>,
+    rules: ThinVec<Rule>,
+    top_id: usize,
+    steps: usize,
+    record_rules: bool,
+    n_sentences: usize,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -296,6 +297,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             },
             top_id: 0,
             steps: 0,
+            n_sentences: sentences.len(),
             record_rules,
         })
     }
@@ -334,10 +336,9 @@ impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
 impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self.log_probability.cmp(&other.log_probability) {
-            std::cmp::Ordering::Equal => self
-                .generated_sentences
-                .len()
-                .cmp(&other.generated_sentences.len()),
+            std::cmp::Ordering::Equal => {
+                self.sentence_guides.len().cmp(&other.sentence_guides.len())
+            }
             x => x,
         }
     }

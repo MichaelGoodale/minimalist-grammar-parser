@@ -333,15 +333,11 @@ impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
 
 impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self
-            .generated_sentences
-            .len()
-            .cmp(&other.generated_sentences.len())
-        {
+        match self.log_probability.cmp(&other.log_probability) {
             std::cmp::Ordering::Equal => self
-                .log_probability
-                .partial_cmp(&other.log_probability)
-                .unwrap(),
+                .generated_sentences
+                .len()
+                .cmp(&other.generated_sentences.len()),
             x => x,
         }
     }

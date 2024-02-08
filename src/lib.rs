@@ -5,7 +5,7 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::beam::{Beam, GeneratorBeam, ParseBeam};
+use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
 
@@ -95,6 +95,93 @@ where
 }
 
 type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], Vec<Rule>);
+type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, Vec<Rule>);
+
+pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
+{
+    lexicon: &'a Lexicon<T, Category>,
+    parse_heap: ParseHeap<'a, T, FuzzyBeam<'a, T>>,
+    move_log_prob: LogProb<f64>,
+    merge_log_prob: LogProb<f64>,
+}
+
+impl<'a, T, Category> FuzzyParser<'a, T, Category>
+where
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+{
+    pub fn new<U>(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        sentences: &'a [U],
+        config: &'a ParsingConfig,
+    ) -> Result<Self>
+    where
+        U: AsRef<[T]>,
+    {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, true)?);
+        Ok(FuzzyParser {
+            lexicon,
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        })
+    }
+
+    pub fn new_skip_rules<U>(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        sentences: &'a [U],
+        config: &'a ParsingConfig,
+    ) -> Result<Self>
+    where
+        U: AsRef<[T]>,
+    {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, false)?);
+        Ok(FuzzyParser {
+            lexicon,
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        })
+    }
+}
+impl<'a, T, Category> Iterator for FuzzyParser<'a, T, Category>
+where
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+{
+    type Item = GeneratorOutput<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(mut beam) = self.parse_heap.pop() {
+            if let Some(moment) = beam.pop_moment() {
+                expand(
+                    &mut self.parse_heap,
+                    moment,
+                    beam,
+                    self.lexicon,
+                    self.move_log_prob,
+                    self.merge_log_prob,
+                );
+            } else if let Some(x) = beam.yield_good_parse() {
+                return Some(x);
+            }
+        }
+
+        None
+    }
+}
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
@@ -313,7 +400,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = (LogProb<f64>, Vec<T>, Vec<Rule>);
+    type Item = GeneratorOutput<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {

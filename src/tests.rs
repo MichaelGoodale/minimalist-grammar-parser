@@ -261,7 +261,14 @@ fn copy_language() -> anyhow::Result<()> {
         .map(|(_, s, _)| s)
         .collect();
 
+    let ordered_strings: Vec<_> = strings.iter().collect();
+    let generated_guided: HashSet<_> = FuzzyParser::new(&lex, 'T', &ordered_strings, &CONFIG)?
+        .take(strings.len())
+        .map(|(_, s, _)| s)
+        .collect();
+
     assert_eq!(generated, strings);
+    assert_eq!(generated_guided, strings);
     for s in strings.iter() {
         Parser::new(&lex, 'T', s, &CONFIG)?.next().unwrap();
     }

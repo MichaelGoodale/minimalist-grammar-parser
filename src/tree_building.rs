@@ -165,7 +165,7 @@ mod tests {
         )?
         .next()
         .unwrap()
-        .1;
+        .2;
         let parse = build_tree(&lex, &rules);
         let dot = Dot::new(&parse);
         assert_eq!(

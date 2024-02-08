@@ -101,6 +101,42 @@ fn parse_copy_language(record_rules: bool) {
 }
 
 #[divan::bench(args = [true, false])]
+fn parse_copy_language_together(record_rules: bool) {
+    let (lex, strings) = divan::black_box({
+        let v: Vec<_> = COPY_LANGUAGE
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let lex = Lexicon::new(v);
+
+        let mut strings = Vec::<Vec<&str>>::new();
+        strings.push(vec![]);
+
+        for i in 1..=5 {
+            strings.extend(
+                itertools::repeat_n(vec!["a", "b"].into_iter(), i)
+                    .multi_cartesian_product()
+                    .map(|mut x| {
+                        x.append(&mut x.clone());
+                        x
+                    }),
+            );
+        }
+        (lex, strings)
+    });
+
+    divan::black_box(if record_rules {
+        Parser::new_multiple
+    } else {
+        Parser::new_skip_rules_multiple
+    })(&lex, 'T', &strings, &CONFIG)
+    .unwrap()
+    .take(strings.len())
+    .for_each(|_| ());
+}
+
+#[divan::bench(args = [true, false])]
 fn generate_copy_language(record_rules: bool) {
     let lex = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE

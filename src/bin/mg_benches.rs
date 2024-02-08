@@ -14,11 +14,12 @@ fn main() {
         100,
         1000,
     );
-    for _ in 0..100 {
-        parse_long_sentence(&config);
-        parse_copy_language(&config);
-        generate_sentence(&config);
-        generate_copy_language(&config);
+    for _ in 0..10000 {
+        //parse_long_sentence(&config, false);
+        //parse_copy_language(&config, false);
+        //generate_sentence(&config, false);
+        //generate_copy_language(&config, false);
+        parse_copy_language_together(&config, false);
     }
     println!("DONE");
 }
@@ -32,23 +33,70 @@ fn get_grammar() -> Lexicon<&'static str, char> {
     Lexicon::new(v)
 }
 
-fn parse_long_sentence(config: &ParsingConfig) {
+fn parse_copy_language_together(config: &ParsingConfig, record_rules: bool) {
+    let (lex, strings) = {
+        let v: Vec<_> = COPY_LANGUAGE
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        let lex = Lexicon::new(v);
+
+        let mut strings = Vec::<Vec<&str>>::new();
+        strings.push(vec![]);
+
+        for i in 1..=5 {
+            strings.extend(
+                itertools::repeat_n(vec!["a", "b"].into_iter(), i)
+                    .multi_cartesian_product()
+                    .map(|mut x| {
+                        x.append(&mut x.clone());
+                        x
+                    }),
+            );
+        }
+        (lex, strings)
+    };
+
+    (if record_rules {
+        Parser::new_multiple
+    } else {
+        Parser::new_skip_rules_multiple
+    })(&lex, 'T', &strings, config)
+    .unwrap()
+    .take(strings.len())
+    .for_each(|_| ());
+}
+
+fn parse_long_sentence(config: &ParsingConfig, record_rules: bool) {
     let g = get_grammar();
     let sentence: Vec<&str> = "which king knows the queen knows which beer the king drinks"
         .split(' ')
         .collect();
-    Parser::new(&g, 'C', &sentence, config)
-        .unwrap()
-        .next()
-        .unwrap();
+
+    (if record_rules {
+        Parser::new
+    } else {
+        Parser::new_skip_rules
+    })(&g, 'C', &sentence, config)
+    .unwrap()
+    .next()
+    .unwrap();
 }
 
-fn generate_sentence(config: &ParsingConfig) {
+fn generate_sentence(config: &ParsingConfig, record_rules: bool) {
     let g = get_grammar();
-    Generator::new(&g, 'C', config).unwrap().take(100).count();
+    (if record_rules {
+        Generator::new
+    } else {
+        Generator::new_skip_rules
+    })(&g, 'C', config)
+    .unwrap()
+    .take(100)
+    .count();
 }
 
-fn parse_copy_language(config: &ParsingConfig) {
+fn parse_copy_language(config: &ParsingConfig, record_rules: bool) {
     let v: Vec<_> = COPY_LANGUAGE
         .split('\n')
         .map(SimpleLexicalEntry::parse)
@@ -71,17 +119,30 @@ fn parse_copy_language(config: &ParsingConfig) {
     }
 
     for s in strings.iter() {
-        Parser::new(&lex, 'T', s, config).unwrap().next().unwrap();
+        (if record_rules {
+            Parser::new
+        } else {
+            Parser::new_skip_rules
+        })(&lex, 'T', s, config)
+        .unwrap()
+        .next()
+        .unwrap();
     }
 }
 
-fn generate_copy_language(config: &ParsingConfig) {
+fn generate_copy_language(config: &ParsingConfig, record_rules: bool) {
     let v: Vec<_> = COPY_LANGUAGE
         .split('\n')
         .map(SimpleLexicalEntry::parse)
         .collect::<Result<Vec<_>>>()
         .unwrap();
     let lex = Lexicon::new(v);
-
-    Generator::new(&lex, 'T', config).unwrap().take(100).count();
+    (if record_rules {
+        Generator::new
+    } else {
+        Generator::new_skip_rules
+    })(&lex, 'T', config)
+    .unwrap()
+    .take(100)
+    .count();
 }

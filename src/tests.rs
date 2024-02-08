@@ -167,54 +167,64 @@ fn generation() -> Result<()> {
     let mut x = vec![
         (
             -2.0794415416798357,
-            ["the", "king", "likes", "the", "queen"],
-        ),
-        (-2.0794415416798357, ["the", "king", "likes", "the", "king"]),
-        (
-            -2.0794415416798357,
-            ["the", "queen", "likes", "the", "king"],
+            vec!["the", "king", "likes", "the", "queen"],
         ),
         (
             -2.0794415416798357,
-            ["the", "queen", "likes", "the", "queen"],
+            vec!["the", "king", "likes", "the", "king"],
+        ),
+        (
+            -2.0794415416798357,
+            vec!["the", "queen", "likes", "the", "king"],
+        ),
+        (
+            -2.0794415416798357,
+            vec!["the", "queen", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            ["which", "king", "likes", "the", "queen"],
+            vec!["which", "king", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            ["which", "queen", "likes", "the", "king"],
+            vec!["which", "queen", "likes", "the", "king"],
         ),
         (
             -2.772588722239781,
-            ["which", "queen", "likes", "the", "queen"],
+            vec!["which", "queen", "likes", "the", "queen"],
         ),
         (
             -2.772588722239781,
-            ["which", "king", "likes", "the", "king"],
+            vec!["which", "king", "likes", "the", "king"],
         ),
         (
             -3.4657359027997265,
-            ["which", "queen", "the", "queen", "likes"],
+            vec!["which", "queen", "the", "queen", "likes"],
         ),
         (
             -3.4657359027997265,
-            ["which", "king", "the", "queen", "likes"],
+            vec!["which", "king", "the", "queen", "likes"],
         ),
         (
             -3.4657359027997265,
-            ["which", "king", "the", "king", "likes"],
+            vec!["which", "king", "the", "king", "likes"],
         ),
         (
             -3.4657359027997265,
-            ["which", "queen", "the", "king", "likes"],
+            vec!["which", "queen", "the", "king", "likes"],
         ),
     ];
 
     assert_eq!(v.len(), x.len());
     x.sort_by(|a, b| a.1.cmp(&b.1));
     v.sort_by(|a, b| a.1.cmp(&b.1));
+    let strings: Vec<_> = x.iter().map(|(_, s)| s.as_slice()).collect();
+    let mut outputs: Vec<_> = Parser::new_multiple(&lex, 'C', &strings, &CONFIG)?
+        .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
+        .collect();
+    outputs.sort_by(|a, b| a.1.cmp(&b.1));
+
+    assert_eq!(outputs, x);
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p.into_inner(), &sentence), (correct_p, &correct_sentence));
@@ -396,7 +406,7 @@ fn proper_distributions() -> Result<()> {
     ];
 
     for (prob, s) in v.iter() {
-        let (p, _) = Parser::new(
+        let (p, _, _) = Parser::new(
             &lexicon,
             '0',
             s,
@@ -425,7 +435,22 @@ fn proper_distributions() -> Result<()> {
     .take(8)
     .map(|(p, s, _)| (p.into_inner(), s))
     .collect();
+    let generated_sentences: Vec<_> = v.iter().map(|(_, s)| s).collect();
 
+    let parse: Vec<_> = Parser::new_multiple(
+        &lexicon,
+        '0',
+        &generated_sentences,
+        &ParsingConfig::new(
+            LogProb::new(-128.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            50,
+        ),
+    )?
+    .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
+    .collect();
     assert_eq!(v, g);
+    assert_eq!(v, parse);
     Ok(())
 }

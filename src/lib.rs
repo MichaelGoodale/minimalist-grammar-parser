@@ -94,11 +94,14 @@ where
     }
 }
 
+type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], Vec<Rule>);
+
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, ParseBeam<'a, T>>,
     move_log_prob: LogProb<f64>,
     merge_log_prob: LogProb<f64>,
+    buffer: Vec<ParserOutput<'a, T>>,
 }
 
 impl<'a, T, Category> Parser<'a, T, Category>
@@ -113,10 +116,16 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence, true)?);
+        parse_heap.push(ParseBeam::new_single(
+            lexicon,
+            initial_category,
+            sentence,
+            true,
+        )?);
         Ok(Parser {
             lexicon,
             move_log_prob: config.move_prob,
+            buffer: vec![],
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 parse_heap,
@@ -133,9 +142,73 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new(lexicon, initial_category, sentence, false)?);
+        parse_heap.push(ParseBeam::new_single(
+            lexicon,
+            initial_category,
+            sentence,
+            false,
+        )?);
         Ok(Parser {
             lexicon,
+            buffer: vec![],
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        })
+    }
+
+    pub fn new_multiple<U>(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        sentences: &'a [U],
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>>
+    where
+        U: AsRef<[T]>,
+    {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(ParseBeam::new_multiple(
+            lexicon,
+            initial_category,
+            sentences,
+            true,
+        )?);
+        Ok(Parser {
+            lexicon,
+            buffer: vec![],
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        })
+    }
+
+    pub fn new_skip_rules_multiple<U>(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        sentences: &'a [U],
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>>
+    where
+        U: AsRef<[T]>,
+    {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(ParseBeam::new_multiple(
+            lexicon,
+            initial_category,
+            sentences,
+            false,
+        )?);
+        Ok(Parser {
+            lexicon,
+            buffer: vec![],
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
@@ -147,28 +220,38 @@ where
     }
 }
 
-impl<T, Category> Iterator for Parser<'_, T, Category>
+impl<'a, T, Category> Iterator for Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = (LogProb<f64>, Vec<Rule>);
+    type Item = ParserOutput<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(mut beam) = self.parse_heap.pop() {
-            if let Some(moment) = beam.pop_moment() {
-                expand(
-                    &mut self.parse_heap,
-                    moment,
-                    beam,
-                    self.lexicon,
-                    self.move_log_prob,
-                    self.merge_log_prob,
-                );
-            } else if beam.good_parse() {
-                return Some((beam.log_probability, beam.rules.to_vec()));
+        if self.buffer.is_empty() {
+            while let Some(mut beam) = self.parse_heap.pop() {
+                if let Some(moment) = beam.pop_moment() {
+                    expand(
+                        &mut self.parse_heap,
+                        moment,
+                        beam,
+                        self.lexicon,
+                        self.move_log_prob,
+                        self.merge_log_prob,
+                    );
+                } else if let Some((mut good_parses, p, rules)) = beam.yield_good_parse() {
+                    if let Some(next_sentence) = good_parses.next() {
+                        self.buffer
+                            .extend(good_parses.map(|x| (p, x, rules.clone())));
+                        let next = Some((p, next_sentence, rules));
+                        return next;
+                    }
+                }
             }
+        } else {
+            return self.buffer.pop();
         }
+
         None
     }
 }

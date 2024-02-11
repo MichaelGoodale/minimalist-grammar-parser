@@ -335,11 +335,7 @@ impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
 
 impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self
-            .sentence_guides
-            .is_empty()
-            .cmp(&self.sentence_guides.is_empty())
-        {
+        match (!self.sentence_guides.is_empty()).cmp(&(!self.sentence_guides.is_empty())) {
             std::cmp::Ordering::Equal => self.log_probability.cmp(&other.log_probability),
             x => x,
         }

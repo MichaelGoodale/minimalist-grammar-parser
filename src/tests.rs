@@ -223,8 +223,14 @@ fn generation() -> Result<()> {
         .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
         .collect();
     outputs.sort_by(|a, b| a.1.cmp(&b.1));
-
     assert_eq!(outputs, x);
+
+    let mut outputs: Vec<_> = FuzzyParser::new(&lex, 'C', &strings, &CONFIG)?
+        .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
+        .collect();
+    outputs.sort_by(|a, b| a.1.cmp(&b.1));
+    assert_eq!(outputs, x);
+
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p.into_inner(), &sentence), (correct_p, &correct_sentence));

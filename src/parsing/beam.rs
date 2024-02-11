@@ -335,15 +335,14 @@ impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
 
 impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let self_weight: LogProb<f64> =
-            LogProb::from_raw_prob(((1 + self.sentence_guides.len()) as f64) / self.n_sentences)
-                .unwrap()
-                + self.log_probability;
-        let other_weight: LogProb<f64> =
-            LogProb::from_raw_prob(((1 + other.sentence_guides.len()) as f64) / self.n_sentences)
-                .unwrap()
-                + other.log_probability;
-        self_weight.cmp(&other_weight)
+        match self
+            .sentence_guides
+            .is_empty()
+            .cmp(&self.sentence_guides.is_empty())
+        {
+            std::cmp::Ordering::Equal => self.log_probability.cmp(&other.log_probability),
+            x => x,
+        }
     }
 }
 

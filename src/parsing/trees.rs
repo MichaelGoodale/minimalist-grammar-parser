@@ -6,13 +6,13 @@ use crate::Direction;
 use bitvec::prelude::*;
 use thin_vec::ThinVec;
 
-type IndexArray = BitArray<u64, Lsb0>;
+type IndexArray = BitArray<[u64; 2], Lsb0>;
 
-pub const MAX_STEPS: usize = 64;
+pub const MAX_STEPS: usize = 128;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct GornIndex {
-    index: BitArray<u64, Lsb0>,
+    index: IndexArray,
     size: usize,
 }
 

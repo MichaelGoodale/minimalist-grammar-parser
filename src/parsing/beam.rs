@@ -260,7 +260,6 @@ pub struct FuzzyBeam<'a, T> {
     top_id: usize,
     steps: usize,
     record_rules: bool,
-    n_sentences: f64,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -297,7 +296,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             },
             top_id: 0,
             steps: 0,
-            n_sentences: (sentences.len() + 1) as f64,
             record_rules,
         })
     }

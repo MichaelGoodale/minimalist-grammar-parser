@@ -15,10 +15,10 @@ fn main() {
         1000,
     );
     for _ in 0..10000 {
-        //parse_long_sentence(&config, false);
-        //parse_copy_language(&config, false);
-        //generate_sentence(&config, false);
-        //generate_copy_language(&config, false);
+        parse_long_sentence(&config, false);
+        parse_copy_language(&config, false);
+        generate_sentence(&config, false);
+        generate_copy_language(&config, false);
         parse_copy_language_together(&config, false);
     }
     println!("DONE");

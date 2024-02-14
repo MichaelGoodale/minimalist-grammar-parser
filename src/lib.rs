@@ -423,6 +423,7 @@ where
 
 pub mod grammars;
 pub mod lexicon;
+pub mod neural_lexicon;
 mod parsing;
 pub mod tree_building;
 

@@ -1,4 +1,4 @@
-use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
+use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use crate::{Direction, ParseHeap};
 use anyhow::Result;
 use beam::Beam;
@@ -50,12 +50,12 @@ fn clone_push<T: Clone + Default>(v: &[T], x: T) -> ThinVec<T> {
 #[inline]
 fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
-    U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
     B: Beam<T> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
-    lexicon: &Lexicon<U, Category>,
+    lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
     cat: &Category,
@@ -119,12 +119,12 @@ fn unmerge_from_mover<
 #[inline]
 fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
-    U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
     B: Beam<T>,
 >(
     v: &mut ParseHeap<T, B>,
-    lexicon: &Lexicon<U, Category>,
+    lexicon: &L,
     moment: &ParseMoment,
     mut beam: B,
     cat: &Category,
@@ -176,12 +176,12 @@ fn unmerge<
 #[inline]
 fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
-    U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
     B: Beam<T> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
-    lexicon: &Lexicon<U, Category>,
+    lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
     cat: &Category,
@@ -240,12 +240,12 @@ fn unmove_from_mover<
 #[inline]
 fn unmove<
     T: Eq + std::fmt::Debug + Clone,
-    U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
     B: Beam<T>,
 >(
     v: &mut ParseHeap<T, B>,
-    lexicon: &Lexicon<U, Category>,
+    lexicon: &L,
     moment: &ParseMoment,
     mut beam: B,
     cat: &Category,
@@ -289,12 +289,13 @@ pub fn expand<
     'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
     B: Beam<T> + Clone + 'a,
 >(
     extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,
     beam: B,
-    lexicon: &'a Lexicon<T, Category>,
+    lexicon: &'a L,
     probability_of_moving: LogProb<f64>,
     probability_of_merging: LogProb<f64>,
 ) {

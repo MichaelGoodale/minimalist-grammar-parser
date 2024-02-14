@@ -7,7 +7,18 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
-use std::{fmt::Display, hash::Hash};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
+
+pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
+    fn n_children(&self, nx: NodeIndex) -> usize;
+    fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_;
+    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)>;
+    fn find_licensee(&self, category: &Category) -> Result<NodeIndex>;
+    fn find_category(&self, category: &Category) -> Result<NodeIndex>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature<Category: Eq> {
@@ -348,39 +359,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn find_category(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                FeatureOrLemma::Feature(Feature::Category(c)) => c == category,
-                _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
-    }
-
-    pub fn find_licensee(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                FeatureOrLemma::Feature(Feature::Licensee(c)) => c == category,
-                _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
-    }
-
-    pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
-        if let Some(x) = self.graph.node_weight(nx) {
-            let p = self
-                .graph
-                .edges_directed(nx, petgraph::Direction::Incoming)
-                .next()
-                .unwrap()
-                .weight();
-            Some((x, *p))
-        } else {
-            None
-        }
-    }
     pub fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
         self.graph
             .edges_directed(nx, petgraph::Direction::Incoming)
@@ -418,17 +396,53 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             _ => None,
         })
     }
+}
 
-    pub fn n_children(&self, nx: NodeIndex) -> usize {
+impl<T: Eq + Debug, Category: Eq + Debug> Lexiconable<T, Category> for Lexicon<T, Category> {
+    fn n_children(&self, nx: NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
             .count()
     }
 
-    pub fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
+    fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
             .map(|e| e.target())
+    }
+
+    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
+        if let Some(x) = self.graph.node_weight(nx) {
+            let p = self
+                .graph
+                .edges_directed(nx, petgraph::Direction::Incoming)
+                .next()
+                .unwrap()
+                .weight();
+            Some((x, *p))
+        } else {
+            None
+        }
+    }
+
+    fn find_licensee(&self, category: &Category) -> Result<NodeIndex> {
+        self.graph
+            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
+            .find(|i| match &self.graph[*i] {
+                FeatureOrLemma::Feature(Feature::Licensee(c)) => c == category,
+                _ => false,
+            })
+            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    }
+
+    fn find_category(&self, category: &Category) -> Result<NodeIndex> {
+        self.graph
+            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
+            .find(|i| match &self.graph[*i] {
+                FeatureOrLemma::Feature(Feature::Category(c)) => c == category,
+                _ => false,
+            })
+            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 }
 

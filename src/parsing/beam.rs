@@ -1,6 +1,6 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
-use crate::lexicon::Lexicon;
+use crate::lexicon::{Lexicon, Lexiconable};
 use crate::ParseHeap;
 use anyhow::Result;
 use logprob::LogProb;

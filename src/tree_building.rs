@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use crate::lexicon::{FeatureOrLemma, Lexicon};
+use crate::lexicon::{FeatureOrLemma, Lexicon, Lexiconable};
 use crate::parsing::Rule;
 
 use petgraph::graph::DiGraph;

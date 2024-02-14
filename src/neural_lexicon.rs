@@ -1,11 +1,14 @@
+use std::any::Any;
+
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::{bail, Context, Result};
 use burn::tensor::{backend::Backend, ElementConversion, Tensor};
+use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 
 struct TensorPosition(usize);
 
-impl TryInto<TensorPosition> for &FeatureOrLemma<usize, usize> {
+impl TryInto<TensorPosition> for &FeatureOrLemma<(), usize> {
     fn try_into(self) -> Result<TensorPosition> {
         Ok(TensorPosition(match self {
             FeatureOrLemma::Lemma(_) => 0,
@@ -23,13 +26,31 @@ impl TryInto<TensorPosition> for &FeatureOrLemma<usize, usize> {
 
 #[derive(Debug)]
 struct NeuralLexicon<B: Backend> {
-    types: Tensor<B, 3>,  //(lexeme, lexeme_pos, type_distribution)
-    lemmas: Tensor<B, 3>, //(lexeme, lexeme_pos, lemma_distribution)
-    graph: DiGraph<((usize, usize), FeatureOrLemma<usize, usize>), ()>,
+    types: Tensor<B, 3>,      //(lexeme, lexeme_pos, type_distribution)
+    lemmas: Tensor<B, 3>,     //(lexeme, lexeme_pos, lemma_distribution)
+    categories: Tensor<B, 3>, //(lexeme, lexeme_pos, category_distribution)
+    graph: DiGraph<((usize, usize), FeatureOrLemma<(), usize>), ()>,
     root: NodeIndex,
 }
 
-impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
+impl<B: Backend> NeuralLexicon<B> {
+    fn new(
+        types: Tensor<B, 3>,
+        lemmas: Tensor<B, 3>,
+        categories: Tensor<B, 3>,
+    ) -> NeuralLexicon<B> {
+        //TODO Implement function which uses types/lemmas/categories and gumbel softmax to make a
+        //specific grammar
+
+        todo!();
+    }
+}
+
+impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B>
+where
+    B::FloatElem: TryInto<f64>,
+    <<B as Backend>::FloatElem as TryInto<f64>>::Error: std::fmt::Debug,
+{
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
@@ -49,7 +70,7 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
         &self,
         nx: petgraph::prelude::NodeIndex,
     ) -> Option<(
-        &crate::lexicon::FeatureOrLemma<usize, usize>,
+        &crate::lexicon::FeatureOrLemma<(), usize>,
         logprob::LogProb<f64>,
     )> {
         if let Some(((lexeme, position), feature)) = self.graph.node_weight(nx) {
@@ -64,7 +85,24 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
                 ])
                 .squeeze::<2>(0)
                 .squeeze::<1>(0);
-            Some((feature, p))
+            let p: Tensor<B, 1> = {
+                match feature {
+                    FeatureOrLemma::Feature(f) => match f {
+                        Feature::Category(c)
+                        | Feature::Selector(c, _)
+                        | Feature::Licensor(c)
+                        | Feature::Licensee(c) => self
+                            .categories
+                            .clone()
+                            .slice([*lexeme..lexeme + 1, *position..position + 1, *c..c + 1])
+                            .squeeze::<2>(0)
+                            .squeeze::<1>(0),
+                    },
+                    _ => Tensor::ones_like(&p),
+                }
+            } * p;
+            let p: f64 = p.into_scalar().try_into().unwrap();
+            Some((feature, LogProb::new(p).unwrap()))
         } else {
             None
         }

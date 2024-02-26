@@ -23,19 +23,17 @@ pub struct NeuralLexicon<B: Backend> {
     device: B::Device,
 }
 
-fn to_feature(pos: TensorPosition, category: Option<usize>) -> FeatureOrLemma<(), usize> {
+fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<(), usize> {
     match pos {
-        LEMMA_POS => FeatureOrLemma::Lemma(None),
-        CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category.unwrap())),
-        LICENSEE_POS => FeatureOrLemma::Feature(Feature::Licensee(category.unwrap())),
-        LICENSOR_POS => FeatureOrLemma::Feature(Feature::Licensor(category.unwrap())),
+        CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category)),
+        LICENSEE_POS => FeatureOrLemma::Feature(Feature::Licensee(category)),
+        LICENSOR_POS => FeatureOrLemma::Feature(Feature::Licensor(category)),
         LEFT_SELECTOR_POS => {
-            FeatureOrLemma::Feature(Feature::Selector(category.unwrap(), crate::Direction::Left))
+            FeatureOrLemma::Feature(Feature::Selector(category, crate::Direction::Left))
         }
-        RIGHT_SELECTOR_POS => FeatureOrLemma::Feature(Feature::Selector(
-            category.unwrap(),
-            crate::Direction::Right,
-        )),
+        RIGHT_SELECTOR_POS => {
+            FeatureOrLemma::Feature(Feature::Selector(category, crate::Direction::Right))
+        }
         _ => panic!("Invalid position!"),
     }
 }
@@ -69,7 +67,9 @@ fn get_prob_of_type_category<B: Backend>(
 
 fn get_prob_of_lemma<B: Backend>(
     types: &Tensor<B, 3>,
+    lemmas: &Tensor<B, 3>,
     n_lexemes: usize,
+    pronounced_lemma: bool,
     pos: usize,
 ) -> Tensor<B, 1> {
     let p_of_type: Tensor<B, 1> = types
@@ -78,7 +78,21 @@ fn get_prob_of_lemma<B: Backend>(
         .squeeze(1)
         .sum_dim(0);
 
-    p_of_type
+    let p_of_lemma: Tensor<B, 1> = if pronounced_lemma {
+        lemmas
+            .clone()
+            .slice([0..n_lexemes, pos..pos + 1, 1..lemmas.shape().dims[2]])
+            .squeeze(1)
+            .sum_dim(0)
+    } else {
+        lemmas
+            .clone()
+            .slice([0..n_lexemes, pos..pos + 1, 0..1])
+            .squeeze(1)
+            .sum_dim(0)
+    };
+
+    p_of_type + p_of_lemma
 }
 
 fn add_children<B: Backend>(
@@ -86,6 +100,7 @@ fn add_children<B: Backend>(
     parent: NodeIndex,
     pos: usize,
     categories: &Tensor<B, 3>,
+    lemmas: &Tensor<B, 3>,
     types: &Tensor<B, 3>,
     n_lexemes: usize,
 ) -> Vec<NodeIndex> {
@@ -96,18 +111,22 @@ fn add_children<B: Backend>(
                 Some(get_prob_of_type_category(
                     types, categories, category, node_type, n_lexemes, pos,
                 )),
-                to_feature(node_type, Some(category)),
+                to_feature(node_type, category),
             ));
             graph.add_edge(parent, descendent, ());
             children.push(descendent);
         }
     }
-    let lemma: NodeIndex = graph.add_node((
-        Some(get_prob_of_lemma(types, n_lexemes, pos)),
-        to_feature(LEMMA_POS, None),
-    ));
-    graph.add_edge(parent, lemma, ());
-    children.push(lemma);
+    for pronounced in [true, false] {
+        let lemma: NodeIndex = graph.add_node((
+            Some(get_prob_of_lemma(types, lemmas, n_lexemes, pronounced, pos)),
+            FeatureOrLemma::Lemma(match pronounced {
+                true => Some(()),
+                false => None,
+            }),
+        ));
+        graph.add_edge(parent, lemma, ());
+    }
     children
 }
 
@@ -127,7 +146,7 @@ fn add_til_category<B: Backend>(
                 Some(get_prob_of_type_category(
                     types, categories, category, node_type, n_lexemes, pos,
                 )),
-                to_feature(node_type, Some(category)),
+                to_feature(node_type, category),
             ));
             graph.add_edge(parent, descendent, ());
             match node_type {
@@ -179,6 +198,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     child,
                     position,
                     &categories,
+                    &lemmas,
                     &types,
                     n_lexemes,
                 ));
@@ -258,5 +278,17 @@ impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
                 _ => false,
             })
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use burn::tensor::Tensor;
+
+    use super::NeuralLexicon;
+
+    #[test]
+    fn make_new_lexicon() -> anyhow::Result<()> {
+        todo!();
     }
 }

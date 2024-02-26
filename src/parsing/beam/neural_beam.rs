@@ -56,7 +56,7 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
     pub fn yield_good_parse(self) -> Option<Tensor<B, 2>> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
-            Some(Tensor::stack(sentence, 0))
+            Some(Tensor::stack(sentence, 0) + self.log_probability.into_scalar())
         } else {
             None
         }

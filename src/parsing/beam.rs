@@ -1,7 +1,7 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::{Lexicon, Lexiconable};
-use crate::ParseHeap;
+use crate::{ParseHeap, ParsingConfig};
 use anyhow::Result;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -11,9 +11,11 @@ use std::fmt::Debug;
 use thin_vec::{thin_vec, ThinVec};
 
 pub trait Beam<T>: Sized + Ord {
-    fn log_probability(&self) -> &LogProb<f64>;
+    type Probability;
 
-    fn log_probability_mut(&mut self) -> &mut LogProb<f64>;
+    fn log_probability(&self) -> &Self::Probability;
+
+    fn log_probability_mut(&mut self) -> &mut Self::Probability;
 
     fn pop_moment(&mut self) -> Option<ParseMoment>;
 
@@ -29,7 +31,7 @@ pub trait Beam<T>: Sized + Ord {
         beam: Self,
         s: &Option<T>,
         child_node: NodeIndex,
-        child_prob: LogProb<f64>,
+        child_prob: Self::Probability,
     );
 
     fn inc(&mut self);
@@ -39,6 +41,8 @@ pub trait Beam<T>: Sized + Ord {
     fn top_id(&self) -> usize;
 
     fn top_id_mut(&mut self) -> &mut usize;
+
+    fn pushable(&self, config: &ParsingConfig) -> bool;
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +84,8 @@ impl<T> Beam<T> for ParseBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
+    type Probability = LogProb<f64>;
+
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -159,6 +165,10 @@ where
 
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
+    }
+
+    fn pushable(&self, config: &ParsingConfig) -> bool {
+        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
     }
 }
 
@@ -344,6 +354,8 @@ impl<T> Beam<T> for FuzzyBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
+    type Probability = LogProb<f64>;
+
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -426,6 +438,9 @@ where
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
     }
+    fn pushable(&self, config: &ParsingConfig) -> bool {
+        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -467,6 +482,7 @@ impl<T: Clone> Beam<T> for GeneratorBeam<T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
+    type Probability = LogProb<f64>;
     fn log_probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
@@ -533,6 +549,9 @@ where
 
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
+    }
+    fn pushable(&self, config: &ParsingConfig) -> bool {
+        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
     }
 }
 

@@ -2,7 +2,6 @@ use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use crate::{Direction, ParseHeap};
 use anyhow::Result;
 use beam::Beam;
-use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, ParseMoment};
@@ -52,7 +51,7 @@ fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T> + Clone,
+    B: Beam<T, Probability = L::Probability> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
@@ -60,11 +59,11 @@ fn unmerge_from_mover<
     beam: &B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
-    inverse_rule_prob: LogProb<f64>,
-) -> LogProb<f64> {
-    let mut output = LogProb::new(0.0).unwrap();
+    child_prob: L::Probability,
+    rule_prob: L::Probability,
+    inverse_rule_prob: L::Probability,
+) -> L::Probability {
+    let mut output = lexicon.one();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -93,7 +92,10 @@ fn unmerge_from_mover<
                             .collect(),
                     ));
 
-                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    *beam.log_probability_mut() = beam.log_probability().clone()
+                        + stored_prob.clone()
+                        + child_prob.clone()
+                        + rule_prob.clone();
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmergeFromMover {
                             child: child_node,
@@ -106,7 +108,7 @@ fn unmerge_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
-                    output = inverse_rule_prob;
+                    output = inverse_rule_prob.clone();
                 }
                 _ => (),
             }
@@ -121,7 +123,7 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T>,
+    B: Beam<T, Probability = L::Probability>,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
@@ -130,8 +132,8 @@ fn unmerge<
     cat: &Category,
     dir: &Direction,
     child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
+    child_prob: L::Probability,
+    rule_prob: L::Probability,
 ) -> Result<()> {
     let complement = lexicon.find_category(cat)?;
     beam.push_moment(ParseMoment::new(
@@ -157,7 +159,7 @@ fn unmerge<
         },
     ));
 
-    *beam.log_probability_mut() += child_prob + rule_prob;
+    *beam.log_probability_mut() = beam.log_probability().clone() + child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmerge {
             child: child_node,
@@ -178,7 +180,7 @@ fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T> + Clone,
+    B: Beam<T, Probability = L::Probability> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
@@ -186,11 +188,11 @@ fn unmove_from_mover<
     beam: &B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
-    inverse_rule_prob: LogProb<f64>,
-) -> LogProb<f64> {
-    let mut output = LogProb::new(0.0).unwrap();
+    child_prob: L::Probability,
+    rule_prob: L::Probability,
+    inverse_rule_prob: L::Probability,
+) -> L::Probability {
+    let mut output = lexicon.one();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -215,7 +217,10 @@ fn unmove_from_mover<
                             }))
                             .collect(),
                     ));
-                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    *beam.log_probability_mut() = beam.log_probability().clone()
+                        + stored_prob
+                        + child_prob.clone()
+                        + rule_prob.clone();
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmoveFromMover {
                             parent: moment.tree.id,
@@ -227,7 +232,7 @@ fn unmove_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
-                    output = inverse_rule_prob;
+                    output = inverse_rule_prob.clone();
                 }
                 _ => (),
             }
@@ -242,7 +247,7 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T>,
+    B: Beam<T, Probability = L::Probability>,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
@@ -250,8 +255,8 @@ fn unmove<
     mut beam: B,
     cat: &Category,
     child_node: NodeIndex,
-    child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
+    child_prob: L::Probability,
+    rule_prob: L::Probability,
 ) -> Result<()> {
     let stored = lexicon.find_licensee(cat)?;
 
@@ -271,7 +276,7 @@ fn unmove<
         ),
     ));
 
-    *beam.log_probability_mut() += child_prob + rule_prob;
+    *beam.log_probability_mut() = beam.log_probability().clone() + child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmove {
             child_id: beam.top_id() + 1,
@@ -290,24 +295,15 @@ pub fn expand<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T> + Clone + 'a,
+    B: Beam<T, Probability = L::Probability> + Clone + 'a,
 >(
     extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,
     beam: B,
     lexicon: &'a L,
-    probability_of_moving: LogProb<f64>,
-    probability_of_merging: LogProb<f64>,
+    probability_of_moving: L::Probability,
+    probability_of_merging: L::Probability,
 ) {
-    #[cfg(test)]
-    {
-        assert_eq!(
-            probability_of_moving
-                .add_log_prob(probability_of_merging)
-                .unwrap(),
-            LogProb::new(0.0).unwrap()
-        )
-    }
     let n_children = lexicon.n_children(moment.tree.node);
     let new_beams = itertools::repeat_n(beam, n_children);
 
@@ -327,9 +323,9 @@ pub fn expand<
                         &beam,
                         cat,
                         child_node,
-                        child_prob,
-                        probability_of_moving,
-                        probability_of_merging,
+                        child_prob.clone(),
+                        probability_of_moving.clone(),
+                        probability_of_merging.clone(),
                     );
                     let _ = unmerge(
                         extender, lexicon, &moment, beam, cat, dir, child_node, child_prob,
@@ -344,9 +340,9 @@ pub fn expand<
                         &beam,
                         cat,
                         child_node,
-                        child_prob,
-                        probability_of_moving,
-                        probability_of_merging,
+                        child_prob.clone(),
+                        probability_of_moving.clone(),
+                        probability_of_merging.clone(),
                     );
                     let _ = unmove(
                         extender, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,

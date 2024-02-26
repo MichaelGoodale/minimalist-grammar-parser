@@ -13,9 +13,13 @@ use std::{
 };
 
 pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
+    type Probability: std::ops::Add<Self::Probability, Output = Self::Probability> + Clone;
+
+    fn one(&self) -> Self::Probability;
+
     fn n_children(&self, nx: NodeIndex) -> usize;
     fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_;
-    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)>;
+    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, Self::Probability)>;
     fn find_licensee(&self, category: &Category) -> Result<NodeIndex>;
     fn find_category(&self, category: &Category) -> Result<NodeIndex>;
 }
@@ -399,6 +403,12 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 }
 
 impl<T: Eq + Debug, Category: Eq + Debug> Lexiconable<T, Category> for Lexicon<T, Category> {
+    type Probability = LogProb<f64>;
+
+    fn one(&self) -> Self::Probability {
+        LogProb::new(0.0).unwrap()
+    }
+
     fn n_children(&self, nx: NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)

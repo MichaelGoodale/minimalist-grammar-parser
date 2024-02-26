@@ -1,7 +1,6 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::Context;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
-use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -21,6 +20,7 @@ pub struct NeuralLexicon<B: Backend> {
     lemmas: Tensor<B, 3>, //(lexeme, lexeme_pos, lemma_distribution)
     graph: NeuralGraph<B>,
     root: NodeIndex,
+    device: B::Device,
 }
 
 fn to_feature(pos: TensorPosition, category: Option<usize>) -> FeatureOrLemma<(), usize> {
@@ -193,20 +193,24 @@ impl<B: Backend> NeuralLexicon<B> {
             }
             licensee_children.extend(new_licensee_children.drain(0..));
         }
+        let device = lemmas.device();
 
         NeuralLexicon {
             lemmas,
             graph,
             root,
+            device,
         }
     }
 }
 
-impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B>
-where
-    B::FloatElem: TryInto<f64>,
-    <<B as Backend>::FloatElem as TryInto<f64>>::Error: std::fmt::Debug,
-{
+impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
+    type Probability = Tensor<B, 1>;
+
+    fn one(&self) -> Self::Probability {
+        Tensor::<B, 1>::ones([1], &self.device)
+    }
+
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
@@ -227,11 +231,10 @@ where
         nx: petgraph::prelude::NodeIndex,
     ) -> Option<(
         &crate::lexicon::FeatureOrLemma<(), usize>,
-        logprob::LogProb<f64>,
+        Self::Probability,
     )> {
         if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
-            let p: f64 = p.clone().into_scalar().try_into().unwrap();
-            Some((feature, LogProb::new(p).unwrap()))
+            Some((feature, p.clone()))
         } else {
             None
         }

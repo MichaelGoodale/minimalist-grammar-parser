@@ -84,7 +84,7 @@ where
     }
 
     fn push(&mut self, v: B) {
-        if v.log_probability() > &self.config.min_log_prob && v.n_steps() < self.config.max_steps {
+        if v.pushable(self.config) {
             if self.parse_heap.len() > self.config.max_beams {
                 self.parse_heap.push_pop_min(v);
             } else {

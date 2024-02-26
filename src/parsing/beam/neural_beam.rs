@@ -1,4 +1,7 @@
-use burn::tensor::{backend::Backend, Tensor};
+use burn::{
+    record::Record,
+    tensor::{backend::Backend, ElementConversion, Tensor},
+};
 
 use crate::neural_lexicon::NeuralLexicon;
 
@@ -79,7 +82,9 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.steps.cmp(&self.steps)
+        let a: f32 = self.log_probability.clone().into_scalar().elem();
+        let b: f32 = other.log_probability.clone().into_scalar().elem();
+        a.partial_cmp(&b).unwrap()
     }
 }
 

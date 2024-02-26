@@ -65,8 +65,9 @@ fn get_prob_of_type_category<B: Backend>(
 }
 
 fn log_sum_exp<B: Backend>(a: Tensor<B, 1>) -> Tensor<B, 1> {
-    let max: Tensor<B, 1> = a.clone().max().repeat(0, a.shape().dims[0]);
-    (a - max.clone()).exp().sum().log() + max
+    let size = a.shape().dims[0];
+    let max: Tensor<B, 1> = a.clone().max();
+    (a - max.clone().repeat(0, size)).exp().sum().log() + max
 }
 
 fn get_prob_of_lemma<B: Backend>(

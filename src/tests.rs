@@ -467,3 +467,45 @@ fn proper_distributions() -> Result<()> {
     assert_eq!(v, parse);
     Ok(())
 }
+
+use burn::backend::{ndarray::NdArrayDevice, NdArray};
+use burn::tensor::Tensor;
+use neural_lexicon::N_TYPES;
+#[test]
+fn neural_generation() -> Result<()> {
+    let lemmas = Tensor::<NdArray, 3>::random(
+        [3, 3, 3],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let types = Tensor::<NdArray, 3>::random(
+        [3, 3, N_TYPES],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let categories = Tensor::<NdArray, 3>::random(
+        [3, 3, 2],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let lexeme_weights = Tensor::<NdArray, 1>::random(
+        [3],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let lexicon = NeuralLexicon::new(types, lexeme_weights, lemmas, categories);
+
+    let x: Vec<_> = NeuralGenerator::new(
+        &lexicon,
+        &ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            100,
+        ),
+    )
+    .take(50)
+    .collect();
+    println!("{x:?}");
+    panic!();
+}

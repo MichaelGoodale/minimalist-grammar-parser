@@ -12,8 +12,9 @@ const LICENSOR_POS: TensorPosition = TensorPosition(2);
 const LICENSEE_POS: TensorPosition = TensorPosition(3);
 const LEFT_SELECTOR_POS: TensorPosition = TensorPosition(4);
 const RIGHT_SELECTOR_POS: TensorPosition = TensorPosition(5);
+pub const N_TYPES: usize = 6;
 
-type NeuralGraph<B> = DiGraph<(Option<Tensor<B, 1>>, FeatureOrLemma<(), usize>), ()>;
+type NeuralGraph<B> = DiGraph<(Option<Tensor<B, 1>>, FeatureOrLemma<usize, usize>), ()>;
 
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
@@ -23,7 +24,7 @@ pub struct NeuralLexicon<B: Backend> {
     device: B::Device,
 }
 
-fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<(), usize> {
+fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<usize, usize> {
     match pos {
         CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category)),
         LICENSEE_POS => FeatureOrLemma::Feature(Feature::Licensee(category)),
@@ -53,16 +54,19 @@ fn get_prob_of_type_category<B: Backend>(
             pos..pos + 1,
             type_position.0..type_position.0 + 1,
         ])
-        .squeeze(1)
-        .sum_dim(0);
+        .reshape([-1]);
 
     let p_of_category: Tensor<B, 1> = categories
         .clone()
         .slice([0..n_lexemes, pos..pos + 1, category..category + 1])
-        .squeeze(1)
-        .sum_dim(0);
+        .reshape([-1]);
 
-    p_of_type + p_of_category
+    log_sum_exp(p_of_type + p_of_category)
+}
+
+fn log_sum_exp<B: Backend>(a: Tensor<B, 1>) -> Tensor<B, 1> {
+    let max = a.clone().max();
+    (a - max.clone()).exp().sum() + max
 }
 
 fn get_prob_of_lemma<B: Backend>(
@@ -72,27 +76,19 @@ fn get_prob_of_lemma<B: Backend>(
     pronounced_lemma: bool,
     pos: usize,
 ) -> Tensor<B, 1> {
-    let p_of_type: Tensor<B, 1> = types
+    let mut p_of_type: Tensor<B, 1> = types
         .clone()
         .slice([0..n_lexemes, pos..pos + 1, LEMMA_POS.0..LEMMA_POS.0 + 1])
-        .squeeze(1)
-        .sum_dim(0);
+        .reshape([-1]);
 
-    let p_of_lemma: Tensor<B, 1> = if pronounced_lemma {
-        lemmas
-            .clone()
-            .slice([0..n_lexemes, pos..pos + 1, 1..lemmas.shape().dims[2]])
-            .squeeze(1)
-            .sum_dim(0)
-    } else {
-        lemmas
+    if !pronounced_lemma {
+        let p_of_unpronounced_lemma: Tensor<B, 1> = lemmas
             .clone()
             .slice([0..n_lexemes, pos..pos + 1, 0..1])
-            .squeeze(1)
-            .sum_dim(0)
-    };
-
-    p_of_type + p_of_lemma
+            .reshape([-1]);
+        p_of_type = p_of_type + p_of_unpronounced_lemma;
+    }
+    log_sum_exp(p_of_type)
 }
 
 fn add_children<B: Backend>(
@@ -104,6 +100,17 @@ fn add_children<B: Backend>(
     types: &Tensor<B, 3>,
     n_lexemes: usize,
 ) -> Vec<NodeIndex> {
+    for pronounced in [true, false] {
+        let lemma: NodeIndex = graph.add_node((
+            Some(get_prob_of_lemma(types, lemmas, n_lexemes, pronounced, pos)),
+            FeatureOrLemma::Lemma(match pronounced {
+                true => Some(pos),
+                false => None,
+            }),
+        ));
+        graph.add_edge(parent, lemma, ());
+    }
+
     let mut children = vec![];
     for node_type in [LEFT_SELECTOR_POS, RIGHT_SELECTOR_POS, LICENSOR_POS] {
         for category in 0..categories.shape().dims[2] {
@@ -116,16 +123,6 @@ fn add_children<B: Backend>(
             graph.add_edge(parent, descendent, ());
             children.push(descendent);
         }
-    }
-    for pronounced in [true, false] {
-        let lemma: NodeIndex = graph.add_node((
-            Some(get_prob_of_lemma(types, lemmas, n_lexemes, pronounced, pos)),
-            FeatureOrLemma::Lemma(match pronounced {
-                true => Some(()),
-                false => None,
-            }),
-        ));
-        graph.add_edge(parent, lemma, ());
     }
     children
 }
@@ -222,9 +219,20 @@ impl<B: Backend> NeuralLexicon<B> {
             device,
         }
     }
+
+    pub fn lemma_at_position(&self, pos: usize) -> Tensor<B, 1> {
+        let shape = self.lemmas.shape().dims;
+        self.lemmas
+            .clone()
+            .slice([0..shape[0], pos..pos + 1, 0..shape[2]])
+            .reshape([-1])
+    }
+    pub fn device(&self) -> &B::Device {
+        &self.device
+    }
 }
 
-impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
+impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
     type Probability = Tensor<B, 1>;
 
     fn one(&self) -> Self::Probability {
@@ -250,7 +258,7 @@ impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
         &self,
         nx: petgraph::prelude::NodeIndex,
     ) -> Option<(
-        &crate::lexicon::FeatureOrLemma<(), usize>,
+        &crate::lexicon::FeatureOrLemma<usize, usize>,
         Self::Probability,
     )> {
         if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
@@ -274,7 +282,7 @@ impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
         self.graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
             .find(|i| match &self.graph[*i] {
-                (_, FeatureOrLemma::Feature(Feature::Licensee(c))) => c == category,
+                (_, FeatureOrLemma::Feature(Feature::Category(c))) => c == category,
                 _ => false,
             })
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
@@ -283,12 +291,35 @@ impl<B: Backend> Lexiconable<(), usize> for NeuralLexicon<B> {
 
 #[cfg(test)]
 mod test {
+    use burn::backend::{ndarray::NdArrayDevice, NdArray};
     use burn::tensor::Tensor;
 
-    use super::NeuralLexicon;
+    use super::{NeuralLexicon, N_TYPES};
 
     #[test]
     fn make_new_lexicon() -> anyhow::Result<()> {
-        todo!();
+        let lemmas = Tensor::<NdArray, 3>::random(
+            [3, 5, 3],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let types = Tensor::<NdArray, 3>::random(
+            [3, 5, N_TYPES],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let categories = Tensor::<NdArray, 3>::random(
+            [3, 5, 2],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let lexeme_weights = Tensor::<NdArray, 1>::random(
+            [3],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+
+        NeuralLexicon::new(types, lexeme_weights, lemmas, categories);
+        Ok(())
     }
 }

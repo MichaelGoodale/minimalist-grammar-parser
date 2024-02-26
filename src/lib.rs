@@ -1,10 +1,14 @@
 use std::marker::PhantomData;
 
 use anyhow::Result;
+use burn::tensor::backend::Backend;
+use burn::tensor::Tensor;
 use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
+use neural_lexicon::NeuralLexicon;
+use parsing::beam::neural_beam::NeuralBeam;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
@@ -415,6 +419,59 @@ where
                 );
             } else if beam.queue.is_empty() {
                 return Some((beam.log_probability, beam.sentence, beam.rules.to_vec()));
+            }
+        }
+        None
+    }
+}
+
+#[derive(Debug)]
+pub struct NeuralGenerator<'a, B: Backend> {
+    lexicon: &'a NeuralLexicon<B>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
+    move_log_prob: Tensor<B, 1>,
+    merge_log_prob: Tensor<B, 1>,
+}
+
+impl<'a, B: Backend> NeuralGenerator<'a, B> {
+    pub fn new(lexicon: &'a NeuralLexicon<B>, config: &'a ParsingConfig) -> NeuralGenerator<'a, B> {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(NeuralBeam::new(lexicon, 0, false).unwrap());
+        NeuralGenerator {
+            lexicon,
+            move_log_prob: Tensor::from_floats(
+                [config.move_prob.into_inner() as f32],
+                lexicon.device(),
+            ),
+            merge_log_prob: Tensor::from_floats(
+                [config.move_prob.opposite_prob().into_inner() as f32],
+                lexicon.device(),
+            ),
+            parse_heap: ParseHeap {
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        }
+    }
+}
+
+impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
+    type Item = Tensor<B, 2>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(mut beam) = self.parse_heap.pop() {
+            if let Some(moment) = beam.pop_moment() {
+                expand(
+                    &mut self.parse_heap,
+                    moment,
+                    beam,
+                    self.lexicon,
+                    self.move_log_prob.clone(),
+                    self.merge_log_prob.clone(),
+                );
+            } else if let Some(sentence) = beam.yield_good_parse() {
+                return Some(sentence);
             }
         }
         None

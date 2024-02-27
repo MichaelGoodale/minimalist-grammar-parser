@@ -1801,6 +1801,7 @@ dependencies = [
  "logprob",
  "min-max-heap",
  "petgraph",
+ "rand",
  "thin-vec",
  "tinyvec",
 ]

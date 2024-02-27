@@ -426,27 +426,35 @@ where
 }
 
 #[derive(Debug)]
-pub struct NeuralGenerator<'a, B: Backend> {
+pub struct NeuralGenerator<'a, B: Backend>
+where
+    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
+{
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
-    move_log_prob: Tensor<B, 1>,
-    merge_log_prob: Tensor<B, 1>,
+    move_log_prob: B::FloatElem,
+    merge_log_prob: B::FloatElem,
 }
 
-impl<'a, B: Backend> NeuralGenerator<'a, B> {
+impl<'a, B: Backend> NeuralGenerator<'a, B>
+where
+    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
+{
     pub fn new(lexicon: &'a NeuralLexicon<B>, config: &'a ParsingConfig) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(NeuralBeam::new(lexicon, 0, false).unwrap());
         NeuralGenerator {
             lexicon,
-            move_log_prob: Tensor::from_floats(
+            move_log_prob: Tensor::<B, 1>::from_floats(
                 [config.move_prob.into_inner() as f32],
                 lexicon.device(),
-            ),
-            merge_log_prob: Tensor::from_floats(
+            )
+            .into_scalar(),
+            merge_log_prob: Tensor::<B, 1>::from_floats(
                 [config.move_prob.opposite_prob().into_inner() as f32],
                 lexicon.device(),
-            ),
+            )
+            .into_scalar(),
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -456,7 +464,10 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
     }
 }
 
-impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
+impl<B: Backend> Iterator for NeuralGenerator<'_, B>
+where
+    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
+{
     type Item = Tensor<B, 2>;
 
     fn next(&mut self) -> Option<Self::Item> {

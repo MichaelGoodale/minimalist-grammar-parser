@@ -506,6 +506,5 @@ fn neural_generation() -> Result<()> {
     )
     .take(50)
     .collect();
-    println!("{x:?}");
-    panic!();
+    Ok(())
 }

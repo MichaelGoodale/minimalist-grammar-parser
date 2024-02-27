@@ -1,7 +1,10 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::Context;
-use burn::tensor::{activation::log_softmax, backend::Backend, ops::FloatElem, Tensor};
-use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
+use burn::tensor::{
+    activation::log_softmax, backend::Backend, ops::FloatElem, ElementConversion, Tensor,
+};
+use itertools::Itertools;
+use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef, Direction::Outgoing};
 use rand::{seq::SliceRandom, Rng};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -24,7 +27,7 @@ const POSITIONS: [TensorPosition; 6] = [
 ];
 pub const N_TYPES: usize = 6;
 
-type NeuralGraph<B> = DiGraph<(Option<FloatElem<B>>, FeatureOrLemma<usize, usize>), ()>;
+type NeuralGraph<B> = DiGraph<(Option<FloatElem<B>>, FeatureOrLemma<(usize, usize), usize>), ()>;
 
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
@@ -34,7 +37,7 @@ pub struct NeuralLexicon<B: Backend> {
     device: B::Device,
 }
 
-fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<usize, usize> {
+fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<(usize, usize), usize> {
     match pos {
         CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category)),
         LICENSEE_POS => FeatureOrLemma::Feature(Feature::Licensee(category)),
@@ -111,14 +114,16 @@ fn add_children<B: Backend>(
     n_lexemes: usize,
 ) -> Vec<NodeIndex> {
     for pronounced in [true, false] {
-        let lemma: NodeIndex = graph.add_node((
-            Some(get_prob_of_lemma(types, lemmas, n_lexemes, pronounced, pos)),
-            FeatureOrLemma::Lemma(match pronounced {
-                true => Some(pos),
-                false => None,
-            }),
-        ));
-        graph.add_edge(parent, lemma, ());
+        for lexeme in 0..n_lexemes {
+            let lemma: NodeIndex = graph.add_node((
+                Some(get_prob_of_lemma(types, lemmas, n_lexemes, pronounced, pos)),
+                FeatureOrLemma::Lemma(match pronounced {
+                    true => Some((pos, lexeme)),
+                    false => None,
+                }),
+            ));
+            graph.add_edge(parent, lemma, ());
+        }
     }
 
     let mut children = vec![];
@@ -227,11 +232,11 @@ impl<B: Backend> NeuralLexicon<B> {
         }
     }
 
-    pub fn lemma_at_position(&self, pos: usize) -> Tensor<B, 1> {
-        let shape = self.lemmas.shape().dims;
+    pub fn lemma_at_position(&self, pos: usize, lexeme: usize) -> Tensor<B, 1> {
+        let n_lemmas = self.lemmas.shape().dims[2];
         self.lemmas
             .clone()
-            .slice([0..shape[0], pos..pos + 1, 0..shape[2]])
+            .slice([lexeme..lexeme + 1, pos..pos + 1, 0..n_lemmas])
             .reshape([-1])
     }
 
@@ -246,30 +251,56 @@ impl<B: Backend> NeuralLexicon<B> {
         rng: &mut impl Rng,
     ) -> Self
     where
-        B::FloatElem: Into<f32>,
+        B::FloatElem: Into<f32> + std::ops::Add<B::FloatElem, Output = B::FloatElem>,
     {
-        let n_lexemes = types.shape().dims[0];
-        let n_positions = types.shape().dims[1];
+        let [n_lexemes, n_positions, n_categories] = categories.shape().dims;
+        let category_ids = (0..n_categories).collect_vec();
         let mut graph = DiGraph::new();
         let root = graph.add_node((None, FeatureOrLemma::Root));
         let device = lemmas.device();
 
+        let mut has_start_category = false;
         for lexeme in 0..n_lexemes {
             let mut parent = root;
-            for position in 0..n_positions {
-                let type_distribution = types
-                    .clone()
-                    .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
-                    .to_data()
-                    .value;
-                let possible_type = *POSITIONS
-                    .choose_weighted(rng, |i| {
-                        let x: f32 = type_distribution[i.0].into();
-                        x
-                    })
-                    .unwrap();
+            let mut has_category_already = false;
+            let mut has_lemma_already = false;
 
-                let weight = types
+            for position in 0..n_positions {
+                if has_lemma_already {
+                    continue;
+                };
+
+                let possible_type = if !has_lemma_already && position == n_positions - 1 {
+                    //Make sure we have a lemma if we don't already and its the last stop.
+                    LEMMA_POS
+                } else if !has_start_category && position == 0 && lexeme == n_lexemes - 1 {
+                    CATEGORY_POS
+                } else {
+                    //Sample a type
+                    let type_distribution = types
+                        .clone()
+                        .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
+                        .to_data()
+                        .value;
+                    let samples: Vec<_> = POSITIONS
+                        .into_iter()
+                        .filter(|&x| {
+                            has_category_already ^ (x == CATEGORY_POS || x == LICENSEE_POS)
+                        })
+                        .collect();
+
+                    *samples
+                        .choose_weighted(rng, |i| {
+                            let x: f32 = type_distribution[i.0].into().exp();
+                            x
+                        })
+                        .unwrap()
+                };
+
+                has_category_already = possible_type == CATEGORY_POS || has_category_already;
+                has_lemma_already = possible_type == LEMMA_POS || has_lemma_already;
+
+                let mut weight = types
                     .clone()
                     .slice([
                         lexeme..lexeme + 1,
@@ -278,11 +309,70 @@ impl<B: Backend> NeuralLexicon<B> {
                     ])
                     .into_scalar();
 
-                let feature: FeatureOrLemma<usize, usize> = match possible_type {
-                    LEMMA_POS => FeatureOrLemma::Lemma(Some(position)),
-                    _ => FeatureOrLemma::Root,
+                let feature: FeatureOrLemma<(usize, usize), usize> = match possible_type {
+                    LEMMA_POS => FeatureOrLemma::Lemma({
+                        let p_of_unpronounced_lemma = lemmas
+                            .clone()
+                            .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
+                            .into_scalar();
+
+                        let p: f64 = p_of_unpronounced_lemma.elem();
+                        if rng.gen_bool(p.exp()) {
+                            weight = weight + p_of_unpronounced_lemma;
+                            None
+                        } else {
+                            Some((position, lexeme))
+                        }
+                    }),
+                    _ => to_feature(possible_type, {
+                        let cat_weights = categories
+                            .clone()
+                            .slice([lexeme..lexeme + 1, position..position + 1, 0..n_categories])
+                            .to_data()
+                            .value;
+                        let mut cat = *category_ids
+                            .choose_weighted(rng, |i| {
+                                let x: f32 = cat_weights[*i].into().exp();
+                                x
+                            })
+                            .unwrap();
+
+                        if position == 0 && lexeme == n_lexemes - 1 && !has_start_category {
+                            //If we're the last lexeme and there's been no start category, we force
+                            //the last lexeme to start with a category.
+                            cat = 0
+                        }
+
+                        has_start_category = has_start_category
+                            || (possible_type == CATEGORY_POS && cat == 0 && position == 0);
+
+                        weight = weight
+                            + categories
+                                .clone()
+                                .slice([lexeme..lexeme + 1, position..position + 1, cat..cat + 1])
+                                .into_scalar();
+
+                        cat
+                    }),
                 };
-                let node = graph.add_node((Some(weight), feature));
+
+                let mut node = None;
+                if possible_type != LEMMA_POS {
+                    for child in graph.neighbors_directed(parent, Outgoing) {
+                        let old_feature = &graph[child].1;
+                        if feature == *old_feature {
+                            graph[child].0 = Some(graph[child].0.unwrap() + weight);
+                            node = Some(child);
+                            break;
+                        }
+                    }
+                }
+
+                parent = node.unwrap_or_else(|| {
+                    let node = graph.add_node((Some(weight), feature));
+                    graph.add_edge(parent, node, ());
+                    node
+                });
             }
         }
 
@@ -295,7 +385,7 @@ impl<B: Backend> NeuralLexicon<B> {
     }
 }
 
-impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B>
+impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
@@ -324,11 +414,11 @@ where
         &self,
         nx: petgraph::prelude::NodeIndex,
     ) -> Option<(
-        &crate::lexicon::FeatureOrLemma<usize, usize>,
+        &crate::lexicon::FeatureOrLemma<(usize, usize), usize>,
         Self::Probability,
     )> {
         if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
-            Some((feature, p.clone()))
+            Some((feature, *p))
         } else {
             None
         }
@@ -358,10 +448,12 @@ where
 #[cfg(test)]
 mod test {
     use burn::backend::{ndarray::NdArrayDevice, NdArray};
+    use burn::tensor::activation::log_softmax;
     use burn::tensor::Tensor;
     use rand::SeedableRng;
 
     use super::{NeuralLexicon, N_TYPES};
+    use petgraph::dot::Dot;
 
     #[test]
     fn make_new_lexicon() -> anyhow::Result<()> {
@@ -392,25 +484,34 @@ mod test {
 
     #[test]
     fn sample_grammar() -> anyhow::Result<()> {
-        let lemmas = Tensor::<NdArray, 3>::random(
-            [3, 5, 3],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
+        let lemmas = log_softmax(
+            Tensor::<NdArray, 3>::random(
+                [3, 5, 3],
+                burn::tensor::Distribution::Default,
+                &NdArrayDevice::default(),
+            ),
+            2,
         );
-        let types = Tensor::<NdArray, 3>::random(
-            [3, 5, N_TYPES],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
+        let types = log_softmax(
+            Tensor::<NdArray, 3>::random(
+                [3, 5, N_TYPES],
+                burn::tensor::Distribution::Default,
+                &NdArrayDevice::default(),
+            ),
+            2,
         );
-        let categories = Tensor::<NdArray, 3>::random(
-            [3, 5, 2],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
+        let categories = log_softmax(
+            Tensor::<NdArray, 3>::random(
+                [3, 5, 2],
+                burn::tensor::Distribution::Default,
+                &NdArrayDevice::default(),
+            ),
+            2,
         );
 
         let mut r = rand::rngs::StdRng::seed_from_u64(123);
 
         NeuralLexicon::new_random(types, lemmas, categories, &mut r);
-        panic!();
+        Ok(())
     }
 }

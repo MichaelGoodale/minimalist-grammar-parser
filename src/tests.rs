@@ -1,5 +1,6 @@
 use crate::lexicon::Feature;
 use anyhow::Result;
+use rand::SeedableRng;
 
 use super::*;
 use crate::{
@@ -160,6 +161,7 @@ fn generation() -> Result<()> {
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams: 1000,
+            global_steps: None,
         },
     )?
     .collect();
@@ -468,8 +470,11 @@ fn proper_distributions() -> Result<()> {
     Ok(())
 }
 
-use burn::backend::{ndarray::NdArrayDevice, NdArray};
 use burn::tensor::Tensor;
+use burn::{
+    backend::{ndarray::NdArrayDevice, NdArray},
+    tensor::activation::log_softmax,
+};
 use neural_lexicon::N_TYPES;
 #[test]
 fn neural_generation() -> Result<()> {
@@ -495,7 +500,7 @@ fn neural_generation() -> Result<()> {
     );
     let lexicon = NeuralLexicon::new(types, lexeme_weights, lemmas, categories);
 
-    let x: Vec<_> = NeuralGenerator::new(
+    let _: Vec<_> = NeuralGenerator::new(
         &lexicon,
         &ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
@@ -506,5 +511,46 @@ fn neural_generation() -> Result<()> {
     )
     .take(50)
     .collect();
+    Ok(())
+}
+
+#[test]
+fn random_neural_generation() -> Result<()> {
+    let lemmas = log_softmax(
+        Tensor::<NdArray, 3>::random(
+            [3, 3, 3],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        ),
+        2,
+    );
+    let types = log_softmax(
+        Tensor::<NdArray, 3>::random(
+            [3, 3, N_TYPES],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        ),
+        2,
+    );
+    let categories = log_softmax(
+        Tensor::<NdArray, 3>::random(
+            [3, 3, 2],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        ),
+        2,
+    );
+
+    let config = ParsingConfig::new_with_global_steps(
+        LogProb::new(-256.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        30,
+        20,
+        2000,
+    );
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+    let x = get_neural_outputs(lemmas, types, categories, 500, 50, 20, &config, &mut rng);
+    println!("{x:?}");
     Ok(())
 }

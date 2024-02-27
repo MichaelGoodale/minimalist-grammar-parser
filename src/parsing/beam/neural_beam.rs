@@ -18,7 +18,7 @@ pub struct NeuralBeam<'a, B: Backend> {
 
 impl<'a, B: Backend> NeuralBeam<'a, B>
 where
-    NeuralLexicon<B>: Lexiconable<usize, usize>,
+    NeuralLexicon<B>: Lexiconable<(usize, usize), usize>,
 {
     pub fn new(
         lexicon: &'a NeuralLexicon<B>,
@@ -88,7 +88,7 @@ impl<B: Backend> Ord for NeuralBeam<'_, B> {
     }
 }
 
-impl<B: Backend> Beam<usize> for NeuralBeam<'_, B>
+impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
@@ -123,17 +123,17 @@ where
     }
 
     fn scan(
-        v: &mut ParseHeap<usize, Self>,
+        v: &mut ParseHeap<(usize, usize), Self>,
         moment: &ParseMoment,
         mut beam: Self,
-        s: &Option<usize>,
+        s: &Option<(usize, usize)>,
         child_node: NodeIndex,
         child_prob: Self::Probability,
     ) {
         beam.queue.shrink_to_fit();
-        if let Some(pos) = s {
+        if let Some((pos, lex)) = s {
             beam.generated_sentences
-                .push(beam.lexicon.lemma_at_position(*pos))
+                .push(beam.lexicon.lemma_at_position(*pos, *lex))
         }
         beam.log_probability = beam.log_probability + child_prob;
         if beam.record_rules() {

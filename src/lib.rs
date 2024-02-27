@@ -12,6 +12,7 @@ use parsing::beam::neural_beam::NeuralBeam;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
+use rand::Rng;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -53,6 +54,7 @@ pub struct ParsingConfig {
     move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
+    global_steps: Option<usize>,
 }
 
 impl ParsingConfig {
@@ -68,6 +70,23 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
+            global_steps: None,
+        }
+    }
+    pub fn new_with_global_steps(
+        min_log_prob: LogProb<f64>,
+        move_prob: LogProb<f64>,
+        max_steps: usize,
+        max_beams: usize,
+        global_steps: usize,
+    ) -> ParsingConfig {
+        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob,
+            move_prob,
+            max_steps,
+            max_beams,
+            global_steps: Some(global_steps),
         }
     }
 }
@@ -76,6 +95,8 @@ impl ParsingConfig {
 struct ParseHeap<'a, T, B: Beam<T>> {
     parse_heap: MinMaxHeap<B>,
     phantom: PhantomData<T>,
+    global_steps: usize,
+    done: bool,
     config: &'a ParsingConfig,
 }
 
@@ -88,7 +109,11 @@ where
     }
 
     fn push(&mut self, v: B) {
-        if v.pushable(self.config) {
+        self.global_steps += 1;
+        if let Some(max_steps) = self.config.global_steps {
+            self.done = self.global_steps > max_steps;
+        }
+        if !self.done && v.pushable(self.config) {
             if self.parse_heap.len() > self.config.max_beams {
                 self.parse_heap.push_pop_min(v);
             } else {
@@ -130,6 +155,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -153,6 +180,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -219,6 +248,8 @@ where
             buffer: vec![],
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -245,6 +276,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -274,6 +307,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -303,6 +338,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -372,6 +409,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -391,6 +430,8 @@ where
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -425,13 +466,51 @@ where
     }
 }
 
+pub fn get_neural_outputs<B: Backend>(
+    lemmas: Tensor<B, 3>,
+    types: Tensor<B, 3>,
+    categories: Tensor<B, 3>,
+    n_grammars: usize,
+    n_words: usize,
+    n_padding: usize,
+    config: &ParsingConfig,
+    rng: &mut impl Rng,
+) -> Tensor<B, 3>
+where
+    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
+{
+    let n_lemmas = lemmas.shape().dims[2];
+    let mut tensor = Tensor::<B, 3>::zeros([n_words, n_padding, n_lemmas], &lemmas.device());
+    for _ in 0..n_grammars {
+        let lexicon =
+            NeuralLexicon::new_random(types.clone(), lemmas.clone(), categories.clone(), rng);
+
+        for (n, x) in NeuralGenerator::new(&lexicon, config)
+            .filter(|x| x.shape().dims[0] < n_words)
+            .take(n_words)
+            .enumerate()
+        {
+            let length = x.shape().dims[0];
+            let slice = [n..n + 1, 0..n_padding, 0..n_lemmas];
+            let padding_prob = x
+                .clone()
+                .slice([length - 1..length, 0..n_lemmas])
+                .repeat(0, n_padding - length);
+            let x: Tensor<B, 3> = Tensor::cat(vec![x, padding_prob], 0).unsqueeze_dim(0);
+            let x = tensor.clone().slice(slice.clone()) + x;
+            tensor = tensor.slice_assign(slice, x);
+        }
+    }
+    tensor
+}
+
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
+    parse_heap: ParseHeap<'a, (usize, usize), NeuralBeam<'a, B>>,
     move_log_prob: B::FloatElem,
     merge_log_prob: B::FloatElem,
 }
@@ -456,6 +535,8 @@ where
             )
             .into_scalar(),
             parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -478,8 +559,8 @@ where
                     moment,
                     beam,
                     self.lexicon,
-                    self.move_log_prob.clone(),
-                    self.merge_log_prob.clone(),
+                    self.move_log_prob,
+                    self.merge_log_prob,
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
                 return Some(sentence);

@@ -489,7 +489,11 @@ impl LexicalEntry<&str, char> {
     }
 }
 
-impl std::fmt::Display for FeatureOrLemma<&str, char> {
+impl<T, C> std::fmt::Display for FeatureOrLemma<T, C>
+where
+    T: std::fmt::Display + Eq,
+    C: std::fmt::Display + Eq,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FeatureOrLemma::Root => write!(f, "root"),

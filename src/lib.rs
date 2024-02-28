@@ -473,6 +473,14 @@ pub struct NeuralConfig {
     pub parsing_config: ParsingConfig,
 }
 
+pub fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
+    tensor: Tensor<B, D>,
+    dim: usize,
+) -> Tensor<B, D2> {
+    let max = tensor.clone().max_dim(dim);
+    ((tensor - max.clone()).exp().sum_dim(dim).log() + max).squeeze(dim)
+}
+
 pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
@@ -485,12 +493,15 @@ where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
     let n_targets = targets.shape().dims[0];
-    let targets: Tensor<B, 3, Int> = targets.unsqueeze_dim(2);
+
+    //(n_targets, n_grammar_strings, padding_length, n_lemmas)
+    let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([n_targets], &targets.device());
     for _ in 0..neural_config.n_grammars {
         let lexicon =
             NeuralLexicon::new_random(types.clone(), lemmas.clone(), categories.clone(), rng);
+        let mut grammar_strings: Vec<_> = vec![];
         for x in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
             .filter(|x| x.shape().dims[0] < neural_config.padding_length)
             .take(neural_config.n_strings_per_grammar)
@@ -500,18 +511,28 @@ where
                 .clone()
                 .slice([length - 1..length, 0..n_lemmas])
                 .repeat(0, neural_config.padding_length - length);
-            let x: Tensor<B, 3> = Tensor::cat(vec![x, padding_prob], 0)
-                .unsqueeze_dim(0)
-                .repeat(0, n_targets);
-
-            //Probability of generating every string for this grammar.
-            let x = x
-                .gather(2, targets.clone())
-                .squeeze::<2>(2)
-                .sum_dim(1)
-                .squeeze::<1>(1);
-            loss = loss + x;
+            let x: Tensor<B, 2> = Tensor::cat(vec![x, padding_prob], 0);
+            grammar_strings.push(x);
         }
+        if grammar_strings.is_empty() {
+            continue;
+        }
+        let n_grammar_strings = grammar_strings.len();
+
+        //(n_targets, n_grammar_strings, padding_length, n_lemmas)
+        let grammar: Tensor<B, 4> = Tensor::stack::<3>(grammar_strings, 0)
+            .unsqueeze()
+            .repeat(0, n_targets);
+
+        //Probability of generating every string for this grammar.
+        let grammar_loss = grammar
+            .gather(3, targets.clone().repeat(1, n_grammar_strings))
+            .squeeze::<3>(3)
+            .sum_dim(2)
+            .squeeze::<2>(2);
+
+        let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
+        loss = loss + grammar_loss;
     }
     loss = loss / (n_targets as f64);
     loss

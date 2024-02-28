@@ -486,7 +486,7 @@ where
             NeuralLexicon::new_random(types.clone(), lemmas.clone(), categories.clone(), rng);
 
         for (n, x) in NeuralGenerator::new(&lexicon, config)
-            .filter(|x| x.shape().dims[0] < n_words)
+            .filter(|x| x.shape().dims[0] < n_padding)
             .take(n_words)
             .enumerate()
         {

@@ -498,6 +498,7 @@ where
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([n_targets], &targets.device());
+    let mut valid_grammars = 0.0;
     for _ in 0..neural_config.n_grammars {
         let lexicon =
             NeuralLexicon::new_random(types.clone(), lemmas.clone(), categories.clone(), rng);
@@ -533,8 +534,9 @@ where
 
         let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
         loss = loss + grammar_loss;
+        valid_grammars += 1.0;
     }
-    loss = loss / (neural_config.n_grammars as f64);
+    loss = loss / valid_grammars;
     loss
 }
 

@@ -534,7 +534,7 @@ where
         let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
         loss = loss + grammar_loss;
     }
-    loss = loss / (n_targets as f64);
+    loss = loss / (neural_config.n_grammars as f64);
     loss
 }
 

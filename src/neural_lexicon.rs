@@ -453,7 +453,6 @@ mod test {
     use rand::SeedableRng;
 
     use super::{NeuralLexicon, N_TYPES};
-    use petgraph::dot::Dot;
 
     #[test]
     fn make_new_lexicon() -> anyhow::Result<()> {

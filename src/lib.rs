@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::Result;
 use burn::tensor::backend::Backend;
-use burn::tensor::Tensor;
+use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
 
 use logprob::LogProb;
@@ -466,42 +466,55 @@ where
     }
 }
 
+pub struct NeuralConfig {
+    pub n_grammars: usize,
+    pub n_strings_per_grammar: usize,
+    pub padding_length: usize,
+    pub parsing_config: ParsingConfig,
+}
+
 pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
     categories: Tensor<B, 3>,
-    n_grammars: usize,
-    n_words: usize,
-    n_padding: usize,
-    config: &ParsingConfig,
+    targets: Tensor<B, 2, Int>,
+    neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> Tensor<B, 3>
+) -> Tensor<B, 1>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
+    let n_targets = targets.shape().dims[0];
+    let targets: Tensor<B, 3, Int> = targets.unsqueeze_dim(2);
     let n_lemmas = lemmas.shape().dims[2];
-    let mut tensor = Tensor::<B, 3>::zeros([n_words, n_padding, n_lemmas], &lemmas.device());
-    for _ in 0..n_grammars {
+    let mut loss = Tensor::zeros([n_targets], &targets.device());
+    for _ in 0..neural_config.n_grammars {
         let lexicon =
             NeuralLexicon::new_random(types.clone(), lemmas.clone(), categories.clone(), rng);
-
-        for (n, x) in NeuralGenerator::new(&lexicon, config)
-            .filter(|x| x.shape().dims[0] < n_padding)
-            .take(n_words)
-            .enumerate()
+        for x in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
+            .filter(|x| x.shape().dims[0] < neural_config.padding_length)
+            .take(neural_config.n_strings_per_grammar)
         {
             let length = x.shape().dims[0];
-            let slice = [n..n + 1, 0..n_padding, 0..n_lemmas];
             let padding_prob = x
                 .clone()
                 .slice([length - 1..length, 0..n_lemmas])
-                .repeat(0, n_padding - length);
-            let x: Tensor<B, 3> = Tensor::cat(vec![x, padding_prob], 0).unsqueeze_dim(0);
-            let x = tensor.clone().slice(slice.clone()) + x;
-            tensor = tensor.slice_assign(slice, x);
+                .repeat(0, neural_config.padding_length - length);
+            let x: Tensor<B, 3> = Tensor::cat(vec![x, padding_prob], 0)
+                .unsqueeze_dim(0)
+                .repeat(0, n_targets);
+
+            //Probability of generating every string for this grammar.
+            let x = x
+                .gather(2, targets.clone())
+                .squeeze::<2>(2)
+                .sum_dim(1)
+                .squeeze::<1>(1);
+            loss = loss + x;
         }
     }
-    tensor
+    loss = loss / (n_targets as f64);
+    loss
 }
 
 #[derive(Debug)]

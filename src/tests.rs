@@ -541,16 +541,21 @@ fn random_neural_generation() -> Result<()> {
         2,
     );
 
-    let config = ParsingConfig::new_with_global_steps(
-        LogProb::new(-256.0).unwrap(),
-        LogProb::from_raw_prob(0.5).unwrap(),
-        30,
-        20,
-        2000,
-    );
-
+    let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
-    let x = get_neural_outputs(lemmas, types, categories, 500, 50, 20, &config, &mut rng);
+    let config = NeuralConfig {
+        n_grammars: 500,
+        n_strings_per_grammar: 50,
+        padding_length: 10,
+        parsing_config: ParsingConfig::new_with_global_steps(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            30,
+            20,
+            2000,
+        ),
+    };
+    let x = get_neural_outputs(lemmas, types, categories, targets, &config, &mut rng);
     println!("{x:?}");
     Ok(())
 }

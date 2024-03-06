@@ -78,7 +78,7 @@ impl<B: Backend> NeuralLexicon<B> {
         lemmas: Tensor<B, 3>,     //(lexeme, lexeme_pos, lemma_distribution)
         weights: Tensor<B, 2>,    //(lexeme, lexeme_weight)
         rng: &mut impl Rng,
-    ) -> (B::FloatElem, Self)
+    ) -> (Tensor<B, 1>, Self)
     where
         B::FloatElem: Into<f32> + std::ops::Add<B::FloatElem, Output = B::FloatElem>,
     {
@@ -87,7 +87,7 @@ impl<B: Backend> NeuralLexicon<B> {
         let mut graph = DiGraph::new();
         let root = graph.add_node((None, FeatureOrLemma::Root));
         let device = lemmas.device();
-        let mut grammar_prob = Tensor::<B, 1>::zeros([1], &types.device()).into_scalar();
+        let mut grammar_prob = Tensor::<B, 1>::zeros([1], &types.device());
 
         let mut has_start_category = false;
         let mut attested_at_position: Vec<_> = std::iter::repeat(true)
@@ -142,24 +142,22 @@ impl<B: Backend> NeuralLexicon<B> {
                         position..position + 1,
                         possible_type.0..possible_type.0 + 1,
                     ])
-                    .into_scalar();
+                    .reshape([1]);
 
                 let feature: FeatureOrLemma<(usize, usize), usize> = match possible_type {
                     LEMMA_POS => {
-                        let p_of_unpronounced_lemma = lemmas.clone().slice([
-                            lexeme..lexeme + 1,
-                            position..position + 1,
-                            0..1,
-                        ]);
+                        let p_of_unpronounced_lemma = lemmas
+                            .clone()
+                            .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
+                            .reshape([1]);
 
                         let p: f64 = p_of_unpronounced_lemma.clone().into_scalar().elem();
                         if rng.gen_bool(p.exp()) {
-                            lemma_structure_p =
-                                lemma_structure_p + p_of_unpronounced_lemma.into_scalar();
+                            lemma_structure_p = lemma_structure_p + p_of_unpronounced_lemma;
                             FeatureOrLemma::Lemma(None)
                         } else {
-                            lemma_structure_p = lemma_structure_p
-                                + (-p_of_unpronounced_lemma.exp()).log1p().into_scalar();
+                            lemma_structure_p =
+                                lemma_structure_p + (-p_of_unpronounced_lemma.exp()).log1p();
                             FeatureOrLemma::Lemma(Some((lexeme, position)))
                         }
                     }
@@ -189,7 +187,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             + categories
                                 .clone()
                                 .slice([lexeme..lexeme + 1, position..position + 1, cat..cat + 1])
-                                .into_scalar();
+                                .reshape([1]);
                         to_feature(possible_type, cat)
                     }
                 };
@@ -227,10 +225,10 @@ impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
-    type Probability = B::FloatElem;
+    type Probability = Tensor<B, 1>;
 
     fn one(&self) -> Self::Probability {
-        Tensor::<B, 1>::ones([1], &self.device).into_scalar()
+        Tensor::<B, 1>::ones([1], &self.device)
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
@@ -260,7 +258,7 @@ where
                 .weights
                 .clone()
                 .slice([*lexeme..lexeme + 1, *position..position + 1])
-                .into_scalar();
+                .reshape([1]);
             Some((feature, p))
         } else {
             None

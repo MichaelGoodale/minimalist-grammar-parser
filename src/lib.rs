@@ -563,8 +563,8 @@ where
 {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, (usize, usize), NeuralBeam<'a, B>>,
-    move_log_prob: B::FloatElem,
-    merge_log_prob: B::FloatElem,
+    move_log_prob: Tensor<B, 1>,
+    merge_log_prob: Tensor<B, 1>,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B>
@@ -579,13 +579,11 @@ where
             move_log_prob: Tensor::<B, 1>::from_floats(
                 [config.move_prob.into_inner() as f32],
                 lexicon.device(),
-            )
-            .into_scalar(),
+            ),
             merge_log_prob: Tensor::<B, 1>::from_floats(
                 [config.move_prob.opposite_prob().into_inner() as f32],
                 lexicon.device(),
-            )
-            .into_scalar(),
+            ),
             parse_heap: ParseHeap {
                 global_steps: 0,
                 done: false,
@@ -611,8 +609,8 @@ where
                     moment,
                     beam,
                     self.lexicon,
-                    self.move_log_prob,
-                    self.merge_log_prob,
+                    self.move_log_prob.clone(),
+                    self.merge_log_prob.clone(),
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
                 return Some(sentence);

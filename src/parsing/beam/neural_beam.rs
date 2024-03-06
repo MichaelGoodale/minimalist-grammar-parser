@@ -6,7 +6,7 @@ use super::*;
 
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
-    log_probability: B::FloatElem,
+    log_probability: Tensor<B, 1>,
     lexicon: &'a NeuralLexicon<B>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<Tensor<B, 1>>,
@@ -38,7 +38,7 @@ where
         )));
 
         Ok(NeuralBeam {
-            log_probability: Tensor::<B, 1>::ones([1], lexicon.device()).into_scalar(),
+            log_probability: Tensor::<B, 1>::ones([1], lexicon.device()),
             queue,
             lexicon,
             generated_sentences: vec![],
@@ -56,7 +56,7 @@ where
     pub fn yield_good_parse(self) -> Option<Tensor<B, 2>> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
-            Some(Tensor::stack(sentence, 0) + self.log_probability)
+            Some(Tensor::stack(sentence, 0) + self.log_probability.unsqueeze())
         } else {
             None
         }
@@ -82,8 +82,8 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: f32 = self.log_probability.elem();
-        let b: f32 = other.log_probability.elem();
+        let a: f32 = self.log_probability.clone().into_scalar().elem();
+        let b: f32 = other.log_probability.clone().into_scalar().elem();
         a.partial_cmp(&b).unwrap()
     }
 }
@@ -92,7 +92,7 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
-    type Probability = B::FloatElem;
+    type Probability = Tensor<B, 1>;
 
     fn log_probability(&self) -> &Self::Probability {
         &self.log_probability

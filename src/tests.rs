@@ -487,7 +487,8 @@ fn random_neural_generation() -> Result<()> {
             &NdArrayDevice::default(),
         ),
         2,
-    );
+    )
+    .require_grad();
     let types = log_softmax(
         Tensor::<Autodiff<NdArray>, 3>::random(
             [3, 3, N_TYPES],
@@ -495,7 +496,8 @@ fn random_neural_generation() -> Result<()> {
             &NdArrayDevice::default(),
         ),
         2,
-    );
+    )
+    .require_grad();
     let categories = log_softmax(
         Tensor::<Autodiff<NdArray>, 3>::random(
             [3, 3, 2],
@@ -503,12 +505,14 @@ fn random_neural_generation() -> Result<()> {
             &NdArrayDevice::default(),
         ),
         2,
-    );
+    )
+    .require_grad();
     let weights = Tensor::<Autodiff<NdArray>, 2>::random(
         [3, 3],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
-    );
+    )
+    .require_grad();
 
     let targets =
         Tensor::<Autodiff<NdArray>, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
@@ -526,8 +530,18 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
     let x = get_neural_outputs(
-        lemmas, types, categories, weights, targets, &config, &mut rng,
+        lemmas.clone(),
+        types.clone(),
+        categories.clone(),
+        weights,
+        targets,
+        &config,
+        &mut rng,
     );
-    println!("{x:?}");
+    let g = x.backward();
+    dbg!(lemmas.grad(&g));
+    dbg!(types.grad(&g));
+    dbg!(categories.grad(&g));
+
     Ok(())
 }

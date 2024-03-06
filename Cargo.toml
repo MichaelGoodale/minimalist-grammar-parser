@@ -31,6 +31,11 @@ name = "mg_benches"
 bench = false
 test = false
 
+[[bin]]
+name = "learn"
+bench = false
+test = false
+
 [profile.profiling]
 inherits = "release"
 debug = true

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use anyhow::Result;
-use burn::tensor::backend::{AutodiffBackend, Backend};
+use burn::tensor::backend::Backend;
 use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
 
@@ -491,7 +491,7 @@ fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
 //    todo!();
 //}
 
-pub fn get_neural_outputs<B: AutodiffBackend>(
+pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
     categories: Tensor<B, 3>,

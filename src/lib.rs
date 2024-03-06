@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::Result;
 use burn::tensor::backend::Backend;
-use burn::tensor::{Int, Tensor};
+use burn::tensor::{ElementConversion, Int, Tensor};
 use lexicon::Lexicon;
 
 use logprob::LogProb;
@@ -512,6 +512,20 @@ where
     let mut valid_grammars = 0.0;
     for i in 0..neural_config.n_grammars {
         println!("grammar: {i}");
+        for lexeme in 0..n_lemmas {
+            for position in 0..lemmas.shape().dims[1] {
+                let p = lemmas
+                    .clone()
+                    .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
+                    .reshape([1])
+                    .into_scalar()
+                    .elem::<f32>()
+                    .exp();
+                println!("{p}");
+            }
+        }
+        println!("REE");
+
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
             types.clone(),
             categories.clone(),

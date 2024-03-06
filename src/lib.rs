@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use anyhow::Result;
-use burn::tensor::backend::Backend;
+use burn::tensor::backend::{AutodiffBackend, Backend};
 use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
 
@@ -491,7 +491,7 @@ fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
 //    todo!();
 //}
 
-pub fn get_neural_outputs<B: Backend>(
+pub fn get_neural_outputs<B: AutodiffBackend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
     categories: Tensor<B, 3>,
@@ -547,15 +547,13 @@ where
             .gather(3, targets.clone().repeat(1, n_grammar_strings))
             .squeeze::<3>(3)
             .sum_dim(2)
-            .squeeze::<2>(2)
-            + p_of_lex;
+            .squeeze::<2>(2);
 
         let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-        loss = loss + grammar_loss;
-        valid_grammars += 1.0;
+        loss = loss + (grammar_loss * p_of_lex);
+        valid_grammars += 1.0
     }
-    loss = loss / valid_grammars;
-    loss
+    loss / valid_grammars
 }
 
 #[derive(Debug)]

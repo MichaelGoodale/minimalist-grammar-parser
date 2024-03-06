@@ -472,6 +472,7 @@ fn proper_distributions() -> Result<()> {
 
 use burn::tensor::Tensor;
 use burn::{
+    backend::Autodiff,
     backend::{ndarray::NdArrayDevice, NdArray},
     tensor::activation::log_softmax,
 };
@@ -480,7 +481,7 @@ use neural_lexicon::N_TYPES;
 #[test]
 fn random_neural_generation() -> Result<()> {
     let lemmas = log_softmax(
-        Tensor::<NdArray, 3>::random(
+        Tensor::<Autodiff<NdArray>, 3>::random(
             [3, 3, 3],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
@@ -488,7 +489,7 @@ fn random_neural_generation() -> Result<()> {
         2,
     );
     let types = log_softmax(
-        Tensor::<NdArray, 3>::random(
+        Tensor::<Autodiff<NdArray>, 3>::random(
             [3, 3, N_TYPES],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
@@ -496,20 +497,21 @@ fn random_neural_generation() -> Result<()> {
         2,
     );
     let categories = log_softmax(
-        Tensor::<NdArray, 3>::random(
+        Tensor::<Autodiff<NdArray>, 3>::random(
             [3, 3, 2],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         ),
         2,
     );
-    let weights = Tensor::<NdArray, 2>::random(
+    let weights = Tensor::<Autodiff<NdArray>, 2>::random(
         [3, 3],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
     );
 
-    let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+    let targets =
+        Tensor::<Autodiff<NdArray>, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 500,

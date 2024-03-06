@@ -476,43 +476,6 @@ use burn::{
     tensor::activation::log_softmax,
 };
 use neural_lexicon::N_TYPES;
-#[test]
-fn neural_generation() -> Result<()> {
-    let lemmas = Tensor::<NdArray, 3>::random(
-        [3, 3, 3],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
-    let types = Tensor::<NdArray, 3>::random(
-        [3, 3, N_TYPES],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
-    let categories = Tensor::<NdArray, 3>::random(
-        [3, 3, 2],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
-    let lexeme_weights = Tensor::<NdArray, 1>::random(
-        [3],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
-    let lexicon = NeuralLexicon::new(types, lexeme_weights, lemmas, categories);
-
-    let _: Vec<_> = NeuralGenerator::new(
-        &lexicon,
-        &ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            100,
-        ),
-    )
-    .take(50)
-    .collect();
-    Ok(())
-}
 
 #[test]
 fn random_neural_generation() -> Result<()> {
@@ -523,6 +486,11 @@ fn random_neural_generation() -> Result<()> {
             &NdArrayDevice::default(),
         ),
         2,
+    );
+    let lemma_inclusion = Tensor::<NdArray, 3>::random(
+        [3, 3, 3],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
     );
     let types = log_softmax(
         Tensor::<NdArray, 3>::random(
@@ -540,6 +508,11 @@ fn random_neural_generation() -> Result<()> {
         ),
         2,
     );
+    let weights = Tensor::<NdArray, 2>::random(
+        [3, 3],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
 
     let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
@@ -555,7 +528,16 @@ fn random_neural_generation() -> Result<()> {
             2000,
         ),
     };
-    let x = get_neural_outputs(lemmas, types, categories, targets, &config, &mut rng);
+    let x = get_neural_outputs(
+        lemmas,
+        types,
+        categories,
+        lemma_inclusion,
+        weights,
+        targets,
+        &config,
+        &mut rng,
+    );
     println!("{x:?}");
     Ok(())
 }

@@ -131,9 +131,9 @@ where
         child_prob: Self::Probability,
     ) {
         beam.queue.shrink_to_fit();
-        if let Some((pos, lex)) = s {
+        if let Some((lex, pos)) = s {
             beam.generated_sentences
-                .push(beam.lexicon.lemma_at_position(*pos, *lex))
+                .push(beam.lexicon.lemma_at_position(*lex, *pos));
         }
         beam.log_probability = beam.log_probability + child_prob;
         if beam.record_rules() {

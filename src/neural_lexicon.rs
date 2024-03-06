@@ -1,8 +1,6 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::Context;
-use burn::tensor::{
-    activation::log_softmax, backend::Backend, Bool, Data, ElementConversion, Tensor,
-};
+use burn::tensor::{activation::log_softmax, backend::Backend, Bool, Data, Tensor};
 use itertools::Itertools;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::{seq::SliceRandom, Rng};
@@ -151,8 +149,8 @@ impl<B: Backend> NeuralLexicon<B> {
                             .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
                             .reshape([1]);
 
-                        let p: f64 = p_of_unpronounced_lemma.clone().into_scalar().elem();
-                        if rng.gen_bool(p.exp()) {
+                        let p: f32 = p_of_unpronounced_lemma.clone().into_scalar().into();
+                        if rng.gen_bool(p.exp().into()) {
                             lemma_structure_p = lemma_structure_p + p_of_unpronounced_lemma;
                             FeatureOrLemma::Lemma(None)
                         } else {

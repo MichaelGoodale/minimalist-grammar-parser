@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::Result;
 use burn::tensor::backend::Backend;
-use burn::tensor::{ElementConversion, Int, Tensor};
+use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
 
 use logprob::LogProb;

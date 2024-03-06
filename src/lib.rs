@@ -504,7 +504,6 @@ where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
     let n_targets = targets.shape().dims[0];
-    let lemmas = lemmas;
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);

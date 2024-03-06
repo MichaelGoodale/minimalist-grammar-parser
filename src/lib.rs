@@ -512,7 +512,7 @@ where
     let mut valid_grammars = 0.0;
     for i in 0..neural_config.n_grammars {
         println!("grammar: {i}");
-        for lexeme in 0..n_lemmas {
+        for lexeme in 0..lemmas.shape.dims[0] {
             for position in 0..lemmas.shape().dims[1] {
                 let p = lemmas
                     .clone()

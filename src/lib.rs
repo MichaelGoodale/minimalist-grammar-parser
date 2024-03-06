@@ -515,7 +515,7 @@ where
     let mut loss = Tensor::zeros([n_targets], &targets.device());
     let mut valid_grammars = 0.0;
 
-    return lemmas;
+    return lemmas.reshape([-1]);
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
             types.clone(),

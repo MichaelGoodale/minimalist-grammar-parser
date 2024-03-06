@@ -506,18 +506,8 @@ where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
     let n_targets = targets.shape().dims[0];
-    let lemma_inclusion = log_sigmoid(lemma_inclusion);
-    //let prob_that_lemma = flip_log_prob(
-    //    flip_log_prob(lemma_inclusion.clone())
-    //        .sum_dim(2)
-    //        .squeeze::<2>(2),
-    //);
-    //TODO: Change the probability in grammar code to not rely on log_probs and instead multiply by
-    //log_prob of grammar at end.
-    //
-    //TODO: Make it so that types excludes lemmas.
-    //
-    let lemmas = lemmas + lemma_inclusion.clone();
+    //let lemma_inclusion = log_sigmoid(lemma_inclusion);
+    //let lemmas = lemmas + lemma_inclusion.clone();
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);

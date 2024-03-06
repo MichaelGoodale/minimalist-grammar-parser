@@ -481,11 +481,7 @@ use neural_lexicon::N_TYPES;
 #[test]
 fn random_neural_generation() -> Result<()> {
     let lemmas = log_softmax(
-        Tensor::<Autodiff<NdArray>, 3>::random(
-            [3, 3, 3],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
-        ),
+        Tensor::<Autodiff<NdArray>, 3>::zeros([3, 3, 3], &NdArrayDevice::default()),
         2,
     )
     .require_grad();

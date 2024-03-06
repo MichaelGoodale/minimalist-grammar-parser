@@ -152,7 +152,6 @@ impl<B: Backend> NeuralLexicon<B> {
                             .reshape([1]);
 
                         let p: f64 = p_of_unpronounced_lemma.clone().into_scalar().elem();
-                        println!("{}", p.exp());
                         if rng.gen_bool(p.exp()) {
                             lemma_structure_p = lemma_structure_p + p_of_unpronounced_lemma;
                             FeatureOrLemma::Lemma(None)

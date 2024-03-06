@@ -487,11 +487,6 @@ fn random_neural_generation() -> Result<()> {
         ),
         2,
     );
-    let lemma_inclusion = Tensor::<NdArray, 3>::random(
-        [3, 3, 3],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
     let types = log_softmax(
         Tensor::<NdArray, 3>::random(
             [3, 3, N_TYPES],
@@ -529,14 +524,7 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
     let x = get_neural_outputs(
-        lemmas,
-        types,
-        categories,
-        lemma_inclusion,
-        weights,
-        targets,
-        &config,
-        &mut rng,
+        lemmas, types, categories, weights, targets, &config, &mut rng,
     );
     println!("{x:?}");
     Ok(())

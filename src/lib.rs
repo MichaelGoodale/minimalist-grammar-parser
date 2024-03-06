@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 
 use anyhow::Result;
-use burn::tensor::activation::log_sigmoid;
 use burn::tensor::backend::Backend;
 use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
@@ -496,7 +495,6 @@ pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
     categories: Tensor<B, 3>,
-    lemma_inclusion: Tensor<B, 3>,
     weights: Tensor<B, 2>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
@@ -506,16 +504,13 @@ where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
     let n_targets = targets.shape().dims[0];
-    let lemma_inclusion = log_sigmoid(lemma_inclusion.clone());
-    let lemmas = lemmas.clone() + lemma_inclusion;
+    let lemmas = lemmas;
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([n_targets], &targets.device());
     let mut valid_grammars = 0.0;
-
-    return lemmas.reshape([-1]);
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
             types.clone(),

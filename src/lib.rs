@@ -507,7 +507,7 @@ where
 {
     let n_targets = targets.shape().dims[0];
     let lemma_inclusion = log_sigmoid(lemma_inclusion);
-    let lemmas = lemmas + lemma_inclusion.clone();
+    let lemmas = lemmas + lemma_inclusion;
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);

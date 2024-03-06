@@ -505,6 +505,7 @@ pub fn get_neural_outputs<B: Backend>(
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
+    return lemmas.reshape([-1]);
     let n_targets = targets.shape().dims[0];
     //let lemma_inclusion = log_sigmoid(lemma_inclusion);
     //let lemmas = lemmas + lemma_inclusion.clone();

@@ -135,7 +135,7 @@ where
             beam.generated_sentences
                 .push(beam.lexicon.lemma_at_position(*lex, *pos));
         }
-        beam.log_probability = beam.log_probability.clone() + child_prob;
+        beam.log_probability = beam.log_probability + child_prob;
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {
                 node: child_node,

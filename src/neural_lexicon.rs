@@ -211,8 +211,8 @@ impl<B: Backend> NeuralLexicon<B> {
         (
             grammar_prob,
             NeuralLexicon {
-                lemmas: lemmas.clone(),
-                weights: weights.clone(),
+                lemmas,
+                weights,
                 graph,
                 root,
                 device,

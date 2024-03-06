@@ -510,7 +510,8 @@ where
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([n_targets], &targets.device());
     let mut valid_grammars = 0.0;
-    for _ in 0..neural_config.n_grammars {
+    for i in 0..neural_config.n_grammars {
+        println!("grammar: {i}");
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
             types.clone(),
             categories.clone(),

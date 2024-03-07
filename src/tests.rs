@@ -607,3 +607,32 @@ fn evil() -> Result<()> {
     dbg!(&lemmas.inner().to_data().value);
     Ok(())
 }
+
+#[test]
+fn bizarre() -> Result<()> {
+    let zeros = Tensor::<NdArray, 1>::zeros([2], &NdArrayDevice::default());
+    zeros.clone().slice([1..2]).reshape([1]).exp();
+    //Works as expected
+    assert_eq!(
+        zeros.to_data(),
+        Tensor::<NdArray, 1>::zeros([2], &NdArrayDevice::default()).to_data()
+    );
+
+    let zeros = Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default());
+    zeros.clone().slice([1..2]).reshape([1]).clone().exp();
+    //Works as expected thanks to the second clone after reshaping.
+    assert_eq!(
+        zeros.to_data(),
+        Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default()).to_data()
+    );
+
+    let zeros = Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default());
+    zeros.clone().slice([1..2]).reshape([1]).exp();
+    //Doesn't work, leads to zeroes being equal to [0.0, 1.0]
+    assert_eq!(
+        zeros.to_data(),
+        Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default()).to_data()
+    );
+
+    Ok(())
+}

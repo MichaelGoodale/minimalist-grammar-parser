@@ -38,7 +38,7 @@ where
         )));
 
         Ok(NeuralBeam {
-            log_probability: Tensor::<B, 1>::ones([1], lexicon.device()),
+            log_probability: Tensor::<B, 1>::zeros([1], lexicon.device()),
             queue,
             lexicon,
             generated_sentences: vec![],
@@ -82,8 +82,8 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: f32 = self.log_probability.clone().into_scalar().elem();
-        let b: f32 = other.log_probability.clone().into_scalar().elem();
+        let a: f64 = self.log_probability.clone().into_scalar().elem();
+        let b: f64 = other.log_probability.clone().into_scalar().elem();
         a.partial_cmp(&b).unwrap()
     }
 }

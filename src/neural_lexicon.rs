@@ -231,8 +231,8 @@ where
 {
     type Probability = Tensor<B, 1>;
 
-    fn one(&self) -> Self::Probability {
-        Tensor::<B, 1>::ones([1], &self.device)
+    fn probability_of_one(&self) -> Self::Probability {
+        Tensor::<B, 1>::zeros([1], &self.device)
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {

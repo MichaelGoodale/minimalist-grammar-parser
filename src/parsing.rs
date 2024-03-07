@@ -63,7 +63,7 @@ fn unmerge_from_mover<
     rule_prob: L::Probability,
     inverse_rule_prob: L::Probability,
 ) -> L::Probability {
-    let mut output = lexicon.one();
+    let mut output = lexicon.probability_of_one();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -192,7 +192,7 @@ fn unmove_from_mover<
     rule_prob: L::Probability,
     inverse_rule_prob: L::Probability,
 ) -> L::Probability {
-    let mut output = lexicon.one();
+    let mut output = lexicon.probability_of_one();
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();

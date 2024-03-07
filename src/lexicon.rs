@@ -15,7 +15,7 @@ use std::{
 pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
     type Probability: std::ops::Add<Self::Probability, Output = Self::Probability> + Clone;
 
-    fn one(&self) -> Self::Probability;
+    fn probability_of_one(&self) -> Self::Probability;
 
     fn n_children(&self, nx: NodeIndex) -> usize;
     fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_;
@@ -405,7 +405,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 impl<T: Eq + Debug, Category: Eq + Debug> Lexiconable<T, Category> for Lexicon<T, Category> {
     type Probability = LogProb<f64>;
 
-    fn one(&self) -> Self::Probability {
+    fn probability_of_one(&self) -> Self::Probability {
         LogProb::new(0.0).unwrap()
     }
 

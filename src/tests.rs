@@ -480,47 +480,50 @@ use neural_lexicon::N_TYPES;
 
 #[test]
 fn random_neural_generation() -> Result<()> {
+    let n_lexemes = 2;
+    let n_pos = 5;
     let lemmas = log_softmax(
-        Tensor::<Autodiff<NdArray>, 3>::zeros([3, 3, 3], &NdArrayDevice::default()),
+        Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_pos, 10],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        ),
         2,
-    )
-    .require_grad();
+    );
+
     let types = log_softmax(
-        Tensor::<Autodiff<NdArray>, 3>::random(
-            [3, 3, N_TYPES],
+        Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_pos, N_TYPES],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         ),
         2,
-    )
-    .require_grad();
+    );
+
     let categories = log_softmax(
-        Tensor::<Autodiff<NdArray>, 3>::random(
-            [3, 3, 2],
+        Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_pos, 2],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         ),
         2,
-    )
-    .require_grad();
-    let weights = Tensor::<Autodiff<NdArray>, 2>::random(
-        [3, 3],
+    );
+    let weights = Tensor::<NdArray, 2>::random(
+        [n_lexemes, n_pos],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
-    )
-    .require_grad();
+    );
 
-    let targets =
-        Tensor::<Autodiff<NdArray>, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+    let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 500,
+        n_grammars: 50,
         n_strings_per_grammar: 50,
         padding_length: 10,
         parsing_config: ParsingConfig::new_with_global_steps(
-            LogProb::new(-256.0).unwrap(),
+            LogProb::new(-128.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            30,
+            40,
             20,
             2000,
         ),
@@ -534,18 +537,13 @@ fn random_neural_generation() -> Result<()> {
         &config,
         &mut rng,
     );
-    let g = x.backward();
-    dbg!(lemmas.grad(&g));
-    dbg!(types.grad(&g));
-    dbg!(categories.grad(&g));
-
     Ok(())
 }
 use burn::backend::libtorch::LibTorchDevice;
 use burn::backend::LibTorch;
 
 #[test]
-fn evil() -> Result<()> {
+fn test_with_libtorch() -> Result<()> {
     let lemmas = log_softmax(
         Tensor::<Autodiff<LibTorch>, 3>::zeros([3, 3, 3], &LibTorchDevice::default()),
         2,

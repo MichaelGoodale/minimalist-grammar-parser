@@ -472,9 +472,7 @@ impl<T: Eq + std::fmt::Debug> Eq for GeneratorBeam<T> {}
 
 impl<T: Eq + std::fmt::Debug> Ord for GeneratorBeam<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.log_probability
-            .partial_cmp(&other.log_probability)
-            .unwrap()
+        self.log_probability.cmp(&other.log_probability)
     }
 }
 

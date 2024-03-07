@@ -526,13 +526,14 @@ where
             let length = x.shape().dims[0];
             let padding_prob = log_softmax(
                 Tensor::zeros([1, n_lemmas], &targets.device())
-                    .slice_assign([0..1, 0..1], Tensor::full([1, 1], 20, &targets.device())),
+                    .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &targets.device())),
                 1,
             )
             .repeat(0, neural_config.padding_length - length);
             let x: Tensor<B, 2> = Tensor::cat(vec![x, padding_prob], 0);
             grammar_strings.push(x);
         }
+
         if grammar_strings.is_empty() {
             loss = loss + (p_of_lex + -9999)
         } else {

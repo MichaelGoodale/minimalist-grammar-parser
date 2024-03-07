@@ -535,7 +535,7 @@ where
         }
 
         if grammar_strings.is_empty() {
-            loss = loss + (p_of_lex + -9999)
+            loss = loss + (p_of_lex * -9999)
         } else {
             let n_grammar_strings = grammar_strings.len();
 
@@ -552,7 +552,7 @@ where
                 .squeeze::<2>(2);
 
             let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-            loss = loss + (grammar_loss + p_of_lex);
+            loss = loss + (grammar_loss * p_of_lex);
         }
     }
     -loss / (neural_config.n_grammars as f32)

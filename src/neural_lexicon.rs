@@ -1,6 +1,8 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::Context;
-use burn::tensor::{activation::log_softmax, backend::Backend, Bool, Data, Tensor};
+use burn::tensor::{
+    activation::log_softmax, backend::Backend, Bool, Data, ElementConversion, Tensor,
+};
 use itertools::Itertools;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::{seq::SliceRandom, Rng};
@@ -110,11 +112,15 @@ impl<B: Backend> NeuralLexicon<B> {
                     CATEGORY_POS
                 } else {
                     //Sample a type
-                    let type_distribution = types
+                    let type_distribution: Vec<f64> = types
                         .clone()
                         .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
                         .to_data()
-                        .value;
+                        .value
+                        .into_iter()
+                        .map(|x| x.elem())
+                        .collect();
+
                     let samples: Vec<_> = POSITIONS
                         .into_iter()
                         .filter(|&x| {
@@ -124,7 +130,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
                     *samples
                         .choose_weighted(rng, |i| {
-                            let x: f32 = type_distribution[i.0].into().exp();
+                            let x: f64 = type_distribution[i.0].exp();
                             x
                         })
                         .unwrap()
@@ -149,13 +155,13 @@ impl<B: Backend> NeuralLexicon<B> {
                             .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
                             .reshape([1]);
 
-                        let p: f32 = p_of_unpronounced_lemma.clone().into_scalar().into();
-                        if rng.gen_bool(p.exp().into()) {
+                        let p: f64 = p_of_unpronounced_lemma.clone().into_scalar().elem();
+                        if rng.gen_bool(p.exp()) {
                             lemma_structure_p = lemma_structure_p + p_of_unpronounced_lemma;
                             FeatureOrLemma::Lemma(None)
                         } else {
-                            lemma_structure_p =
-                                lemma_structure_p + (-p_of_unpronounced_lemma.exp()).log1p();
+                            lemma_structure_p = lemma_structure_p
+                                + (-p_of_unpronounced_lemma.clone().exp()).log1p();
                             FeatureOrLemma::Lemma(Some((lexeme, position)))
                         }
                     }
@@ -190,6 +196,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     }
                 };
 
+                println!("{feature:?}");
                 let node = graph.add_node((Some((lexeme, position)), feature));
                 graph.add_edge(parent, node, ());
                 parent = node;

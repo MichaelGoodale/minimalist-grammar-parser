@@ -541,3 +541,69 @@ fn random_neural_generation() -> Result<()> {
 
     Ok(())
 }
+use burn::backend::libtorch::LibTorchDevice;
+use burn::backend::LibTorch;
+
+#[test]
+fn evil() -> Result<()> {
+    let lemmas = log_softmax(
+        Tensor::<Autodiff<LibTorch>, 3>::zeros([3, 3, 3], &LibTorchDevice::default()),
+        2,
+    )
+    .require_grad();
+    let types = log_softmax(
+        Tensor::<Autodiff<LibTorch>, 3>::random(
+            [3, 3, N_TYPES],
+            burn::tensor::Distribution::Default,
+            &LibTorchDevice::default(),
+        ),
+        2,
+    )
+    .require_grad();
+    let categories = log_softmax(
+        Tensor::<Autodiff<LibTorch>, 3>::random(
+            [3, 3, 2],
+            burn::tensor::Distribution::Default,
+            &LibTorchDevice::default(),
+        ),
+        2,
+    )
+    .require_grad();
+    let weights = Tensor::<Autodiff<LibTorch>, 2>::random(
+        [3, 3],
+        burn::tensor::Distribution::Default,
+        &LibTorchDevice::default(),
+    )
+    .require_grad();
+
+    let targets =
+        Tensor::<Autodiff<LibTorch>, 2, Int>::ones([10, 10], &LibTorchDevice::default()).tril(0);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+    let config = NeuralConfig {
+        n_grammars: 500,
+        n_strings_per_grammar: 50,
+        padding_length: 10,
+        parsing_config: ParsingConfig::new_with_global_steps(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            30,
+            20,
+            2000,
+        ),
+    };
+    let x = get_neural_outputs(
+        lemmas.clone(),
+        types.clone(),
+        categories.clone(),
+        weights,
+        targets,
+        &config,
+        &mut rng,
+    );
+    let g = x.backward();
+    dbg!(lemmas.grad(&g));
+    dbg!(types.grad(&g));
+    dbg!(categories.grad(&g));
+    dbg!(&lemmas.inner().to_data().value);
+    Ok(())
+}

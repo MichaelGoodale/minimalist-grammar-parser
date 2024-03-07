@@ -509,7 +509,7 @@ where
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
     let n_lemmas = lemmas.shape().dims[2];
-    let mut loss = Tensor::zeros([n_targets], &targets.device());
+    let mut loss = Tensor::zeros([1], &targets.device());
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
             types.clone(),
@@ -535,7 +535,7 @@ where
         }
 
         if grammar_strings.is_empty() {
-            loss = loss + (p_of_lex * -9999)
+            loss = loss + (p_of_lex + -9999)
         } else {
             let n_grammar_strings = grammar_strings.len();
 
@@ -551,8 +551,8 @@ where
                 .sum_dim(2)
                 .squeeze::<2>(2);
 
-            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-            loss = loss + (grammar_loss * p_of_lex);
+            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1).sum_dim(0);
+            loss = loss + (grammar_loss + p_of_lex);
         }
     }
     -loss / (neural_config.n_grammars as f32)

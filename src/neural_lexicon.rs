@@ -196,7 +196,6 @@ impl<B: Backend> NeuralLexicon<B> {
                     }
                 };
 
-                println!("{feature:?}");
                 let node = graph.add_node((Some((lexeme, position)), feature));
                 graph.add_edge(parent, node, ());
                 parent = node;

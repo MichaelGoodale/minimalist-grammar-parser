@@ -540,14 +540,14 @@ where
         }
 
         if grammar_strings.is_empty() {
-            alternate_loss = alternate_loss + (-p_of_lex.clone().log() * 0.01);
+            alternate_loss = alternate_loss + (-p_of_lex.clone() * 0.01);
             if let Some(weight) = neural_config.negative_weight {
                 loss = loss + (p_of_lex.add_scalar(weight));
                 valid_grammars += 1.0;
             }
         } else {
             let n_grammar_strings = grammar_strings.len();
-            alternate_loss = alternate_loss + (-p_of_lex.clone().log() * n_grammar_strings as f32);
+            alternate_loss = alternate_loss + (-p_of_lex.clone() * n_grammar_strings as f32);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);

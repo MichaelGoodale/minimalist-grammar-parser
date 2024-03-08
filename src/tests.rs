@@ -519,6 +519,7 @@ fn test_loss() -> Result<()> {
         n_grammars: 50,
         n_strings_per_grammar: 50,
         padding_length: 10,
+        negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-128.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -584,6 +585,7 @@ fn random_neural_generation() -> Result<()> {
         n_grammars: 50,
         n_strings_per_grammar: 50,
         padding_length: 10,
+        negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-128.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -645,6 +647,7 @@ fn test_with_libtorch() -> Result<()> {
         n_grammars: 500,
         n_strings_per_grammar: 50,
         padding_length: 10,
+        negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),

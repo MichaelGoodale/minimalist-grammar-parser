@@ -471,6 +471,7 @@ pub struct NeuralConfig {
     pub n_grammars: usize,
     pub n_strings_per_grammar: usize,
     pub padding_length: usize,
+    pub negative_weight: Option<f64>,
     pub parsing_config: ParsingConfig,
 }
 
@@ -538,7 +539,10 @@ where
         }
 
         if grammar_strings.is_empty() {
-            continue;
+            if let Some(weight) = neural_config.negative_weight {
+                loss = loss + (p_of_lex.add_scalar(weight));
+                valid_grammars += 1.0;
+            }
         } else {
             let n_grammar_strings = grammar_strings.len();
 

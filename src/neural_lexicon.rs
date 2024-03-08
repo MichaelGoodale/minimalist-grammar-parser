@@ -226,7 +226,10 @@ impl<B: Backend> NeuralLexicon<B> {
         )
         .reshape([n_lexemes, n_positions]);
 
-        let weights = log_softmax(weights.mask_fill(attested_mask, -9999), 1);
+        let weights = log_softmax(
+            Tensor::ones_like(&weights).mask_fill(attested_mask, -999) + weights,
+            0,
+        );
 
         //Get actual weights that have been log normalised.
         let graph = graph.map(

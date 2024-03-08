@@ -571,10 +571,7 @@ where
             valid_grammars += 1.0;
         }
     }
-    (
-        -loss / valid_grammars,
-        alternate_loss / neural_config.n_grammars as f32,
-    )
+    (-loss / valid_grammars, alternate_loss)
 }
 
 #[derive(Debug)]

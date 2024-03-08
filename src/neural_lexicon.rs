@@ -27,24 +27,18 @@ const POSITIONS: [TensorPosition; 6] = [
 ];
 pub const N_TYPES: usize = 6;
 
-type NeuralGraph = DiGraph<
-    (
-        Option<(usize, usize)>,
-        FeatureOrLemma<(usize, usize), usize>,
-    ),
-    (),
->;
+type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
+type NeuralGraph<B> = DiGraph<(Option<Tensor<B, 1>>, NeuralFeature), ()>;
 
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
     lemmas: Tensor<B, 3>, //(lexeme, lexeme_pos, lemma_distribution)
-    weights: Tensor<B, 2>,
-    graph: NeuralGraph,
+    graph: NeuralGraph<B>,
     root: NodeIndex,
     device: B::Device,
 }
 
-fn to_feature(pos: TensorPosition, category: usize) -> FeatureOrLemma<(usize, usize), usize> {
+fn to_feature(pos: TensorPosition, category: usize) -> NeuralFeature {
     match pos {
         CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category)),
         LICENSEE_POS => FeatureOrLemma::Feature(Feature::Licensee(category)),
@@ -84,7 +78,10 @@ impl<B: Backend> NeuralLexicon<B> {
     {
         let [n_lexemes, n_positions, n_categories] = categories.shape().dims;
         let category_ids = (0..n_categories).collect_vec();
-        let mut graph = DiGraph::new();
+
+        type PositionLog = Vec<(usize, usize)>;
+        let mut graph: DiGraph<(Option<PositionLog>, NeuralFeature), _> = DiGraph::new();
+
         let root = graph.add_node((None, FeatureOrLemma::Root));
         let device = lemmas.device();
         let mut grammar_prob = Tensor::<B, 1>::zeros([1], &types.device());
@@ -196,7 +193,26 @@ impl<B: Backend> NeuralLexicon<B> {
                     }
                 };
 
-                let node = graph.add_node((Some((lexeme, position)), feature));
+                //Check if the parent has a child with the same feature.
+                //If so, merge current and previous.
+                let mut node = None;
+
+                for sibling in graph
+                    .neighbors_directed(parent, petgraph::Direction::Outgoing)
+                    .collect_vec()
+                    .into_iter()
+                {
+                    if let (Some(lexemes), sibling_feature) = &mut graph[sibling] {
+                        if feature == *sibling_feature {
+                            lexemes.push((lexeme, position));
+                            node = Some(sibling);
+                            break;
+                        }
+                    }
+                }
+                let node =
+                    node.unwrap_or(graph.add_node((Some(vec![(lexeme, position)]), feature)));
+
                 graph.add_edge(parent, node, ());
                 parent = node;
 
@@ -212,11 +228,32 @@ impl<B: Backend> NeuralLexicon<B> {
 
         let weights = log_softmax(weights.mask_fill(attested_mask, -9999), 1);
 
+        //Get actual weights that have been log normalised.
+        let graph = graph.map(
+            |_, (idx, feat)| match idx {
+                Some(positions) => {
+                    let (lex, pos) = positions.first().unwrap();
+                    let mut tensor = weights
+                        .clone()
+                        .slice([*lex..lex + 1, *pos..pos + 1])
+                        .reshape([1]);
+                    for (lex, pos) in positions.iter().skip(1) {
+                        tensor = tensor
+                            + weights
+                                .clone()
+                                .slice([*lex..*lex + 1, *pos..*pos + 1])
+                                .reshape([1]);
+                    }
+                    (Some(tensor), feat.clone())
+                }
+                None => (None, feat.clone()),
+            },
+            |_, _| (),
+        );
         (
             grammar_prob,
             NeuralLexicon {
                 lemmas,
-                weights,
                 graph,
                 root,
                 device,
@@ -257,13 +294,8 @@ where
         &crate::lexicon::FeatureOrLemma<(usize, usize), usize>,
         Self::Probability,
     )> {
-        if let Some((Some((lexeme, position)), feature)) = self.graph.node_weight(nx) {
-            let p = self
-                .weights
-                .clone()
-                .slice([*lexeme..lexeme + 1, *position..position + 1])
-                .reshape([1]);
-            Some((feature, p))
+        if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
+            Some((feature, p.clone()))
         } else {
             None
         }

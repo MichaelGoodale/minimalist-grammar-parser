@@ -520,19 +520,21 @@ where
             rng,
         );
         let mut grammar_strings: Vec<_> = vec![];
-        for x in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
-            .filter(|x| x.shape().dims[0] < neural_config.padding_length)
+        let mut string_probs: Vec<_> = vec![];
+        for (s, p) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
+            .filter(|(s, _p)| s.shape().dims[0] < neural_config.padding_length)
             .take(neural_config.n_strings_per_grammar)
         {
-            let length = x.shape().dims[0];
+            let length = s.shape().dims[0];
             let padding_prob = log_softmax(
                 Tensor::zeros([1, n_lemmas], &targets.device())
                     .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &targets.device())),
                 1,
             )
             .repeat(0, neural_config.padding_length - length);
-            let x: Tensor<B, 2> = Tensor::cat(vec![x, padding_prob], 0);
-            grammar_strings.push(x);
+            let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
+            grammar_strings.push(s);
+            string_probs.push(p);
         }
 
         if grammar_strings.is_empty() {
@@ -540,20 +542,25 @@ where
         } else {
             let n_grammar_strings = grammar_strings.len();
 
+            //(1, n_grammar_strings)
+            let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);
+
             //(n_targets, n_grammar_strings, padding_length, n_lemmas)
             let grammar: Tensor<B, 4> = Tensor::stack::<3>(grammar_strings, 0)
                 .unsqueeze()
                 .repeat(0, n_targets);
 
             //Probability of generating every string for this grammar.
+            //(n_targets, n_grammar_strings)
             let grammar_loss = grammar
                 .gather(3, targets.clone().repeat(1, n_grammar_strings))
                 .squeeze::<3>(3)
                 .sum_dim(2)
-                .squeeze::<2>(2);
+                .squeeze::<2>(2)
+                + string_probs;
 
-            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1).sum_dim(0);
-            loss = loss + (grammar_loss + p_of_lex);
+            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
+            loss = loss + (grammar_loss.sum_dim(0) + p_of_lex);
             valid_grammars += 1.0;
         }
     }
@@ -603,7 +610,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
-    type Item = Tensor<B, 2>;
+    type Item = (Tensor<B, 2>, Tensor<B, 1>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {

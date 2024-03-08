@@ -2,13 +2,12 @@ use burn::{
     module::Module,
     tensor::{
         backend::{AutodiffBackend, Backend},
-        ops::IntTensor,
         Int, Tensor,
     },
-    train::{ClassificationOutput, TrainOutput, TrainStep},
+    train::{TrainOutput, TrainStep},
 };
 use minimalist_grammar_parser::{get_neural_outputs, NeuralConfig};
-use rand::{thread_rng, Rng};
+use rand::Rng;
 
 #[derive(Module, Debug)]
 struct GrammarModel<B: Backend> {

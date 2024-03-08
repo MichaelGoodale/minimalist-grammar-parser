@@ -470,7 +470,7 @@ fn proper_distributions() -> Result<()> {
     Ok(())
 }
 
-use burn::tensor::Tensor;
+use burn::tensor::{ElementConversion, Tensor};
 use burn::{
     backend::Autodiff,
     backend::{ndarray::NdArrayDevice, NdArray},
@@ -481,9 +481,10 @@ use neural_lexicon::N_TYPES;
 #[test]
 fn test_loss() -> Result<()> {
     let n_lexemes = 2;
-    let n_pos = 5;
+    let n_pos = 3;
 
-    let mut types = Tensor::<NdArray, 3>::zeros([2, 3, N_TYPES], &NdArrayDevice::default());
+    let mut types =
+        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, N_TYPES], &NdArrayDevice::default());
     let slices = [
         [0..2, 0..1, 1..2],
         [0..1, 1..2, 4..5],
@@ -501,15 +502,16 @@ fn test_loss() -> Result<()> {
 
     types = log_softmax(types, 2);
 
-    let mut categories = Tensor::<NdArray, 3>::zeros([2, 3, 2], &NdArrayDevice::default());
+    let mut categories =
+        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
     categories = categories.slice_assign([0..2, 0..3, 0..1], Tensor::full([2, 3, 1], 5.0, &dev));
     categories = log_softmax(categories, 2);
 
-    let mut lemmas = Tensor::<NdArray, 3>::zeros([2, 3, 2], &NdArrayDevice::default());
+    let mut lemmas = Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
     lemmas = lemmas.slice_assign([0..2, 0..3, 1..2], Tensor::full([2, 3, 1], 5.0, &dev));
     lemmas = log_softmax(lemmas, 2);
 
-    let weights = Tensor::<NdArray, 2>::zeros([2, 3], &NdArrayDevice::default());
+    let weights = Tensor::<NdArray, 2>::zeros([n_lexemes, n_pos], &NdArrayDevice::default());
 
     let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
@@ -525,7 +527,7 @@ fn test_loss() -> Result<()> {
             4000,
         ),
     };
-    let x = get_neural_outputs(
+    let loss: f32 = get_neural_outputs(
         lemmas.clone(),
         types.clone(),
         categories.clone(),
@@ -533,8 +535,10 @@ fn test_loss() -> Result<()> {
         targets,
         &config,
         &mut rng,
-    );
-    dbg!(x);
+    )
+    .into_scalar()
+    .elem();
+    approx::assert_relative_eq!(loss, 135.86317);
     Ok(())
 }
 
@@ -588,7 +592,7 @@ fn random_neural_generation() -> Result<()> {
             2000,
         ),
     };
-    let x = get_neural_outputs(
+    get_neural_outputs(
         lemmas.clone(),
         types.clone(),
         categories.clone(),
@@ -662,34 +666,5 @@ fn test_with_libtorch() -> Result<()> {
     dbg!(lemmas.grad(&g));
     dbg!(types.grad(&g));
     dbg!(categories.grad(&g));
-    Ok(())
-}
-
-#[test]
-fn bizarre() -> Result<()> {
-    let zeros = Tensor::<NdArray, 1>::zeros([2], &NdArrayDevice::default());
-    zeros.clone().slice([1..2]).reshape([1]).exp();
-    //Works as expected
-    assert_eq!(
-        zeros.to_data(),
-        Tensor::<NdArray, 1>::zeros([2], &NdArrayDevice::default()).to_data()
-    );
-
-    let zeros = Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default());
-    zeros.clone().slice([1..2]).reshape([1]).clone().exp();
-    //Works as expected thanks to the second clone after reshaping.
-    assert_eq!(
-        zeros.to_data(),
-        Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default()).to_data()
-    );
-
-    let zeros = Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default());
-    zeros.clone().slice([1..2]).reshape([1]).exp();
-    //Doesn't work, leads to zeroes being equal to [0.0, 1.0]
-    assert_eq!(
-        zeros.to_data(),
-        Tensor::<LibTorch, 1>::zeros([2], &LibTorchDevice::default()).to_data()
-    );
-
     Ok(())
 }

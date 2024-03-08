@@ -53,10 +53,10 @@ where
         })
     }
 
-    pub fn yield_good_parse(self) -> Option<Tensor<B, 2>> {
+    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, Tensor<B, 1>)> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
-            Some(Tensor::stack(sentence, 0) + self.log_probability.unsqueeze())
+            Some((Tensor::stack(sentence, 0), self.log_probability.unsqueeze()))
         } else {
             None
         }

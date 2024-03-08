@@ -537,6 +537,7 @@ fn test_loss() -> Result<()> {
         &config,
         &mut rng,
     )
+    .0
     .into_scalar()
     .elem();
     approx::assert_relative_eq!(loss, 135.86317);
@@ -664,7 +665,8 @@ fn test_with_libtorch() -> Result<()> {
         targets,
         &config,
         &mut rng,
-    );
+    )
+    .0;
     let g = x.backward();
     dbg!(lemmas.grad(&g));
     dbg!(types.grad(&g));

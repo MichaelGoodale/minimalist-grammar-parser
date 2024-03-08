@@ -567,12 +567,12 @@ where
                 + string_probs;
 
             let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-            loss = loss + (grammar_loss.mean_dim(0).exp() * -p_of_lex);
+            loss = loss + (grammar_loss.mean_dim(0) * p_of_lex);
             valid_grammars += 1.0;
         }
     }
     (
-        -loss / valid_grammars,
+        loss / valid_grammars,
         alternate_loss / neural_config.n_grammars as f32,
     )
 }

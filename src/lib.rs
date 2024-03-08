@@ -501,7 +501,7 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> Tensor<B, 1>
+) -> (Tensor<B, 1>, Tensor<B, 1>)
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
@@ -511,6 +511,7 @@ where
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([1], &targets.device());
+    let mut alternate_loss = Tensor::zeros([1], &targets.device());
     let mut valid_grammars = 0.0001;
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
@@ -539,12 +540,14 @@ where
         }
 
         if grammar_strings.is_empty() {
+            alternate_loss = alternate_loss + (-p_of_lex.clone().log() * 0.01);
             if let Some(weight) = neural_config.negative_weight {
                 loss = loss + (p_of_lex.add_scalar(weight));
                 valid_grammars += 1.0;
             }
         } else {
             let n_grammar_strings = grammar_strings.len();
+            alternate_loss = alternate_loss + (-p_of_lex.clone().log() * n_grammar_strings as f32);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);
@@ -568,7 +571,10 @@ where
             valid_grammars += 1.0;
         }
     }
-    -loss / valid_grammars
+    (
+        -loss / valid_grammars,
+        alternate_loss / neural_config.n_grammars as f32,
+    )
 }
 
 #[derive(Debug)]

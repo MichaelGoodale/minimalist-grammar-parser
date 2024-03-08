@@ -36,6 +36,7 @@ where
             neural_config,
             rng,
         )
+        .0
     }
 }
 

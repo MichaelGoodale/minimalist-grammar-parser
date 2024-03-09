@@ -573,6 +573,7 @@ where
                     let dist = s
                         .clone()
                         .slice([j..j + 1, 0..n_lemmas])
+                        .exp()
                         .to_data()
                         .convert::<f64>()
                         .value;

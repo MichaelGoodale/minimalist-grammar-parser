@@ -572,9 +572,8 @@ where
         }
 
         if grammar_strings.is_empty() {
-            alternate_loss = alternate_loss + (-p_of_lex.clone() * 0.01);
             if let Some(weight) = neural_config.negative_weight {
-                loss = loss + (p_of_lex.add_scalar(weight));
+                loss = loss + (p_of_lex.clone().add_scalar(weight));
                 valid_grammars += 1.0;
             }
         } else {
@@ -586,9 +585,10 @@ where
                     let x: f32 = (*in_grammar).into();
                     x
                 })
-                .sum();
+                .sum::<f32>()
+                + 0.1;
 
-            alternate_loss = alternate_loss + (-p_of_lex.clone() * reward as f32);
+            alternate_loss = alternate_loss + (-p_of_lex * reward);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);
@@ -612,7 +612,10 @@ where
             valid_grammars += 1.0;
         }
     }
-    (-loss / valid_grammars, alternate_loss)
+    (
+        -loss / valid_grammars,
+        alternate_loss / (neural_config.n_grammars as f32),
+    )
 }
 
 #[derive(Debug)]

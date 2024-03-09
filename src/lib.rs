@@ -1,9 +1,11 @@
+use std::collections::hash_map::Entry;
 use std::marker::PhantomData;
 
+use ahash::{HashMap, HashSet};
 use anyhow::Result;
 use burn::tensor::activation::log_softmax;
 use burn::tensor::backend::Backend;
-use burn::tensor::{Int, Tensor};
+use burn::tensor::{ElementConversion, Int, Tensor};
 use lexicon::Lexicon;
 
 use logprob::LogProb;
@@ -506,9 +508,22 @@ where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
     let n_targets = targets.shape().dims[0];
+    let target_length = targets.shape().dims[1];
 
+    let mut target_set: HashMap<_, _> = (0..n_targets)
+        .map(|i| {
+            let data = targets
+                .clone()
+                .slice([i..i + 1, 0..target_length])
+                .squeeze::<1>(0)
+                .to_data()
+                .convert::<u32>();
+            (data.value, false)
+        })
+        .collect();
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
+
     let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([1], &targets.device());
     let mut alternate_loss = Tensor::zeros([1], &targets.device());
@@ -523,6 +538,8 @@ where
         );
         let mut grammar_strings: Vec<_> = vec![];
         let mut string_probs: Vec<_> = vec![];
+        target_set.iter_mut().for_each(|(_k, v)| *v = false);
+
         for (s, p) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
             .filter(|(s, _p)| s.shape().dims[0] < neural_config.padding_length)
             .take(neural_config.n_strings_per_grammar)
@@ -535,6 +552,21 @@ where
             )
             .repeat(0, neural_config.padding_length - length);
             let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
+            let key = s
+                .clone()
+                .argmax(1)
+                .squeeze::<1>(1)
+                .to_data()
+                .convert::<u32>()
+                .value;
+
+            match target_set.entry(key) {
+                Entry::Occupied(v) => {
+                    *v.into_mut() = true;
+                }
+                Entry::Vacant(_) => {}
+            }
+
             grammar_strings.push(s);
             string_probs.push(p);
         }
@@ -547,7 +579,16 @@ where
             }
         } else {
             let n_grammar_strings = grammar_strings.len();
-            alternate_loss = alternate_loss + (-p_of_lex.clone() * n_grammar_strings as f32);
+
+            let reward: f32 = target_set
+                .values()
+                .map(|in_grammar| {
+                    let x: f32 = (*in_grammar).into();
+                    x
+                })
+                .sum();
+
+            alternate_loss = alternate_loss + (-p_of_lex.clone() * reward as f32);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);
@@ -567,14 +608,11 @@ where
                 + string_probs;
 
             let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-            loss = loss + (grammar_loss.mean_dim(0) * p_of_lex);
+            loss = loss + (grammar_loss.sum_dim(0));
             valid_grammars += 1.0;
         }
     }
-    (
-        loss / valid_grammars,
-        alternate_loss / neural_config.n_grammars as f32,
-    )
+    (-loss / valid_grammars, alternate_loss)
 }
 
 #[derive(Debug)]

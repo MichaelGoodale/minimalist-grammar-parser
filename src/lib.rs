@@ -474,6 +474,7 @@ pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
     pub padding_length: usize,
     pub negative_weight: Option<f64>,
+    pub temperature: f64,
     pub parsing_config: ParsingConfig,
 }
 
@@ -507,8 +508,13 @@ pub fn get_neural_outputs<B: Backend>(
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem> + Into<f32>,
 {
+    let lemmas = log_softmax(lemmas, 2);
     let n_targets = targets.shape().dims[0];
     let target_length = targets.shape().dims[1];
+    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 3);
+    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 3);
+    let types = log_softmax(types, 3);
+    let categories = log_softmax(categories, 3);
 
     let mut target_set: HashMap<_, _> = (0..n_targets)
         .map(|i| {
@@ -530,10 +536,12 @@ where
     let mut valid_grammars = 0.0001;
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexicon) = NeuralLexicon::new_random(
-            types.clone(),
-            categories.clone(),
-            lemmas.clone(),
-            weights.clone(),
+            &types,
+            &types_distribution,
+            &categories,
+            &categories_distribution,
+            &lemmas,
+            &weights,
             rng,
         );
         let mut grammar_strings: Vec<_> = vec![];
@@ -562,6 +570,11 @@ where
 
             match target_set.entry(key) {
                 Entry::Occupied(v) => {
+                    let reward: f64 = match v.get() {
+                        true => 0.5,
+                        false => 1.0,
+                    };
+                    alternate_loss = alternate_loss + (-(p_of_lex.clone() + p.clone()) * reward);
                     *v.into_mut() = true;
                 }
                 Entry::Vacant(_) => {}
@@ -578,17 +591,6 @@ where
             }
         } else {
             let n_grammar_strings = grammar_strings.len();
-
-            let reward: f32 = target_set
-                .values()
-                .map(|in_grammar| {
-                    let x: f32 = (*in_grammar).into();
-                    x
-                })
-                .sum::<f32>()
-                + 0.1;
-
-            alternate_loss = alternate_loss + (-p_of_lex * reward);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);

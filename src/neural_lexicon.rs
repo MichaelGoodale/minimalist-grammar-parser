@@ -67,10 +67,12 @@ impl<B: Backend> NeuralLexicon<B> {
     }
 
     pub fn new_random(
-        types: Tensor<B, 3>,      //(lexeme, lexeme_pos, type_distribution)
-        categories: Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
-        lemmas: Tensor<B, 3>,     //(lexeme, lexeme_pos, lemma_distribution)
-        weights: Tensor<B, 2>,    //(lexeme, lexeme_weight)
+        types: &Tensor<B, 3>, //(lexeme, lexeme_pos, type_distribution)
+        type_sampling: &Tensor<B, 3>,
+        categories: &Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
+        categories_sampling: &Tensor<B, 3>,
+        lemmas: &Tensor<B, 3>,  //(lexeme, lexeme_pos, lemma_distribution)
+        weights: &Tensor<B, 2>, //(lexeme, lexeme_weight)
         rng: &mut impl Rng,
     ) -> (Tensor<B, 1>, Self)
     where
@@ -109,7 +111,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     CATEGORY_POS
                 } else {
                     //Sample a type
-                    let type_distribution: Vec<f64> = types
+                    let type_distribution: Vec<f64> = type_sampling
                         .clone()
                         .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
                         .to_data()
@@ -164,7 +166,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     }
 
                     _ => {
-                        let cat_weights = categories
+                        let cat_weights = categories_sampling
                             .clone()
                             .slice([lexeme..lexeme + 1, position..position + 1, 0..n_categories])
                             .to_data()
@@ -227,7 +229,7 @@ impl<B: Backend> NeuralLexicon<B> {
         .reshape([n_lexemes, n_positions]);
 
         let weights = log_softmax(
-            Tensor::ones_like(&weights).mask_fill(attested_mask, -999) + weights,
+            Tensor::ones_like(weights).mask_fill(attested_mask, -999) + weights.clone(),
             0,
         );
 
@@ -256,7 +258,7 @@ impl<B: Backend> NeuralLexicon<B> {
         (
             grammar_prob,
             NeuralLexicon {
-                lemmas,
+                lemmas: lemmas.clone(),
                 graph,
                 root,
                 device,

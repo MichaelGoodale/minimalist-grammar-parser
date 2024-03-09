@@ -560,6 +560,7 @@ where
             )
             .repeat(0, neural_config.padding_length - length);
             let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
+
             let key = s
                 .clone()
                 .argmax(1)
@@ -570,11 +571,6 @@ where
 
             match target_set.entry(key) {
                 Entry::Occupied(v) => {
-                    let reward: f64 = match v.get() {
-                        true => 0.5,
-                        false => 1.0,
-                    };
-                    alternate_loss = alternate_loss + (-(p_of_lex.clone() + p.clone()) * reward);
                     *v.into_mut() = true;
                 }
                 Entry::Vacant(_) => {}
@@ -591,6 +587,15 @@ where
             }
         } else {
             let n_grammar_strings = grammar_strings.len();
+            let reward: f32 = target_set
+                .values()
+                .map(|in_grammar| {
+                    let x: f32 = (*in_grammar).into();
+                    x
+                })
+                .sum::<f32>();
+
+            alternate_loss = alternate_loss + (-p_of_lex * reward);
 
             //(1, n_grammar_strings)
             let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);

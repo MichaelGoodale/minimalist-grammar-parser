@@ -114,11 +114,10 @@ impl<B: Backend> NeuralLexicon<B> {
                     let type_distribution: Vec<f64> = type_sampling
                         .clone()
                         .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
+                        .exp()
                         .to_data()
-                        .value
-                        .into_iter()
-                        .map(|x| x.elem())
-                        .collect();
+                        .convert::<f64>()
+                        .value;
 
                     let samples: Vec<_> = POSITIONS
                         .into_iter()
@@ -129,7 +128,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
                     *samples
                         .choose_weighted(rng, |i| {
-                            let x: f64 = type_distribution[i.0].exp();
+                            let x: f64 = type_distribution[i.0];
                             x
                         })
                         .unwrap()
@@ -169,13 +168,12 @@ impl<B: Backend> NeuralLexicon<B> {
                         let cat_weights = categories_sampling
                             .clone()
                             .slice([lexeme..lexeme + 1, position..position + 1, 0..n_categories])
+                            .exp()
                             .to_data()
+                            .convert::<f64>()
                             .value;
                         let mut cat = *category_ids
-                            .choose_weighted(rng, |i| {
-                                let x: f32 = cat_weights[*i].into().exp();
-                                x
-                            })
+                            .choose_weighted(rng, |i| cat_weights[*i])
                             .unwrap();
 
                         if position == 0 && lexeme == n_lexemes - 1 && !has_start_category {

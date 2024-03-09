@@ -6,6 +6,7 @@ use anyhow::Result;
 use burn::tensor::activation::log_softmax;
 use burn::tensor::backend::Backend;
 use burn::tensor::{ElementConversion, Int, Tensor};
+use itertools::Itertools;
 use lexicon::Lexicon;
 
 use logprob::LogProb;
@@ -15,6 +16,7 @@ use parsing::beam::neural_beam::NeuralBeam;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
+use rand::seq::SliceRandom;
 use rand::Rng;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -548,6 +550,8 @@ where
         let mut string_probs: Vec<_> = vec![];
         target_set.iter_mut().for_each(|(_k, v)| *v = false);
 
+        let lemmas_ids = (0..n_lemmas).collect_vec();
+
         for (s, p) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
             .filter(|(s, _p)| s.shape().dims[0] < neural_config.padding_length)
             .take(neural_config.n_strings_per_grammar)
@@ -561,21 +565,29 @@ where
             .repeat(0, neural_config.padding_length - length);
             let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
 
-            let key = s
-                .clone()
-                .argmax(1)
-                .squeeze::<1>(1)
-                .to_data()
-                .convert::<u32>()
-                .value;
-
-            match target_set.entry(key) {
-                Entry::Occupied(v) => {
-                    *v.into_mut() = true;
+            for _ in 0..10 {
+                let mut sample: Vec<u32> = std::iter::repeat(0)
+                    .take(neural_config.padding_length)
+                    .collect();
+                for (j, word) in sample.iter_mut().enumerate() {
+                    let dist = s
+                        .clone()
+                        .slice([j..j + 1, 0..n_lemmas])
+                        .to_data()
+                        .convert::<f64>()
+                        .value;
+                    *word = (*lemmas_ids.choose_weighted(rng, |i| dist[*i]).unwrap())
+                        .try_into()
+                        .unwrap();
                 }
-                Entry::Vacant(_) => {}
-            }
 
+                match target_set.entry(sample) {
+                    Entry::Occupied(v) => {
+                        *v.into_mut() = true;
+                    }
+                    Entry::Vacant(_) => {}
+                }
+            }
             grammar_strings.push(s);
             string_probs.push(p);
         }

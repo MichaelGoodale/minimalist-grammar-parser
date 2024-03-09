@@ -511,10 +511,10 @@ where
     let lemmas = log_softmax(lemmas, 2);
     let n_targets = targets.shape().dims[0];
     let target_length = targets.shape().dims[1];
-    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 3);
-    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 3);
-    let types = log_softmax(types, 3);
-    let categories = log_softmax(categories, 3);
+    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 2);
+    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 2);
+    let types = log_softmax(types, 2);
+    let categories = log_softmax(categories, 2);
 
     let mut target_set: HashMap<_, _> = (0..n_targets)
         .map(|i| {

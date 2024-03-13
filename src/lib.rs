@@ -475,6 +475,7 @@ where
 pub struct NeuralConfig {
     pub n_grammars: usize,
     pub n_strings_per_grammar: usize,
+    pub n_strings_to_sample: usize,
     pub padding_length: usize,
     pub negative_weight: Option<f64>,
     pub temperature: f64,
@@ -709,7 +710,12 @@ pub fn get_neural_outputs<B: Backend>(
             let grammar =
                 string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &targets.device());
 
-            let reward: f32 = get_reward_loss(&mut target_set, &grammar.clone(), 5, rng);
+            let reward: f32 = get_reward_loss(
+                &mut target_set,
+                &grammar.clone(),
+                neural_config.n_strings_to_sample,
+                rng,
+            );
 
             alternate_loss = alternate_loss + (-p_of_lex * reward);
 

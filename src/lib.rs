@@ -7,7 +7,6 @@ use burn::tensor::backend::Backend;
 use burn::tensor::{Int, Tensor};
 use lexicon::Lexicon;
 use moka::sync::Cache;
-use moka::Entry;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
@@ -611,6 +610,9 @@ fn get_string_prob<B: Backend>(
     string_path_tensor
 }
 
+pub type NeuralGrammarCache =
+    Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
+
 pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
@@ -619,7 +621,7 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-    cache: &Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>,
+    cache: &NeuralGrammarCache,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
     let lemmas = log_softmax(lemmas, 2);
     let n_targets = targets.shape().dims[0];

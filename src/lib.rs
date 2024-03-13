@@ -641,6 +641,56 @@ fn get_reward_loss<B: Backend>(
 pub type NeuralGrammarCache =
     Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
 
+pub fn get_grammar<B: Backend>(
+    lemmas: Tensor<B, 3>,
+    types: Tensor<B, 3>,
+    categories: Tensor<B, 3>,
+    weights: Tensor<B, 2>,
+    neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
+    cache: &NeuralGrammarCache,
+) -> (Option<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>) {
+    let lemmas = log_softmax(lemmas, 2);
+    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 2);
+    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 2);
+    let types = log_softmax(types, 2);
+    let categories = log_softmax(categories, 2);
+
+    let n_lemmas = lemmas.shape().dims[2];
+
+    let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
+        &types,
+        &types_distribution,
+        &categories,
+        &categories_distribution,
+        &lemmas,
+        &weights,
+        rng,
+    );
+
+    let entry = cache
+        .entry(lexemes)
+        .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
+    let (strings, string_probs) = entry.value();
+
+    (
+        if strings.is_empty() {
+            None
+        } else {
+            //(1, n_grammar_strings)
+            let string_probs =
+                get_string_prob(string_probs, &lexicon, neural_config, &lemmas.device()).squeeze(0);
+
+            //(n_grammar_strings, padding_length, n_lemmas)
+            Some((
+                string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &lemmas.device()),
+                string_probs,
+            ))
+        },
+        p_of_lex,
+    )
+}
+
 pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,

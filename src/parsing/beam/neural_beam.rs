@@ -176,7 +176,7 @@ impl Beam<(usize, usize)> for NeuralBeam {
 
         let (record, log_prob) = child_prob;
         beam.probability_path.add_step(record);
-        beam.log_probability.1 = beam.log_probability.1 + log_prob;
+        beam.log_probability.1 += log_prob;
 
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {

@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::marker::PhantomData;
 
 use ahash::HashMap;
@@ -5,6 +6,7 @@ use anyhow::Result;
 use burn::tensor::activation::log_softmax;
 use burn::tensor::backend::Backend;
 use burn::tensor::{Int, Tensor};
+use itertools::Itertools;
 use lexicon::Lexicon;
 use moka::sync::Cache;
 
@@ -15,6 +17,7 @@ use parsing::beam::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
+use rand::seq::SliceRandom;
 use rand::Rng;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -507,34 +510,6 @@ fn retrieve_strings<B: Backend>(
         .filter(|(s, _h)| s.len() < neural_config.padding_length)
         .take(neural_config.n_strings_per_grammar)
     {
-        /*
-        let lemmas_ids = (0..n_lemmas).collect_vec();
-                    for _ in 0..10 {
-                        let mut sample: Vec<u32> = std::iter::repeat(0)
-                            .take(neural_config.padding_length)
-                            .collect();
-                        for (j, word) in sample.iter_mut().enumerate() {
-                            let dist = s_tensor
-                                .clone()
-                                .slice([j..j + 1, 0..n_lemmas])
-                                .exp()
-                                .to_data()
-                                .convert::<f64>()
-                                .value;
-                            *word = (*lemmas_ids.choose_weighted(rng, |i| dist[*i]).unwrap())
-                                .try_into()
-                                .unwrap();
-                        }
-
-                        match target_set.entry(sample) {
-                            Entry::Occupied(v) => {
-                                *v.into_mut() = true;
-                            }
-                            Entry::Vacant(_) => {}
-                        }
-                    }
-            */
-
         string_paths.push(h);
         grammar_strings.push(s);
     }
@@ -610,6 +585,58 @@ fn get_string_prob<B: Backend>(
     string_path_tensor
 }
 
+fn get_reward_loss<B: Backend>(
+    target_set: &mut HashMap<Vec<u32>, bool>,
+    grammar: &Tensor<B, 3>,
+    n_samples: usize,
+    rng: &mut impl Rng,
+) -> f32 {
+    target_set.iter_mut().for_each(|(_k, v)| *v = false);
+
+    let [n_strings, length, n_lemmas] = grammar.shape().dims;
+    let lemmas_ids = (0..n_lemmas).collect_vec();
+
+    for string_i in 0..n_strings {
+        let dists: Vec<Vec<f64>> = (0..length)
+            .map(|i| {
+                grammar
+                    .clone()
+                    .slice([string_i..string_i + 1, i..i + 1, 0..n_lemmas])
+                    .exp()
+                    .to_data()
+                    .convert::<f64>()
+                    .value
+            })
+            .collect();
+
+        for _ in 0..n_samples {
+            let mut sample: Vec<u32> = std::iter::repeat(0).take(length).collect();
+            for (j, word) in sample.iter_mut().enumerate() {
+                *word = (*lemmas_ids
+                    .choose_weighted(rng, |i| dists[j][*i].exp())
+                    .unwrap())
+                .try_into()
+                .unwrap();
+            }
+
+            match target_set.entry(sample) {
+                Entry::Occupied(v) => {
+                    *v.into_mut() = true;
+                }
+                Entry::Vacant(_) => {}
+            }
+        }
+    }
+
+    target_set
+        .values()
+        .map(|in_grammar| {
+            let x: f32 = (*in_grammar).into();
+            x
+        })
+        .sum::<f32>()
+}
+
 pub type NeuralGrammarCache =
     Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
 
@@ -651,7 +678,6 @@ pub fn get_neural_outputs<B: Backend>(
     let mut valid_grammars = 0.0001;
 
     for _ in 0..neural_config.n_grammars {
-        target_set.iter_mut().for_each(|(_k, v)| *v = false);
         let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
             &types,
             &types_distribution,
@@ -674,25 +700,21 @@ pub fn get_neural_outputs<B: Backend>(
             }
         } else {
             let n_grammar_strings = strings.len();
-            let reward: f32 = target_set
-                .values()
-                .map(|in_grammar| {
-                    let x: f32 = (*in_grammar).into();
-                    x
-                })
-                .sum::<f32>();
-
-            alternate_loss = alternate_loss + (-p_of_lex * reward);
 
             //(1, n_grammar_strings)
             let string_probs =
                 get_string_prob(string_probs, &lexicon, neural_config, &targets.device());
 
+            //(n_grammar_strings, padding_length, n_lemmas)
+            let grammar =
+                string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &targets.device());
+
+            let reward: f32 = get_reward_loss(&mut target_set, &grammar.clone(), 5, rng);
+
+            alternate_loss = alternate_loss + (-p_of_lex * reward);
+
             //(n_targets, n_grammar_strings, padding_length, n_lemmas)
-            let grammar: Tensor<B, 4> =
-                string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &targets.device())
-                    .unsqueeze()
-                    .repeat(0, n_targets);
+            let grammar: Tensor<B, 4> = grammar.unsqueeze().repeat(0, n_targets);
 
             //Probability of generating every string for this grammar.
             //(n_targets, n_grammar_strings)

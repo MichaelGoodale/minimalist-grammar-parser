@@ -546,9 +546,9 @@ fn test_loss() -> Result<()> {
         &cache,
     );
 
-    let g = loss.backward();
+    let _g = loss.backward();
     let loss: f32 = loss.into_scalar().elem();
-    approx::assert_relative_eq!(loss, 135.86317);
+    approx::assert_relative_eq!(loss, 88.4132);
     Ok(())
 }
 

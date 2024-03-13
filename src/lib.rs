@@ -12,7 +12,7 @@ use lexicon::Lexicon;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
-use parsing::beam::neural_beam::NeuralBeam;
+use parsing::beam::neural_beam::{NeuralBeam, StringPath};
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
@@ -498,6 +498,65 @@ fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
 //    todo!();
 //}
 
+fn retrieve_strings<B: Backend>(
+    lexicon: NeuralLexicon<B>,
+    target_set: &mut HashMap<Vec<u32>, bool>,
+    n_lemmas: usize,
+    device: &B::Device,
+    neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
+) -> (Vec<Tensor<B, 2>>, Vec<Tensor<B, 1>>, Vec<StringPath>) {
+    let mut grammar_strings: Vec<_> = vec![];
+    let mut string_probs: Vec<_> = vec![];
+    let mut string_paths: Vec<_> = vec![];
+
+    let lemmas_ids = (0..n_lemmas).collect_vec();
+
+    for (s, p, h) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
+        .filter(|(s, _p, h)| s.shape().dims[0] < neural_config.padding_length)
+        .take(neural_config.n_strings_per_grammar)
+    {
+        let length = s.shape().dims[0];
+        let padding_prob = log_softmax(
+            Tensor::zeros([1, n_lemmas], device)
+                .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, device)),
+            1,
+        )
+        .repeat(0, neural_config.padding_length - length);
+        let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
+
+        for _ in 0..10 {
+            let mut sample: Vec<u32> = std::iter::repeat(0)
+                .take(neural_config.padding_length)
+                .collect();
+            for (j, word) in sample.iter_mut().enumerate() {
+                let dist = s
+                    .clone()
+                    .slice([j..j + 1, 0..n_lemmas])
+                    .exp()
+                    .to_data()
+                    .convert::<f64>()
+                    .value;
+                *word = (*lemmas_ids.choose_weighted(rng, |i| dist[*i]).unwrap())
+                    .try_into()
+                    .unwrap();
+            }
+
+            match target_set.entry(sample) {
+                Entry::Occupied(v) => {
+                    *v.into_mut() = true;
+                }
+                Entry::Vacant(_) => {}
+            }
+        }
+
+        string_paths.push(h);
+        grammar_strings.push(s);
+        string_probs.push(p);
+    }
+    (grammar_strings, string_probs, string_paths)
+}
+
 pub fn get_neural_outputs<B: Backend>(
     lemmas: Tensor<B, 3>,
     types: Tensor<B, 3>,
@@ -537,7 +596,8 @@ where
     let mut alternate_loss = Tensor::zeros([1], &targets.device());
     let mut valid_grammars = 0.0001;
     for _ in 0..neural_config.n_grammars {
-        let (p_of_lex, lexicon) = NeuralLexicon::new_random(
+        target_set.iter_mut().for_each(|(_k, v)| *v = false);
+        let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
             &types,
             &types_distribution,
             &categories,
@@ -546,53 +606,14 @@ where
             &weights,
             rng,
         );
-        let mut grammar_strings: Vec<_> = vec![];
-        let mut string_probs: Vec<_> = vec![];
-        target_set.iter_mut().for_each(|(_k, v)| *v = false);
-
-        let lemmas_ids = (0..n_lemmas).collect_vec();
-
-        for (s, p) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
-            .filter(|(s, _p)| s.shape().dims[0] < neural_config.padding_length)
-            .take(neural_config.n_strings_per_grammar)
-        {
-            let length = s.shape().dims[0];
-            let padding_prob = log_softmax(
-                Tensor::zeros([1, n_lemmas], &targets.device())
-                    .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &targets.device())),
-                1,
-            )
-            .repeat(0, neural_config.padding_length - length);
-            let s: Tensor<B, 2> = Tensor::cat(vec![s, padding_prob], 0);
-
-            for _ in 0..10 {
-                let mut sample: Vec<u32> = std::iter::repeat(0)
-                    .take(neural_config.padding_length)
-                    .collect();
-                for (j, word) in sample.iter_mut().enumerate() {
-                    let dist = s
-                        .clone()
-                        .slice([j..j + 1, 0..n_lemmas])
-                        .exp()
-                        .to_data()
-                        .convert::<f64>()
-                        .value;
-                    *word = (*lemmas_ids.choose_weighted(rng, |i| dist[*i]).unwrap())
-                        .try_into()
-                        .unwrap();
-                }
-
-                match target_set.entry(sample) {
-                    Entry::Occupied(v) => {
-                        *v.into_mut() = true;
-                    }
-                    Entry::Vacant(_) => {}
-                }
-            }
-            grammar_strings.push(s);
-            string_probs.push(p);
-        }
-
+        let (grammar_strings, string_probs, string_history) = retrieve_strings(
+            lexicon,
+            &mut target_set,
+            n_lemmas,
+            &targets.device(),
+            neural_config,
+            rng,
+        );
         if grammar_strings.is_empty() {
             if let Some(weight) = neural_config.negative_weight {
                 loss = loss + (p_of_lex.clone().add_scalar(weight));
@@ -687,7 +708,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B>
 where
     B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
 {
-    type Item = (Tensor<B, 2>, Tensor<B, 1>);
+    type Item = (Tensor<B, 2>, Tensor<B, 1>, StringPath);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {

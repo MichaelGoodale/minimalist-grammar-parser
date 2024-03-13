@@ -97,7 +97,7 @@ impl<B: Backend> NeuralLexicon<B> {
         lemmas: &Tensor<B, 3>,  //(lexeme, lexeme_pos, lemma_distribution)
         weights: &Tensor<B, 2>, //(lexeme, lexeme_weight)
         rng: &mut impl Rng,
-    ) -> (Tensor<B, 1>, Self) {
+    ) -> (Tensor<B, 1>, Vec<Vec<NeuralFeature>>, Self) {
         let [n_lexemes, n_positions, n_categories] = categories.shape().dims;
         let category_ids = (0..n_categories).collect_vec();
 
@@ -113,27 +113,33 @@ impl<B: Backend> NeuralLexicon<B> {
             .take(n_lexemes * n_positions)
             .collect_vec();
 
-        for lexeme in 0..n_lexemes {
+        let mut grammar_lexemes: Vec<Vec<NeuralFeature>> = vec![];
+        for lexeme_idx in 0..n_lexemes {
             let mut parent = root;
             let mut has_category_already = false;
             let mut has_lemma_already = false;
+            let mut lexeme = vec![];
 
             for position in 0..n_positions {
                 if has_lemma_already {
                     break;
                 };
-                attested_at_position[n_positions * lexeme + position] = false;
+                attested_at_position[n_positions * lexeme_idx + position] = false;
 
                 let possible_type = if !has_lemma_already && position == n_positions - 1 {
                     //Make sure we have a lemma if we don't already and its the last stop.
                     LEMMA_POS
-                } else if !has_start_category && position == 0 && lexeme == n_lexemes - 1 {
+                } else if !has_start_category && position == 0 && lexeme_idx == n_lexemes - 1 {
                     CATEGORY_POS
                 } else {
                     //Sample a type
                     let type_distribution: Vec<f64> = type_sampling
                         .clone()
-                        .slice([lexeme..lexeme + 1, position..position + 1, 0..N_TYPES])
+                        .slice([
+                            lexeme_idx..lexeme_idx + 1,
+                            position..position + 1,
+                            0..N_TYPES,
+                        ])
                         .exp()
                         .to_data()
                         .convert::<f64>()
@@ -160,7 +166,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 let mut lemma_structure_p = types
                     .clone()
                     .slice([
-                        lexeme..lexeme + 1,
+                        lexeme_idx..lexeme_idx + 1,
                         position..position + 1,
                         possible_type.0..possible_type.0 + 1,
                     ])
@@ -170,7 +176,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     LEMMA_POS => {
                         let p_of_unpronounced_lemma = lemmas
                             .clone()
-                            .slice([lexeme..lexeme + 1, position..position + 1, 0..1])
+                            .slice([lexeme_idx..lexeme_idx + 1, position..position + 1, 0..1])
                             .reshape([1]);
 
                         let p: f64 = p_of_unpronounced_lemma.clone().into_scalar().elem();
@@ -180,14 +186,18 @@ impl<B: Backend> NeuralLexicon<B> {
                         } else {
                             lemma_structure_p = lemma_structure_p
                                 + (-p_of_unpronounced_lemma.clone().exp()).log1p();
-                            FeatureOrLemma::Lemma(Some((lexeme, position)))
+                            FeatureOrLemma::Lemma(Some((lexeme_idx, position)))
                         }
                     }
 
                     _ => {
                         let cat_weights = categories_sampling
                             .clone()
-                            .slice([lexeme..lexeme + 1, position..position + 1, 0..n_categories])
+                            .slice([
+                                lexeme_idx..lexeme_idx + 1,
+                                position..position + 1,
+                                0..n_categories,
+                            ])
                             .exp()
                             .to_data()
                             .convert::<f64>()
@@ -196,7 +206,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             .choose_weighted(rng, |i| cat_weights[*i])
                             .unwrap();
 
-                        if position == 0 && lexeme == n_lexemes - 1 && !has_start_category {
+                        if position == 0 && lexeme_idx == n_lexemes - 1 && !has_start_category {
                             //If we're the last lexeme and there's been no start category, we force
                             //the last lexeme to start with a category.
                             cat = 0
@@ -207,11 +217,17 @@ impl<B: Backend> NeuralLexicon<B> {
                         lemma_structure_p = lemma_structure_p
                             + categories
                                 .clone()
-                                .slice([lexeme..lexeme + 1, position..position + 1, cat..cat + 1])
+                                .slice([
+                                    lexeme_idx..lexeme_idx + 1,
+                                    position..position + 1,
+                                    cat..cat + 1,
+                                ])
                                 .reshape([1]);
                         to_feature(possible_type, cat)
                     }
                 };
+
+                lexeme.push(feature.clone());
 
                 //Check if the parent has a child with the same feature.
                 //If so, merge current and previous.
@@ -224,20 +240,21 @@ impl<B: Backend> NeuralLexicon<B> {
                 {
                     if let (Some(lexemes), sibling_feature) = &mut graph[sibling] {
                         if feature == *sibling_feature {
-                            lexemes.push((lexeme, position));
+                            lexemes.push((lexeme_idx, position));
                             node = Some(sibling);
                             break;
                         }
                     }
                 }
                 let node =
-                    node.unwrap_or(graph.add_node((Some(vec![(lexeme, position)]), feature)));
+                    node.unwrap_or(graph.add_node((Some(vec![(lexeme_idx, position)]), feature)));
 
                 graph.add_edge(parent, node, ());
                 parent = node;
 
                 grammar_prob = grammar_prob + lemma_structure_p;
             }
+            grammar_lexemes.push(lexeme);
         }
 
         let attested_mask = Tensor::<B, 1, Bool>::from_data(
@@ -283,8 +300,10 @@ impl<B: Backend> NeuralLexicon<B> {
             },
             |_, _| (),
         );
+
         (
             grammar_prob,
+            grammar_lexemes,
             NeuralLexicon {
                 lemmas: lemmas.clone(),
                 graph,

@@ -483,8 +483,10 @@ fn test_loss() -> Result<()> {
     let n_lexemes = 2;
     let n_pos = 3;
 
-    let mut types =
-        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, N_TYPES], &NdArrayDevice::default());
+    let mut types = Tensor::<Autodiff<NdArray>, 3>::zeros(
+        [n_lexemes, n_pos, N_TYPES],
+        &NdArrayDevice::default(),
+    );
     let slices = [
         [0..2, 0..1, 1..2],
         [0..1, 1..2, 4..5],
@@ -503,17 +505,20 @@ fn test_loss() -> Result<()> {
     types = log_softmax(types, 2);
 
     let mut categories =
-        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
     categories = categories.slice_assign([0..2, 0..3, 0..1], Tensor::full([2, 3, 1], 5.0, &dev));
     categories = log_softmax(categories, 2);
 
-    let mut lemmas = Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
+    let mut lemmas =
+        Tensor::<Autodiff<NdArray>, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
     lemmas = lemmas.slice_assign([0..2, 0..3, 1..2], Tensor::full([2, 3, 1], 5.0, &dev));
     lemmas = log_softmax(lemmas, 2);
 
-    let weights = Tensor::<NdArray, 2>::zeros([n_lexemes, n_pos], &NdArrayDevice::default());
+    let weights =
+        Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, n_pos], &NdArrayDevice::default());
 
-    let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+    let targets =
+        Tensor::<Autodiff<NdArray>, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 50,
@@ -529,7 +534,7 @@ fn test_loss() -> Result<()> {
             4000,
         ),
     };
-    let loss: f32 = get_neural_outputs(
+    let (loss, _) = get_neural_outputs(
         lemmas.clone(),
         types.clone(),
         categories.clone(),
@@ -537,10 +542,10 @@ fn test_loss() -> Result<()> {
         targets,
         &config,
         &mut rng,
-    )
-    .0
-    .into_scalar()
-    .elem();
+    );
+
+    let g = loss.backward();
+    let loss: f32 = loss.into_scalar().elem();
     approx::assert_relative_eq!(loss, 135.86317);
     Ok(())
 }

@@ -8,6 +8,22 @@ use super::*;
 
 use ahash::HashMap;
 
+#[derive(Debug, Clone, Default)]
+pub struct StringPath(HashMap<NeuralProbabilityRecord, usize>);
+
+impl StringPath {
+    fn add_step(&mut self, x: NeuralProbabilityRecord) {
+        match self.0.entry(x) {
+            Entry::Occupied(entry) => {
+                *entry.into_mut() += 1;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+        };
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
     log_probability: (NeuralProbabilityRecord, Tensor<B, 1>),
@@ -15,7 +31,7 @@ pub struct NeuralBeam<'a, B: Backend> {
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<Tensor<B, 1>>,
     rules: ThinVec<Rule>,
-    probability_path: HashMap<NeuralProbabilityRecord, usize>,
+    probability_path: StringPath,
     top_id: usize,
     steps: usize,
     record_rules: bool,
@@ -55,19 +71,20 @@ where
             } else {
                 thin_vec![]
             },
-            probability_path: HashMap::default(),
+            probability_path: StringPath::default(),
             top_id: 0,
             steps: 0,
             record_rules,
         })
     }
 
-    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, Tensor<B, 1>)> {
+    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, Tensor<B, 1>, StringPath)> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
             Some((
                 Tensor::stack(sentence, 0),
                 self.log_probability.1.unsqueeze(),
+                self.probability_path,
             ))
         } else {
             None
@@ -109,14 +126,7 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
         let (record, log_prob) = x;
-        match self.probability_path.entry(record) {
-            Entry::Occupied(entry) => {
-                *entry.into_mut() += 1;
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(1);
-            }
-        };
+        self.probability_path.add_step(record);
         self.log_probability.1 = self.log_probability.1.clone() + log_prob;
     }
 
@@ -153,7 +163,11 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
             beam.generated_sentences
                 .push(beam.lexicon.lemma_at_position(*lex, *pos));
         }
-        beam.log_probability.1 = beam.log_probability.1 + child_prob.1;
+
+        let (record, log_prob) = child_prob;
+        beam.probability_path.add_step(record);
+        beam.log_probability.1 = beam.log_probability.1 + log_prob;
+
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {
                 node: child_node,

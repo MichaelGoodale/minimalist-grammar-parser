@@ -92,10 +92,9 @@ fn unmerge_from_mover<
                             .collect(),
                     ));
 
-                    *beam.log_probability_mut() = beam.log_probability().clone()
-                        + stored_prob.clone()
-                        + child_prob.clone()
-                        + rule_prob.clone();
+                    beam.add_to_log_prob(stored_prob);
+                    beam.add_to_log_prob(child_prob.clone());
+                    beam.add_to_log_prob(rule_prob.clone());
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmergeFromMover {
                             child: child_node,
@@ -159,7 +158,8 @@ fn unmerge<
         },
     ));
 
-    *beam.log_probability_mut() = beam.log_probability().clone() + child_prob + rule_prob;
+    beam.add_to_log_prob(child_prob);
+    beam.add_to_log_prob(rule_prob);
     if beam.record_rules() {
         beam.push_rule(Rule::Unmerge {
             child: child_node,
@@ -217,10 +217,10 @@ fn unmove_from_mover<
                             }))
                             .collect(),
                     ));
-                    *beam.log_probability_mut() = beam.log_probability().clone()
-                        + stored_prob
-                        + child_prob.clone()
-                        + rule_prob.clone();
+
+                    beam.add_to_log_prob(stored_prob);
+                    beam.add_to_log_prob(child_prob.clone());
+                    beam.add_to_log_prob(rule_prob.clone());
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmoveFromMover {
                             parent: moment.tree.id,
@@ -275,8 +275,9 @@ fn unmove<
             },
         ),
     ));
+    beam.add_to_log_prob(child_prob);
+    beam.add_to_log_prob(rule_prob);
 
-    *beam.log_probability_mut() = beam.log_probability().clone() + child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmove {
             child_id: beam.top_id() + 1,

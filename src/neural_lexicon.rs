@@ -1,11 +1,23 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use anyhow::Context;
+use bitvec::array::BitArray;
 use burn::tensor::{
     activation::log_softmax, backend::Backend, Bool, Data, ElementConversion, Tensor,
 };
 use itertools::Itertools;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::{seq::SliceRandom, Rng};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum NeuralProbabilityRecord {
+    Feature {
+        lexemes: BitArray<u64>,
+        position: usize,
+    },
+    MergeRuleProb,
+    MoveRuleProb,
+    OneProb,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct TensorPosition(usize);
@@ -28,7 +40,13 @@ const POSITIONS: [TensorPosition; 6] = [
 pub const N_TYPES: usize = 6;
 
 type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
-type NeuralGraph<B> = DiGraph<(Option<Tensor<B, 1>>, NeuralFeature), ()>;
+type NeuralGraph<B> = DiGraph<
+    (
+        Option<(NeuralProbabilityRecord, Tensor<B, 1>)>,
+        NeuralFeature,
+    ),
+    (),
+>;
 
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
@@ -74,10 +92,7 @@ impl<B: Backend> NeuralLexicon<B> {
         lemmas: &Tensor<B, 3>,  //(lexeme, lexeme_pos, lemma_distribution)
         weights: &Tensor<B, 2>, //(lexeme, lexeme_weight)
         rng: &mut impl Rng,
-    ) -> (Tensor<B, 1>, Self)
-    where
-        B::FloatElem: Into<f32> + std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-    {
+    ) -> (Tensor<B, 1>, Self) {
         let [n_lexemes, n_positions, n_categories] = categories.shape().dims;
         let category_ids = (0..n_categories).collect_vec();
 
@@ -240,14 +255,23 @@ impl<B: Backend> NeuralLexicon<B> {
                         .clone()
                         .slice([*lex..lex + 1, *pos..pos + 1])
                         .reshape([1]);
+                    let mut included_lexemes = BitArray::ZERO;
+                    included_lexemes.set(*lex, true);
                     for (lex, pos) in positions.iter().skip(1) {
+                        included_lexemes.set(*lex, true);
+                        //TODO: Switch to log sum exp
                         tensor = tensor
                             + weights
                                 .clone()
                                 .slice([*lex..*lex + 1, *pos..*pos + 1])
                                 .reshape([1]);
                     }
-                    (Some(tensor), feat.clone())
+
+                    let neural_feature = NeuralProbabilityRecord::Feature {
+                        lexemes: included_lexemes,
+                        position: *pos,
+                    };
+                    (Some((neural_feature, tensor)), feat.clone())
                 }
                 None => (None, feat.clone()),
             },
@@ -265,14 +289,14 @@ impl<B: Backend> NeuralLexicon<B> {
     }
 }
 
-impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B>
-where
-    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-{
-    type Probability = Tensor<B, 1>;
+impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B> {
+    type Probability = (NeuralProbabilityRecord, Tensor<B, 1>);
 
     fn probability_of_one(&self) -> Self::Probability {
-        Tensor::<B, 1>::zeros([1], &self.device)
+        (
+            NeuralProbabilityRecord::OneProb,
+            Tensor::<B, 1>::zeros([1], &self.device),
+        )
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
@@ -297,8 +321,8 @@ where
         &crate::lexicon::FeatureOrLemma<(usize, usize), usize>,
         Self::Probability,
     )> {
-        if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
-            Some((feature, p.clone()))
+        if let Some((Some((prob_record, p_tensor)), feature)) = self.graph.node_weight(nx) {
+            Some((feature, (*prob_record, p_tensor.clone())))
         } else {
             None
         }
@@ -368,7 +392,15 @@ mod test {
 
         let mut r = rand::rngs::StdRng::seed_from_u64(123);
 
-        NeuralLexicon::new_random(types, lemmas, categories, weights, &mut r);
+        NeuralLexicon::new_random(
+            &types,
+            &types,
+            &categories,
+            &categories,
+            &lemmas,
+            &weights,
+            &mut r,
+        );
         Ok(())
     }
 }

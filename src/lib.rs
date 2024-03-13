@@ -1,17 +1,17 @@
 use std::collections::hash_map::Entry;
 use std::marker::PhantomData;
 
-use ahash::{HashMap, HashSet};
+use ahash::HashMap;
 use anyhow::Result;
 use burn::tensor::activation::log_softmax;
 use burn::tensor::backend::Backend;
-use burn::tensor::{ElementConversion, Int, Tensor};
+use burn::tensor::{Int, Tensor};
 use itertools::Itertools;
 use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use neural_lexicon::NeuralLexicon;
+use neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 use parsing::beam::neural_beam::NeuralBeam;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
@@ -645,8 +645,8 @@ where
 {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, (usize, usize), NeuralBeam<'a, B>>,
-    move_log_prob: Tensor<B, 1>,
-    merge_log_prob: Tensor<B, 1>,
+    move_log_prob: (NeuralProbabilityRecord, Tensor<B, 1>),
+    merge_log_prob: (NeuralProbabilityRecord, Tensor<B, 1>),
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B>
@@ -658,13 +658,19 @@ where
         parse_heap.push(NeuralBeam::new(lexicon, 0, false).unwrap());
         NeuralGenerator {
             lexicon,
-            move_log_prob: Tensor::<B, 1>::from_floats(
-                [config.move_prob.into_inner() as f32],
-                lexicon.device(),
+            move_log_prob: (
+                NeuralProbabilityRecord::MoveRuleProb,
+                Tensor::<B, 1>::from_floats(
+                    [config.move_prob.into_inner() as f32],
+                    lexicon.device(),
+                ),
             ),
-            merge_log_prob: Tensor::<B, 1>::from_floats(
-                [config.move_prob.opposite_prob().into_inner() as f32],
-                lexicon.device(),
+            merge_log_prob: (
+                NeuralProbabilityRecord::MergeRuleProb,
+                Tensor::<B, 1>::from_floats(
+                    [config.move_prob.opposite_prob().into_inner() as f32],
+                    lexicon.device(),
+                ),
             ),
             parse_heap: ParseHeap {
                 global_steps: 0,

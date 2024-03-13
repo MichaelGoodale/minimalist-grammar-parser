@@ -15,7 +15,7 @@ pub trait Beam<T>: Sized + Ord {
 
     fn log_probability(&self) -> &Self::Probability;
 
-    fn log_probability_mut(&mut self) -> &mut Self::Probability;
+    fn add_to_log_prob(&mut self, x: Self::Probability);
 
     fn pop_moment(&mut self) -> Option<ParseMoment>;
 
@@ -90,8 +90,8 @@ where
         &self.log_probability
     }
 
-    fn log_probability_mut(&mut self) -> &mut LogProb<f64> {
-        &mut self.log_probability
+    fn add_to_log_prob(&mut self, x: Self::Probability) {
+        self.log_probability += x;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -360,8 +360,8 @@ where
         &self.log_probability
     }
 
-    fn log_probability_mut(&mut self) -> &mut LogProb<f64> {
-        &mut self.log_probability
+    fn add_to_log_prob(&mut self, x: Self::Probability) {
+        self.log_probability += x;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -485,8 +485,8 @@ where
         &self.log_probability
     }
 
-    fn log_probability_mut(&mut self) -> &mut LogProb<f64> {
-        &mut self.log_probability
+    fn add_to_log_prob(&mut self, x: Self::Probability) {
+        self.log_probability += x;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {

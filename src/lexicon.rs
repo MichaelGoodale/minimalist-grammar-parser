@@ -13,7 +13,7 @@ use std::{
 };
 
 pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
-    type Probability: std::ops::Add<Self::Probability, Output = Self::Probability> + Clone;
+    type Probability: Clone;
 
     fn probability_of_one(&self) -> Self::Probability;
 

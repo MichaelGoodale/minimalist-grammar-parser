@@ -1,12 +1,12 @@
 use burn::tensor::{backend::Backend, ElementConversion, Tensor};
 
-use crate::neural_lexicon::NeuralLexicon;
+use crate::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use super::*;
 
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
-    log_probability: Tensor<B, 1>,
+    log_probability: (NeuralProbabilityRecord, Tensor<B, 1>),
     lexicon: &'a NeuralLexicon<B>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<Tensor<B, 1>>,
@@ -38,7 +38,10 @@ where
         )));
 
         Ok(NeuralBeam {
-            log_probability: Tensor::<B, 1>::zeros([1], lexicon.device()),
+            log_probability: (
+                NeuralProbabilityRecord::OneProb,
+                Tensor::<B, 1>::zeros([1], lexicon.device()),
+            ),
             queue,
             lexicon,
             generated_sentences: vec![],
@@ -56,7 +59,10 @@ where
     pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, Tensor<B, 1>)> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
-            Some((Tensor::stack(sentence, 0), self.log_probability.unsqueeze()))
+            Some((
+                Tensor::stack(sentence, 0),
+                self.log_probability.1.unsqueeze(),
+            ))
         } else {
             None
         }
@@ -82,24 +88,21 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: f64 = self.log_probability.clone().into_scalar().elem();
-        let b: f64 = other.log_probability.clone().into_scalar().elem();
+        let a: f64 = self.log_probability.clone().1.into_scalar().elem();
+        let b: f64 = other.log_probability.clone().1.into_scalar().elem();
         a.partial_cmp(&b).unwrap()
     }
 }
 
-impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B>
-where
-    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-{
-    type Probability = Tensor<B, 1>;
+impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
+    type Probability = (NeuralProbabilityRecord, Tensor<B, 1>);
 
     fn log_probability(&self) -> &Self::Probability {
         &self.log_probability
     }
 
-    fn log_probability_mut(&mut self) -> &mut Self::Probability {
-        &mut self.log_probability
+    fn add_to_log_prob(&mut self, x: Self::Probability) {
+        self.log_probability.1 = self.log_probability.1.clone() + x.1;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -135,7 +138,7 @@ where
             beam.generated_sentences
                 .push(beam.lexicon.lemma_at_position(*lex, *pos));
         }
-        beam.log_probability = beam.log_probability + child_prob;
+        beam.log_probability.1 = beam.log_probability.1 + child_prob.1;
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {
                 node: child_node,

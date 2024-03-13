@@ -41,7 +41,7 @@ const POSITIONS: [TensorPosition; 6] = [
 ];
 pub const N_TYPES: usize = 6;
 
-type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
+pub type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
 type NeuralGraph = DiGraph<
     (
         Option<(NeuralProbabilityRecord, LogProb<f64>)>,
@@ -52,7 +52,6 @@ type NeuralGraph = DiGraph<
 
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
-    lemmas: Tensor<B, 3>, //(lexeme, lexeme_pos, lemma_distribution)
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     graph: NeuralGraph,
     root: NodeIndex,
@@ -80,14 +79,6 @@ fn to_feature(pos: TensorPosition, category: usize) -> NeuralFeature {
 }
 
 impl<B: Backend> NeuralLexicon<B> {
-    pub fn lemma_at_position(&self, lexeme: usize, pos: usize) -> Tensor<B, 1> {
-        let n_lemmas = self.lemmas.shape().dims[2];
-        self.lemmas
-            .clone()
-            .slice([lexeme..lexeme + 1, pos..pos + 1, 0..n_lemmas])
-            .reshape([-1])
-    }
-
     pub fn get_weight(&self, n: &NeuralProbabilityRecord) -> Option<&Tensor<B, 1>> {
         self.weights.get(n)
     }
@@ -321,7 +312,6 @@ impl<B: Backend> NeuralLexicon<B> {
             grammar_lexemes,
             NeuralLexicon {
                 graph,
-                lemmas: lemmas.clone(),
                 weights: weights_map,
                 root,
                 device,

@@ -1,4 +1,4 @@
-use burn::tensor::{backend::Backend, Tensor};
+use burn::tensor::backend::Backend;
 
 use std::collections::hash_map::Entry;
 
@@ -9,9 +9,26 @@ use super::*;
 use ahash::HashMap;
 
 #[derive(Debug, Clone, Default)]
-pub struct StringPath(HashMap<NeuralProbabilityRecord, u32>);
+pub struct StringPath(Vec<(usize, usize)>);
 
 impl StringPath {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn into_iter(self) -> std::vec::IntoIter<(usize, usize)> {
+        self.0.into_iter()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, (usize, usize)> {
+        self.0.iter()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>);
+
+impl StringProbHistory {
     fn add_step(&mut self, x: NeuralProbabilityRecord) {
         match self.0.entry(x) {
             Entry::Occupied(entry) => {
@@ -22,6 +39,9 @@ impl StringPath {
             }
         };
     }
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
+        self.0.iter()
+    }
 
     pub fn into_iter(self) -> std::collections::hash_map::IntoIter<NeuralProbabilityRecord, u32> {
         self.0.into_iter()
@@ -29,27 +49,23 @@ impl StringPath {
 }
 
 #[derive(Debug, Clone)]
-pub struct NeuralBeam<'a, B: Backend> {
+pub struct NeuralBeam {
     log_probability: (NeuralProbabilityRecord, LogProb<f64>),
-    lexicon: &'a NeuralLexicon<B>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
-    generated_sentences: Vec<Tensor<B, 1>>,
+    generated_sentence: StringPath,
     rules: ThinVec<Rule>,
-    probability_path: StringPath,
+    probability_path: StringProbHistory,
     top_id: usize,
     steps: usize,
     record_rules: bool,
 }
 
-impl<'a, B: Backend> NeuralBeam<'a, B>
-where
-    NeuralLexicon<B>: Lexiconable<(usize, usize), usize>,
-{
-    pub fn new(
-        lexicon: &'a NeuralLexicon<B>,
+impl NeuralBeam {
+    pub fn new<B: Backend>(
+        lexicon: &NeuralLexicon<B>,
         initial_category: usize,
         record_rules: bool,
-    ) -> Result<NeuralBeam<'a, B>> {
+    ) -> Result<NeuralBeam> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
@@ -65,31 +81,29 @@ where
         Ok(NeuralBeam {
             log_probability: (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()),
             queue,
-            lexicon,
-            generated_sentences: vec![],
+            generated_sentence: StringPath(vec![]),
             rules: if record_rules {
                 thin_vec![Rule::Start(category_index)]
             } else {
                 thin_vec![]
             },
-            probability_path: StringPath::default(),
+            probability_path: StringProbHistory::default(),
             top_id: 0,
             steps: 0,
             record_rules,
         })
     }
 
-    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, StringPath)> {
-        if self.queue.is_empty() && !self.generated_sentences.is_empty() {
-            let sentence = self.generated_sentences;
-            Some((Tensor::stack(sentence, 0), self.probability_path))
+    pub fn yield_good_parse(self) -> Option<(StringPath, StringProbHistory)> {
+        if self.queue.is_empty() && !self.generated_sentence.0.is_empty() {
+            Some((self.generated_sentence, self.probability_path))
         } else {
             None
         }
     }
 }
 
-impl<B: Backend> PartialEq for NeuralBeam<'_, B> {
+impl PartialEq for NeuralBeam {
     fn eq(&self, other: &Self) -> bool {
         self.steps == other.steps
             && self.top_id == other.top_id
@@ -98,15 +112,15 @@ impl<B: Backend> PartialEq for NeuralBeam<'_, B> {
     }
 }
 
-impl<B: Backend> PartialOrd for NeuralBeam<'_, B> {
+impl PartialOrd for NeuralBeam {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<B: Backend> Eq for NeuralBeam<'_, B> {}
+impl Eq for NeuralBeam {}
 
-impl<B: Backend> Ord for NeuralBeam<'_, B> {
+impl Ord for NeuralBeam {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let a = self.log_probability.1;
         let b = other.log_probability.1;
@@ -114,7 +128,7 @@ impl<B: Backend> Ord for NeuralBeam<'_, B> {
     }
 }
 
-impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
+impl Beam<(usize, usize)> for NeuralBeam {
     type Probability = (NeuralProbabilityRecord, LogProb<f64>);
 
     fn log_probability(&self) -> &Self::Probability {
@@ -156,9 +170,8 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
         child_prob: Self::Probability,
     ) {
         beam.queue.shrink_to_fit();
-        if let Some((lex, pos)) = s {
-            beam.generated_sentences
-                .push(beam.lexicon.lemma_at_position(*lex, *pos));
+        if let Some(x) = s {
+            beam.generated_sentence.0.push(*x);
         }
 
         let (record, log_prob) = child_prob;

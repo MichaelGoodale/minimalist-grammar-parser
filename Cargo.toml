@@ -16,6 +16,7 @@ burn = { git = "https://github.com/tracel-ai/burn.git", features = [
 itertools = "0.12.0"
 logprob = { git = "https://github.com/michaelgoodale/logprob.git" }
 min-max-heap = "1.3.0"
+moka = { version = "0.12.5", features = ["sync"] }
 petgraph = "0.6.4"
 rand = "0.8.5"
 thin-vec = "0.2.13"
@@ -33,11 +34,6 @@ harness = false
 
 [[bin]]
 name = "mg_benches"
-bench = false
-test = false
-
-[[bin]]
-name = "learn"
 bench = false
 test = false
 

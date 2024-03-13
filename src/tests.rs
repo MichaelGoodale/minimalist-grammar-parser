@@ -482,6 +482,7 @@ use neural_lexicon::N_TYPES;
 fn test_loss() -> Result<()> {
     let n_lexemes = 2;
     let n_pos = 3;
+    let cache = Cache::new(100);
 
     let mut types = Tensor::<Autodiff<NdArray>, 3>::zeros(
         [n_lexemes, n_pos, N_TYPES],
@@ -542,6 +543,7 @@ fn test_loss() -> Result<()> {
         targets,
         &config,
         &mut rng,
+        &cache,
     );
 
     let g = loss.backward();
@@ -552,6 +554,7 @@ fn test_loss() -> Result<()> {
 
 #[test]
 fn random_neural_generation() -> Result<()> {
+    let cache = Cache::new(100);
     let n_lexemes = 2;
     let n_pos = 5;
     let lemmas = log_softmax(
@@ -610,6 +613,7 @@ fn random_neural_generation() -> Result<()> {
         targets,
         &config,
         &mut rng,
+        &cache,
     );
     Ok(())
 }
@@ -618,6 +622,7 @@ use burn::backend::LibTorch;
 
 #[test]
 fn test_with_libtorch() -> Result<()> {
+    let cache = Cache::new(100);
     let lemmas = log_softmax(
         Tensor::<Autodiff<LibTorch>, 3>::zeros([3, 3, 3], &LibTorchDevice::default()),
         2,
@@ -673,6 +678,7 @@ fn test_with_libtorch() -> Result<()> {
         targets,
         &config,
         &mut rng,
+        &cache,
     )
     .0;
     let g = x.backward();

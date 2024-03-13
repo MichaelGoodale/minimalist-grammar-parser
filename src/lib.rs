@@ -499,21 +499,20 @@ fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
 //}
 
 fn retrieve_strings<B: Backend>(
-    lexicon: NeuralLexicon<B>,
+    lexicon: &NeuralLexicon<B>,
     target_set: &mut HashMap<Vec<u32>, bool>,
     n_lemmas: usize,
     device: &B::Device,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> (Vec<Tensor<B, 2>>, Vec<Tensor<B, 1>>, Vec<StringPath>) {
+) -> (Vec<Tensor<B, 2>>, Vec<StringPath>) {
     let mut grammar_strings: Vec<_> = vec![];
-    let mut string_probs: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
 
     let lemmas_ids = (0..n_lemmas).collect_vec();
 
-    for (s, p, h) in NeuralGenerator::new(&lexicon, &neural_config.parsing_config)
-        .filter(|(s, _p, h)| s.shape().dims[0] < neural_config.padding_length)
+    for (s, h) in NeuralGenerator::new(lexicon, &neural_config.parsing_config)
+        .filter(|(s, _h)| s.shape().dims[0] < neural_config.padding_length)
         .take(neural_config.n_strings_per_grammar)
     {
         let length = s.shape().dims[0];
@@ -552,9 +551,48 @@ fn retrieve_strings<B: Backend>(
 
         string_paths.push(h);
         grammar_strings.push(s);
-        string_probs.push(p);
     }
-    (grammar_strings, string_probs, string_paths)
+    (grammar_strings, string_paths)
+}
+
+fn get_string_prob<B: Backend>(
+    string_paths: Vec<StringPath>,
+    lexicon: &NeuralLexicon<B>,
+    neural_config: &NeuralConfig,
+    device: &B::Device,
+) -> Tensor<B, 2> {
+    let move_p: f64 = neural_config.parsing_config.move_prob.into_inner();
+    let merge_p: f64 = neural_config
+        .parsing_config
+        .move_prob
+        .opposite_prob()
+        .into_inner();
+
+    let mut string_path_tensor = Tensor::<B, 2>::zeros([1, string_paths.len()], device);
+    for (i, string_path) in string_paths.into_iter().enumerate() {
+        let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
+        for (prob_type, count) in string_path.into_iter() {
+            match prob_type {
+                NeuralProbabilityRecord::OneProb => (),
+                NeuralProbabilityRecord::MoveRuleProb => p = p.add_scalar(move_p * (count as f64)),
+                NeuralProbabilityRecord::MergeRuleProb => {
+                    p = p.add_scalar(merge_p * (count as f64))
+                }
+                NeuralProbabilityRecord::Feature { lexemes, position } => {
+                    let feature = NeuralProbabilityRecord::Feature { lexemes, position };
+                    p = p.add(
+                        lexicon
+                            .get_weight(&feature)
+                            .unwrap()
+                            .clone()
+                            .mul_scalar(count),
+                    );
+                }
+            }
+        }
+        string_path_tensor = string_path_tensor.slice_assign([0..1, i..i + 1], p.unsqueeze_dim(0));
+    }
+    string_path_tensor
 }
 
 pub fn get_neural_outputs<B: Backend>(
@@ -595,6 +633,8 @@ where
     let mut loss = Tensor::zeros([1], &targets.device());
     let mut alternate_loss = Tensor::zeros([1], &targets.device());
     let mut valid_grammars = 0.0001;
+    //let mut cache: HashMap<_, (Vec<Tensor<B, 1>>, Vec<StringPath>)> = HashMap::default();
+
     for _ in 0..neural_config.n_grammars {
         target_set.iter_mut().for_each(|(_k, v)| *v = false);
         let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
@@ -606,8 +646,9 @@ where
             &weights,
             rng,
         );
-        let (grammar_strings, string_probs, string_history) = retrieve_strings(
-            lexicon,
+
+        let (grammar_strings, string_paths) = retrieve_strings(
+            &lexicon,
             &mut target_set,
             n_lemmas,
             &targets.device(),
@@ -632,7 +673,8 @@ where
             alternate_loss = alternate_loss + (-p_of_lex * reward);
 
             //(1, n_grammar_strings)
-            let string_probs: Tensor<B, 2> = Tensor::cat(string_probs, 0).unsqueeze_dim(0);
+            let string_probs =
+                get_string_prob(string_paths, &lexicon, neural_config, &targets.device());
 
             //(n_targets, n_grammar_strings, padding_length, n_lemmas)
             let grammar: Tensor<B, 4> = Tensor::stack::<3>(grammar_strings, 0)
@@ -660,38 +702,23 @@ where
 }
 
 #[derive(Debug)]
-pub struct NeuralGenerator<'a, B: Backend>
-where
-    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-{
+pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, (usize, usize), NeuralBeam<'a, B>>,
-    move_log_prob: (NeuralProbabilityRecord, Tensor<B, 1>),
-    merge_log_prob: (NeuralProbabilityRecord, Tensor<B, 1>),
+    move_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
+    merge_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
 }
 
-impl<'a, B: Backend> NeuralGenerator<'a, B>
-where
-    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-{
+impl<'a, B: Backend> NeuralGenerator<'a, B> {
     pub fn new(lexicon: &'a NeuralLexicon<B>, config: &'a ParsingConfig) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(NeuralBeam::new(lexicon, 0, false).unwrap());
         NeuralGenerator {
             lexicon,
-            move_log_prob: (
-                NeuralProbabilityRecord::MoveRuleProb,
-                Tensor::<B, 1>::from_floats(
-                    [config.move_prob.into_inner() as f32],
-                    lexicon.device(),
-                ),
-            ),
+            move_log_prob: (NeuralProbabilityRecord::MoveRuleProb, config.move_prob),
             merge_log_prob: (
                 NeuralProbabilityRecord::MergeRuleProb,
-                Tensor::<B, 1>::from_floats(
-                    [config.move_prob.opposite_prob().into_inner() as f32],
-                    lexicon.device(),
-                ),
+                config.move_prob.opposite_prob(),
             ),
             parse_heap: ParseHeap {
                 global_steps: 0,
@@ -704,11 +731,8 @@ where
     }
 }
 
-impl<B: Backend> Iterator for NeuralGenerator<'_, B>
-where
-    B::FloatElem: std::ops::Add<B::FloatElem, Output = B::FloatElem>,
-{
-    type Item = (Tensor<B, 2>, Tensor<B, 1>, StringPath);
+impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
+    type Item = (Tensor<B, 2>, StringPath);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {
@@ -718,8 +742,8 @@ where
                     moment,
                     beam,
                     self.lexicon,
-                    self.move_log_prob.clone(),
-                    self.merge_log_prob.clone(),
+                    self.move_log_prob,
+                    self.merge_log_prob,
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
                 return Some(sentence);

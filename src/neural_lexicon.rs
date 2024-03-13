@@ -1,10 +1,12 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
+use ahash::HashMap;
 use anyhow::Context;
 use bitvec::array::BitArray;
 use burn::tensor::{
     activation::log_softmax, backend::Backend, Bool, Data, ElementConversion, Tensor,
 };
 use itertools::Itertools;
+use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::{seq::SliceRandom, Rng};
 
@@ -40,9 +42,9 @@ const POSITIONS: [TensorPosition; 6] = [
 pub const N_TYPES: usize = 6;
 
 type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
-type NeuralGraph<B> = DiGraph<
+type NeuralGraph = DiGraph<
     (
-        Option<(NeuralProbabilityRecord, Tensor<B, 1>)>,
+        Option<(NeuralProbabilityRecord, LogProb<f64>)>,
         NeuralFeature,
     ),
     (),
@@ -51,7 +53,8 @@ type NeuralGraph<B> = DiGraph<
 #[derive(Debug)]
 pub struct NeuralLexicon<B: Backend> {
     lemmas: Tensor<B, 3>, //(lexeme, lexeme_pos, lemma_distribution)
-    graph: NeuralGraph<B>,
+    weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
+    graph: NeuralGraph,
     root: NodeIndex,
     device: B::Device,
 }
@@ -83,6 +86,10 @@ impl<B: Backend> NeuralLexicon<B> {
             .clone()
             .slice([lexeme..lexeme + 1, pos..pos + 1, 0..n_lemmas])
             .reshape([-1])
+    }
+
+    pub fn get_weight(&self, n: &NeuralProbabilityRecord) -> Option<&Tensor<B, 1>> {
+        self.weights.get(n)
     }
 
     pub fn device(&self) -> &B::Device {
@@ -267,6 +274,7 @@ impl<B: Backend> NeuralLexicon<B> {
             Tensor::ones_like(weights).mask_fill(attested_mask, -999) + weights.clone(),
             0,
         );
+        let mut weights_map: HashMap<NeuralProbabilityRecord, Tensor<B, 1>> = HashMap::default();
 
         //Get actual weights that have been log normalised.
         let graph = graph.map(
@@ -290,11 +298,18 @@ impl<B: Backend> NeuralLexicon<B> {
                         );
                     }
 
+                    let tensor_element: LogProb<f64> =
+                        match LogProb::new(tensor.clone().into_scalar().elem()) {
+                            Ok(x) => x,
+                            Err(_) => LogProb::new(0.0).unwrap(),
+                        };
+
                     let neural_feature = NeuralProbabilityRecord::Feature {
                         lexemes: included_lexemes,
                         position: *pos,
                     };
-                    (Some((neural_feature, tensor)), feat.clone())
+                    weights_map.insert(neural_feature, tensor);
+                    (Some((neural_feature, tensor_element)), feat.clone())
                 }
                 None => (None, feat.clone()),
             },
@@ -305,8 +320,9 @@ impl<B: Backend> NeuralLexicon<B> {
             grammar_prob,
             grammar_lexemes,
             NeuralLexicon {
-                lemmas: lemmas.clone(),
                 graph,
+                lemmas: lemmas.clone(),
+                weights: weights_map,
                 root,
                 device,
             },
@@ -315,13 +331,10 @@ impl<B: Backend> NeuralLexicon<B> {
 }
 
 impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B> {
-    type Probability = (NeuralProbabilityRecord, Tensor<B, 1>);
+    type Probability = (NeuralProbabilityRecord, LogProb<f64>);
 
     fn probability_of_one(&self) -> Self::Probability {
-        (
-            NeuralProbabilityRecord::OneProb,
-            Tensor::<B, 1>::zeros([1], &self.device),
-        )
+        (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap())
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
@@ -346,8 +359,8 @@ impl<B: Backend> Lexiconable<(usize, usize), usize> for NeuralLexicon<B> {
         &crate::lexicon::FeatureOrLemma<(usize, usize), usize>,
         Self::Probability,
     )> {
-        if let Some((Some((prob_record, p_tensor)), feature)) = self.graph.node_weight(nx) {
-            Some((feature, (*prob_record, p_tensor.clone())))
+        if let Some((Some(p), feature)) = self.graph.node_weight(nx) {
+            Some((feature, *p))
         } else {
             None
         }

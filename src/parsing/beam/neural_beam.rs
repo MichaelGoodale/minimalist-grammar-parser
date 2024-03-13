@@ -1,4 +1,4 @@
-use burn::tensor::{backend::Backend, ElementConversion, Tensor};
+use burn::tensor::{backend::Backend, Tensor};
 
 use std::collections::hash_map::Entry;
 
@@ -9,7 +9,7 @@ use super::*;
 use ahash::HashMap;
 
 #[derive(Debug, Clone, Default)]
-pub struct StringPath(HashMap<NeuralProbabilityRecord, usize>);
+pub struct StringPath(HashMap<NeuralProbabilityRecord, u32>);
 
 impl StringPath {
     fn add_step(&mut self, x: NeuralProbabilityRecord) {
@@ -22,11 +22,15 @@ impl StringPath {
             }
         };
     }
+
+    pub fn into_iter(self) -> std::collections::hash_map::IntoIter<NeuralProbabilityRecord, u32> {
+        self.0.into_iter()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
-    log_probability: (NeuralProbabilityRecord, Tensor<B, 1>),
+    log_probability: (NeuralProbabilityRecord, LogProb<f64>),
     lexicon: &'a NeuralLexicon<B>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<Tensor<B, 1>>,
@@ -59,10 +63,7 @@ where
         )));
 
         Ok(NeuralBeam {
-            log_probability: (
-                NeuralProbabilityRecord::OneProb,
-                Tensor::<B, 1>::zeros([1], lexicon.device()),
-            ),
+            log_probability: (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()),
             queue,
             lexicon,
             generated_sentences: vec![],
@@ -78,14 +79,10 @@ where
         })
     }
 
-    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, Tensor<B, 1>, StringPath)> {
+    pub fn yield_good_parse(self) -> Option<(Tensor<B, 2>, StringPath)> {
         if self.queue.is_empty() && !self.generated_sentences.is_empty() {
             let sentence = self.generated_sentences;
-            Some((
-                Tensor::stack(sentence, 0),
-                self.log_probability.1.unsqueeze(),
-                self.probability_path,
-            ))
+            Some((Tensor::stack(sentence, 0), self.probability_path))
         } else {
             None
         }
@@ -111,14 +108,14 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: f64 = self.log_probability.clone().1.into_scalar().elem();
-        let b: f64 = other.log_probability.clone().1.into_scalar().elem();
-        a.partial_cmp(&b).unwrap()
+        let a = self.log_probability.1;
+        let b = other.log_probability.1;
+        a.cmp(&b)
     }
 }
 
 impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
-    type Probability = (NeuralProbabilityRecord, Tensor<B, 1>);
+    type Probability = (NeuralProbabilityRecord, LogProb<f64>);
 
     fn log_probability(&self) -> &Self::Probability {
         &self.log_probability
@@ -127,7 +124,7 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
     fn add_to_log_prob(&mut self, x: Self::Probability) {
         let (record, log_prob) = x;
         self.probability_path.add_step(record);
-        self.log_probability.1 = self.log_probability.1.clone() + log_prob;
+        self.log_probability.1 += log_prob;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {

@@ -1,8 +1,12 @@
 use burn::tensor::{backend::Backend, ElementConversion, Tensor};
 
+use std::collections::hash_map::Entry;
+
 use crate::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use super::*;
+
+use ahash::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
@@ -11,6 +15,7 @@ pub struct NeuralBeam<'a, B: Backend> {
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<Tensor<B, 1>>,
     rules: ThinVec<Rule>,
+    probability_path: HashMap<NeuralProbabilityRecord, usize>,
     top_id: usize,
     steps: usize,
     record_rules: bool,
@@ -50,6 +55,7 @@ where
             } else {
                 thin_vec![]
             },
+            probability_path: HashMap::default(),
             top_id: 0,
             steps: 0,
             record_rules,
@@ -102,7 +108,16 @@ impl<B: Backend> Beam<(usize, usize)> for NeuralBeam<'_, B> {
     }
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
-        self.log_probability.1 = self.log_probability.1.clone() + x.1;
+        let (record, log_prob) = x;
+        match self.probability_path.entry(record) {
+            Entry::Occupied(entry) => {
+                *entry.into_mut() += 1;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(1);
+            }
+        };
+        self.log_probability.1 = self.log_probability.1.clone() + log_prob;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {

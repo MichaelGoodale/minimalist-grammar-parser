@@ -519,6 +519,7 @@ fn test_loss() -> Result<()> {
         n_grammars: 50,
         n_strings_per_grammar: 50,
         padding_length: 10,
+        temperature: 1.0,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-128.0).unwrap(),
@@ -586,6 +587,7 @@ fn random_neural_generation() -> Result<()> {
         n_grammars: 50,
         n_strings_per_grammar: 50,
         padding_length: 10,
+        temperature: 1.0,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-128.0).unwrap(),
@@ -646,6 +648,7 @@ fn test_with_libtorch() -> Result<()> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 500,
+        temperature: 1.0,
         n_strings_per_grammar: 50,
         padding_length: 10,
         negative_weight: None,

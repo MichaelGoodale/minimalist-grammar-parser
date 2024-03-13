@@ -56,6 +56,11 @@ pub struct NeuralLexicon<B: Backend> {
     device: B::Device,
 }
 
+fn log_add<B: Backend>(x: Tensor<B, 1>, y: Tensor<B, 1>) -> Tensor<B, 1> {
+    let max = x.clone().max_pair(y.clone());
+    max.clone() + ((x - max.clone()).exp() + (y - max).exp()).log()
+}
+
 fn to_feature(pos: TensorPosition, category: usize) -> NeuralFeature {
     match pos {
         CATEGORY_POS => FeatureOrLemma::Feature(Feature::Category(category)),
@@ -259,12 +264,13 @@ impl<B: Backend> NeuralLexicon<B> {
                     included_lexemes.set(*lex, true);
                     for (lex, pos) in positions.iter().skip(1) {
                         included_lexemes.set(*lex, true);
-                        //TODO: Switch to log sum exp
-                        tensor = tensor
-                            + weights
+                        tensor = log_add(
+                            tensor,
+                            weights
                                 .clone()
                                 .slice([*lex..*lex + 1, *pos..*pos + 1])
-                                .reshape([1]);
+                                .reshape([1]),
+                        );
                     }
 
                     let neural_feature = NeuralProbabilityRecord::Feature {

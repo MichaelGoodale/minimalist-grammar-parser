@@ -4,7 +4,9 @@ use anyhow::Result;
 use beam::Beam;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
-use trees::{FutureTree, ParseMoment};
+pub(crate) use trees::FutureTree;
+pub(crate) use trees::GornIndex;
+pub(crate) use trees::ParseMoment;
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {

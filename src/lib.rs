@@ -12,8 +12,8 @@ use moka::sync::Cache;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use neural_lexicon::{NeuralFeature, NeuralLexicon, NeuralProbabilityRecord};
-use parsing::beam::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
+use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
+use neural::neural_lexicon::{NeuralFeature, NeuralLexicon, NeuralProbabilityRecord};
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
@@ -846,7 +846,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
 
 pub mod grammars;
 pub mod lexicon;
-pub mod neural_lexicon;
+pub mod neural;
 mod parsing;
 pub mod tree_building;
 

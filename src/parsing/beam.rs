@@ -586,5 +586,3 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         })
     }
 }
-
-pub mod neural_beam;

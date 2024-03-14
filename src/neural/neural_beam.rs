@@ -1,10 +1,21 @@
 use burn::tensor::backend::Backend;
 
-use std::collections::hash_map::Entry;
+use std::{
+    cmp::Reverse,
+    collections::{binary_heap::BinaryHeap, hash_map::Entry},
+};
 
-use crate::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
+use crate::lexicon::Lexiconable;
+use crate::parsing::{beam::Beam, FutureTree, GornIndex, ParseMoment, Rule};
+use crate::{ParseHeap, ParsingConfig};
+use anyhow::Result;
+use petgraph::graph::NodeIndex;
 
-use super::*;
+use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
+
+use logprob::LogProb;
+
+use thin_vec::{thin_vec, ThinVec};
 
 use ahash::HashMap;
 

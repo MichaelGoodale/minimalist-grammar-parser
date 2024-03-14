@@ -1,4 +1,7 @@
-use crate::lexicon::Feature;
+use crate::{
+    lexicon::Feature,
+    neural::loss::{get_neural_outputs, NeuralConfig},
+};
 use anyhow::Result;
 use rand::SeedableRng;
 
@@ -476,7 +479,8 @@ use burn::{
     backend::{ndarray::NdArrayDevice, NdArray},
     tensor::activation::log_softmax,
 };
-use neural::neural_lexicon::N_TYPES;
+use moka::sync::Cache;
+use neural::N_TYPES;
 
 #[test]
 fn test_loss() -> Result<()> {
@@ -519,7 +523,7 @@ fn test_loss() -> Result<()> {
         Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, n_pos], &NdArrayDevice::default());
 
     let targets =
-        Tensor::<Autodiff<NdArray>, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+        Tensor::<Autodiff<NdArray>, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 50,
@@ -590,7 +594,7 @@ fn random_neural_generation() -> Result<()> {
         &NdArrayDevice::default(),
     );
 
-    let targets = Tensor::<NdArray, 2, Int>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+    let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 50,

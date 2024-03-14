@@ -1,3 +1,4 @@
+use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::Context;
@@ -21,26 +22,6 @@ pub enum NeuralProbabilityRecord {
     OneProb,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-struct TensorPosition(usize);
-
-const LEMMA_POS: TensorPosition = TensorPosition(0);
-const CATEGORY_POS: TensorPosition = TensorPosition(1);
-const LICENSOR_POS: TensorPosition = TensorPosition(2);
-const LICENSEE_POS: TensorPosition = TensorPosition(3);
-const LEFT_SELECTOR_POS: TensorPosition = TensorPosition(4);
-const RIGHT_SELECTOR_POS: TensorPosition = TensorPosition(5);
-
-const POSITIONS: [TensorPosition; 6] = [
-    LEMMA_POS,
-    CATEGORY_POS,
-    LICENSOR_POS,
-    LICENSEE_POS,
-    LEFT_SELECTOR_POS,
-    RIGHT_SELECTOR_POS,
-];
-pub const N_TYPES: usize = 6;
-
 pub type NeuralFeature = FeatureOrLemma<(usize, usize), usize>;
 type NeuralGraph = DiGraph<
     (
@@ -50,17 +31,12 @@ type NeuralGraph = DiGraph<
     (),
 >;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     graph: NeuralGraph,
     root: NodeIndex,
     device: B::Device,
-}
-
-fn log_add<B: Backend>(x: Tensor<B, 1>, y: Tensor<B, 1>) -> Tensor<B, 1> {
-    let max = x.clone().max_pair(y.clone());
-    max.clone() + ((x - max.clone()).exp() + (y - max).exp()).log()
 }
 
 fn to_feature(pos: TensorPosition, category: usize) -> NeuralFeature {

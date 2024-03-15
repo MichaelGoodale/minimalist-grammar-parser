@@ -1868,6 +1868,7 @@ dependencies = [
  "moka",
  "petgraph",
  "rand",
+ "rand_distr",
  "thin-vec",
  "tinyvec",
 ]

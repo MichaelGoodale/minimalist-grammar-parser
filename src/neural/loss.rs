@@ -1,5 +1,8 @@
 use super::neural_beam::{StringPath, StringProbHistory};
-use super::neural_lexicon::{NeuralFeature, NeuralLexicon, NeuralProbabilityRecord};
+use super::neural_lexicon::{
+    GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
+};
+use super::utils::log_sum_exp_dim;
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::HashMap;
 use burn::tensor::Int;
@@ -17,14 +20,6 @@ pub struct NeuralConfig {
     pub negative_weight: Option<f64>,
     pub temperature: f64,
     pub parsing_config: ParsingConfig,
-}
-
-fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
-    tensor: Tensor<B, D>,
-    dim: usize,
-) -> Tensor<B, D2> {
-    let max = tensor.clone().max_dim(dim);
-    ((tensor - max.clone()).exp().sum_dim(dim).log() + max).squeeze(dim)
 }
 
 ///Not technically correct as it treats the number of categories as independent from the expected
@@ -56,25 +51,26 @@ fn retrieve_strings<B: Backend>(
 
 fn string_path_to_tensor<B: Backend>(
     strings: &[StringPath],
-    lemmas: &Tensor<B, 3>,
-    n_lemmas: usize,
+    g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
-    device: &B::Device,
 ) -> Tensor<B, 3> {
-    let mut s_tensor = log_softmax(
-        Tensor::zeros([1, n_lemmas], device)
-            .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, device)),
+    let mut s_tensor: Tensor<B, 3> = log_softmax(
+        Tensor::zeros([1, g.n_lemmas()], &g.device())
+            .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &g.device())),
         1,
     )
     .repeat(0, neural_config.padding_length)
     .unsqueeze_dim(0)
     .repeat(0, strings.len());
+
     for (s_i, s) in strings.iter().enumerate() {
-        for (w_i, (lexeme, pos)) in s.iter().enumerate() {
-            let values = lemmas
+        for (w_i, lexeme) in s.iter().enumerate() {
+            let values = g
+                .lemmas()
                 .clone()
-                .slice([*lexeme..lexeme + 1, *pos..pos + 1, 0..n_lemmas]);
-            s_tensor = s_tensor.slice_assign([s_i..s_i + 1, w_i..w_i + 1, 0..n_lemmas], values)
+                .slice([*lexeme..lexeme + 1, 0..g.n_lemmas()])
+                .unsqueeze_dim(0);
+            s_tensor = s_tensor.slice_assign([s_i..s_i + 1, w_i..w_i + 1, 0..g.n_lemmas()], values)
         }
     }
     s_tensor
@@ -103,11 +99,8 @@ fn get_string_prob<B: Backend>(
                 NeuralProbabilityRecord::MergeRuleProb => {
                     p = p.add_scalar(merge_p * (*count as f64))
                 }
-                NeuralProbabilityRecord::Feature { lexemes, position } => {
-                    let feature = NeuralProbabilityRecord::Feature {
-                        lexemes: *lexemes,
-                        position: *position,
-                    };
+                NeuralProbabilityRecord::Feature(lexeme) => {
+                    let feature = NeuralProbabilityRecord::Feature(*lexeme);
                     p = p.add(
                         lexicon
                             .get_weight(&feature)
@@ -177,31 +170,12 @@ pub type NeuralGrammarCache =
     Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
 
 pub fn get_grammar<B: Backend>(
-    lemmas: Tensor<B, 3>,
-    types: Tensor<B, 3>,
-    categories: Tensor<B, 3>,
-    weights: Tensor<B, 2>,
+    g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
     cache: &NeuralGrammarCache,
 ) -> (Option<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>) {
-    let lemmas = log_softmax(lemmas, 2);
-    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 2);
-    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 2);
-    let types = log_softmax(types, 2);
-    let categories = log_softmax(categories, 2);
-
-    let n_lemmas = lemmas.shape().dims[2];
-
-    let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
-        &types,
-        &types_distribution,
-        &categories,
-        &categories_distribution,
-        &lemmas,
-        &weights,
-        rng,
-    );
+    let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
 
     let entry = cache
         .entry(lexemes)
@@ -214,11 +188,11 @@ pub fn get_grammar<B: Backend>(
         } else {
             //(1, n_grammar_strings)
             let string_probs =
-                get_string_prob(string_probs, &lexicon, neural_config, &lemmas.device()).squeeze(0);
+                get_string_prob(string_probs, &lexicon, neural_config, &g.device()).squeeze(0);
 
             //(n_grammar_strings, padding_length, n_lemmas)
             Some((
-                string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &lemmas.device()),
+                string_path_to_tensor(strings, g, neural_config),
                 string_probs,
             ))
         },
@@ -227,22 +201,14 @@ pub fn get_grammar<B: Backend>(
 }
 
 pub fn get_neural_outputs<B: Backend>(
-    lemmas: Tensor<B, 3>,
-    types: Tensor<B, 3>,
-    categories: Tensor<B, 3>,
-    weights: Tensor<B, 2>,
+    g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
     cache: &NeuralGrammarCache,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
-    let lemmas = log_softmax(lemmas, 2);
     let n_targets = targets.shape().dims[0];
     let target_length = targets.shape().dims[1];
-    let types_distribution = log_softmax(types.clone() / neural_config.temperature, 2);
-    let categories_distribution = log_softmax(categories.clone() / neural_config.temperature, 2);
-    let types = log_softmax(types, 2);
-    let categories = log_softmax(categories, 2);
 
     let mut target_set: HashMap<_, _> = (0..n_targets)
         .map(|i| {
@@ -258,21 +224,12 @@ pub fn get_neural_outputs<B: Backend>(
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
 
-    let n_lemmas = lemmas.shape().dims[2];
     let mut loss = Tensor::zeros([1], &targets.device());
     let mut alternate_loss = Tensor::zeros([1], &targets.device());
     let mut valid_grammars = 0.0001;
 
     for _ in 0..neural_config.n_grammars {
-        let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(
-            &types,
-            &types_distribution,
-            &categories,
-            &categories_distribution,
-            &lemmas,
-            &weights,
-            rng,
-        );
+        let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
 
         let entry = cache
             .entry(lexemes)
@@ -292,8 +249,7 @@ pub fn get_neural_outputs<B: Backend>(
                 get_string_prob(string_probs, &lexicon, neural_config, &targets.device());
 
             //(n_grammar_strings, padding_length, n_lemmas)
-            let grammar =
-                string_path_to_tensor(strings, &lemmas, n_lemmas, neural_config, &targets.device());
+            let grammar = string_path_to_tensor(strings, g, neural_config);
 
             let reward: f32 = get_reward_loss(
                 &mut target_set,

@@ -467,7 +467,7 @@ where
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, (usize, usize), NeuralBeam>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam>,
     move_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
     merge_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
 }

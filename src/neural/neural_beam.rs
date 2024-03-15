@@ -20,18 +20,18 @@ use thin_vec::{thin_vec, ThinVec};
 use ahash::HashMap;
 
 #[derive(Debug, Clone, Default)]
-pub struct StringPath(Vec<(usize, usize)>);
+pub struct StringPath(Vec<usize>);
 
 impl StringPath {
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn into_iter(self) -> std::vec::IntoIter<(usize, usize)> {
+    pub fn into_iter(self) -> std::vec::IntoIter<usize> {
         self.0.into_iter()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, (usize, usize)> {
+    pub fn iter(&self) -> std::slice::Iter<'_, usize> {
         self.0.iter()
     }
 }
@@ -139,7 +139,7 @@ impl Ord for NeuralBeam {
     }
 }
 
-impl Beam<(usize, usize)> for NeuralBeam {
+impl Beam<usize> for NeuralBeam {
     type Probability = (NeuralProbabilityRecord, LogProb<f64>);
 
     fn log_probability(&self) -> &Self::Probability {
@@ -173,10 +173,10 @@ impl Beam<(usize, usize)> for NeuralBeam {
     }
 
     fn scan(
-        v: &mut ParseHeap<(usize, usize), Self>,
+        v: &mut ParseHeap<usize, Self>,
         moment: &ParseMoment,
         mut beam: Self,
-        s: &Option<(usize, usize)>,
+        s: &Option<usize>,
         child_node: NodeIndex,
         child_prob: Self::Probability,
     ) {

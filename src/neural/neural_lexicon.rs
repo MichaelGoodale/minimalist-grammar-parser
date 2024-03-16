@@ -550,7 +550,8 @@ impl<B: Backend> NeuralLexicon<B> {
                     for (n_i, n) in neighbours.iter().enumerate() {
                         let record = NeuralProbabilityRecord::Feature(*n);
                         let weight = weights.clone().slice([n_i..n_i + 1]);
-                        let log_prob = LogProb::new(weight.clone().into_scalar().elem()).unwrap();
+                        let log_prob = LogProb::new(weight.clone().into_scalar().elem())
+                            .unwrap_or(LogProb::new(0.0).unwrap());
                         node_map.insert(*n, Some((record, log_prob)));
                         weights_map.insert(record, weight);
                     }

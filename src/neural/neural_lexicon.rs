@@ -11,8 +11,8 @@ use itertools::Itertools;
 use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::Rng;
-use rand_distr::Distribution;
 use rand_distr::WeightedAliasIndex;
+use rand_distr::{Bernoulli, Distribution};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NeuralProbabilityRecord {
@@ -56,8 +56,8 @@ pub struct GrammarParameterization<B: Backend> {
     type_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     licensee_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     category_distributions: HashMap<usize, WeightedAliasIndex<f64>>,
-    silent_lemma_probability: HashMap<usize, f64>,
-    included_probs: HashMap<(usize, usize), f64>,
+    silent_lemma_probability: HashMap<usize, Bernoulli>,
+    included_probs: HashMap<(usize, usize), Bernoulli>,
     silent_probabilities: Tensor<B, 2>,
 }
 
@@ -138,12 +138,14 @@ impl<B: Backend> GrammarParameterization<B> {
 
             silent_lemma_probability.insert(
                 lexeme_idx,
-                heated_lemmas
-                    .clone()
-                    .slice([lexeme_idx..lexeme_idx + 1, 0..1])
-                    .exp()
-                    .into_scalar()
-                    .elem(),
+                Bernoulli::new(
+                    heated_lemmas
+                        .clone()
+                        .slice([lexeme_idx..lexeme_idx + 1, 0..1])
+                        .exp()
+                        .into_scalar()
+                        .elem(),
+                )?,
             );
             for position in 0..n_licensees {
                 licensee_category_distributions.insert(
@@ -159,27 +161,31 @@ impl<B: Backend> GrammarParameterization<B> {
                 );
                 included_probs.insert(
                     (lexeme_idx, position),
-                    included_features
-                        .clone()
-                        .slice([lexeme_idx..lexeme_idx + 1, position..position + 1])
-                        .exp()
-                        .into_scalar()
-                        .elem(),
+                    Bernoulli::new(
+                        included_features
+                            .clone()
+                            .slice([lexeme_idx..lexeme_idx + 1, position..position + 1])
+                            .exp()
+                            .into_scalar()
+                            .elem(),
+                    )?,
                 );
             }
 
             for position in 0..n_features {
                 included_probs.insert(
                     (lexeme_idx, position + n_licensees),
-                    included_features
-                        .clone()
-                        .slice([
-                            lexeme_idx..lexeme_idx + 1,
-                            n_licensees + position..n_licensees + position + 1,
-                        ])
-                        .exp()
-                        .into_scalar()
-                        .elem(),
+                    Bernoulli::new(
+                        included_features
+                            .clone()
+                            .slice([
+                                lexeme_idx..lexeme_idx + 1,
+                                n_licensees + position..n_licensees + position + 1,
+                            ])
+                            .exp()
+                            .into_scalar()
+                            .elem(),
+                    )?,
                 );
                 type_distributions.insert(
                     (lexeme_idx, position),
@@ -273,20 +279,24 @@ impl<B: Backend> GrammarParameterization<B> {
     }
 
     fn is_licensee(&self, lexeme: usize, n_feature: usize, rng: &mut impl Rng) -> bool {
-        rng.gen_bool(*self.included_probs.get(&(lexeme, n_feature)).unwrap())
+        self.included_probs
+            .get(&(lexeme, n_feature))
+            .unwrap()
+            .sample(rng)
     }
 
     fn is_feature(&self, lexeme: usize, n_feature: usize, rng: &mut impl Rng) -> bool {
-        rng.gen_bool(
-            *self
-                .included_probs
-                .get(&(lexeme, self.n_licensees + n_feature))
-                .unwrap(),
-        )
+        self.included_probs
+            .get(&(lexeme, self.n_licensees + n_feature))
+            .unwrap()
+            .sample(rng)
     }
 
     fn is_silent(&self, lexeme: usize, rng: &mut impl Rng) -> bool {
-        rng.gen_bool(*self.silent_lemma_probability.get(&lexeme).unwrap())
+        self.silent_lemma_probability
+            .get(&lexeme)
+            .unwrap()
+            .sample(rng)
     }
 
     fn get_lexeme_probability(
@@ -551,7 +561,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         let record = NeuralProbabilityRecord::Feature(*n);
                         let weight = weights.clone().slice([n_i..n_i + 1]);
                         let log_prob = LogProb::new(weight.clone().into_scalar().elem())
-                            .unwrap_or(LogProb::new(0.0).unwrap());
+                            .unwrap_or_else(|_| LogProb::new(0.0).unwrap());
                         node_map.insert(*n, Some((record, log_prob)));
                         weights_map.insert(record, weight);
                     }

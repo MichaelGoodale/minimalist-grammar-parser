@@ -174,11 +174,15 @@ pub fn get_grammar<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
     cache: &NeuralGrammarCache,
-) -> (Option<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>) {
+) -> (
+    Option<(Tensor<B, 3>, Tensor<B, 1>)>,
+    Tensor<B, 1>,
+    Vec<Vec<NeuralFeature>>,
+) {
     let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
 
     let entry = cache
-        .entry(lexemes)
+        .entry(lexemes.clone())
         .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
     let (strings, string_probs) = entry.value();
 
@@ -197,6 +201,7 @@ pub fn get_grammar<B: Backend>(
             ))
         },
         p_of_lex,
+        lexemes,
     )
 }
 

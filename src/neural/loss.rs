@@ -279,9 +279,9 @@ pub fn get_neural_outputs<B: Backend>(
 
             let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1).sum_dim(0);
 
-            alternate_loss = alternate_loss
-                + (-p_of_lex * (grammar_loss.clone().detach().add_scalar(5.0)).exp());
-            loss = loss + grammar_loss;
+            //alternate_loss = alternate_loss
+            //    + (-p_of_lex * (grammar_loss.clone().detach().add_scalar(5.0)).exp());
+            loss = loss + grammar_loss + p_of_lex;
             valid_grammars += 1.0;
         }
     }

@@ -76,15 +76,17 @@ fn get_distribution<B: Backend, const D: usize>(
     .unwrap()
 }
 
-fn clamp_prob(x: f64) -> f64 {
+fn clamp_prob(x: f64) -> anyhow::Result<f64> {
     if x > 1.0 {
         eprintln!("Clampling prob {x} to 1.0");
-        1.0
+        Ok(1.0)
     } else if x < 0.0 {
         eprintln!("Clampling prob {x} to 0.0");
-        0.0
+        Ok(0.0)
+    } else if x.is_nan() {
+        bail!("Probability is NaN");
     } else {
-        x
+        Ok(x)
     }
 }
 
@@ -157,7 +159,7 @@ impl<B: Backend> GrammarParameterization<B> {
                         .exp()
                         .into_scalar()
                         .elem(),
-                ))?,
+                )?)?,
             );
             for position in 0..n_licensees {
                 licensee_category_distributions.insert(
@@ -180,7 +182,7 @@ impl<B: Backend> GrammarParameterization<B> {
                             .exp()
                             .into_scalar()
                             .elem(),
-                    ))?,
+                    )?)?,
                 );
             }
 
@@ -197,7 +199,7 @@ impl<B: Backend> GrammarParameterization<B> {
                             .exp()
                             .into_scalar()
                             .elem(),
-                    ))?,
+                    )?)?,
                 );
                 type_distributions.insert(
                     (lexeme_idx, position),

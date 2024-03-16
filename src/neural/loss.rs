@@ -213,8 +213,9 @@ pub fn get_neural_outputs<B: Backend>(
     cache: &NeuralGrammarCache,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
     let n_targets = targets.shape().dims[0];
-    let target_length = targets.shape().dims[1];
+    //let target_length = targets.shape().dims[1];
 
+    /*
     let mut target_set: HashMap<_, _> = (0..n_targets)
         .map(|i| {
             let data = targets
@@ -225,7 +226,7 @@ pub fn get_neural_outputs<B: Backend>(
                 .convert::<u32>();
             (data.value, false)
         })
-        .collect();
+        .collect();*/
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dim::<3>(2).unsqueeze_dim(1);
 
@@ -256,14 +257,13 @@ pub fn get_neural_outputs<B: Backend>(
             //(n_grammar_strings, padding_length, n_lemmas)
             let grammar = string_path_to_tensor(strings, g, neural_config);
 
+            /*
             let reward: f32 = get_reward_loss(
                 &mut target_set,
                 &grammar.clone(),
                 neural_config.n_strings_to_sample,
                 rng,
-            );
-
-            alternate_loss = alternate_loss + (-p_of_lex * reward);
+            );*/
 
             //(n_targets, n_grammar_strings, padding_length, n_lemmas)
             let grammar: Tensor<B, 4> = grammar.unsqueeze().repeat(0, n_targets);
@@ -277,8 +277,10 @@ pub fn get_neural_outputs<B: Backend>(
                 .squeeze::<2>(2)
                 + string_probs;
 
-            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1);
-            loss = loss + (grammar_loss.sum_dim(0));
+            let grammar_loss: Tensor<B, 1> = log_sum_exp_dim(grammar_loss, 1).sum_dim(0);
+
+            alternate_loss = alternate_loss + (p_of_lex * grammar_loss.clone().detach());
+            loss = loss + grammar_loss;
             valid_grammars += 1.0;
         }
     }

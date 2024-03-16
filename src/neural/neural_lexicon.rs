@@ -76,6 +76,18 @@ fn get_distribution<B: Backend, const D: usize>(
     .unwrap()
 }
 
+fn clamp_prob(x: f64) -> f64 {
+    if x > 1.0 {
+        eprintln!("Clampling prob {x} to 1.0");
+        1.0
+    } else if x < 0.0 {
+        eprintln!("Clampling prob {x} to 0.0");
+        0.0
+    } else {
+        x
+    }
+}
+
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
         types: Tensor<B, 3>,               // (lexeme, n_features, types)
@@ -138,14 +150,14 @@ impl<B: Backend> GrammarParameterization<B> {
 
             silent_lemma_probability.insert(
                 lexeme_idx,
-                Bernoulli::new(
+                Bernoulli::new(clamp_prob(
                     heated_lemmas
                         .clone()
                         .slice([lexeme_idx..lexeme_idx + 1, 0..1])
                         .exp()
                         .into_scalar()
                         .elem(),
-                )?,
+                ))?,
             );
             for position in 0..n_licensees {
                 licensee_category_distributions.insert(
@@ -161,21 +173,21 @@ impl<B: Backend> GrammarParameterization<B> {
                 );
                 included_probs.insert(
                     (lexeme_idx, position),
-                    Bernoulli::new(
+                    Bernoulli::new(clamp_prob(
                         included_features
                             .clone()
                             .slice([lexeme_idx..lexeme_idx + 1, position..position + 1])
                             .exp()
                             .into_scalar()
                             .elem(),
-                    )?,
+                    ))?,
                 );
             }
 
             for position in 0..n_features {
                 included_probs.insert(
                     (lexeme_idx, position + n_licensees),
-                    Bernoulli::new(
+                    Bernoulli::new(clamp_prob(
                         included_features
                             .clone()
                             .slice([
@@ -185,7 +197,7 @@ impl<B: Backend> GrammarParameterization<B> {
                             .exp()
                             .into_scalar()
                             .elem(),
-                    )?,
+                    ))?,
                 );
                 type_distributions.insert(
                     (lexeme_idx, position),

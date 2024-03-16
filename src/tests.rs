@@ -5,6 +5,8 @@ use crate::{
 use anyhow::Result;
 use rand::SeedableRng;
 
+use self::neural::neural_lexicon::GrammarParameterization;
+
 use super::*;
 use crate::{
     grammars::SIMPLESTABLER2011,
@@ -477,51 +479,62 @@ use burn::tensor::{ElementConversion, Tensor};
 use burn::{
     backend::Autodiff,
     backend::{ndarray::NdArrayDevice, NdArray},
-    tensor::activation::log_softmax,
 };
 use moka::sync::Cache;
 use neural::N_TYPES;
 
 #[test]
 fn test_loss() -> Result<()> {
+    let cache = Cache::new(100);
     let n_lexemes = 2;
     let n_pos = 3;
-    let cache = Cache::new(100);
+    let n_categories = 1;
+    let n_licensees = 1;
+
+    let categories =
+        Tensor::<Autodiff<NdArray>, 2>::ones([n_lexemes, n_categories], &NdArrayDevice::default());
 
     let mut types = Tensor::<Autodiff<NdArray>, 3>::zeros(
         [n_lexemes, n_pos, N_TYPES],
         &NdArrayDevice::default(),
     );
-    let slices = [
-        [0..2, 0..1, 1..2],
-        [0..1, 1..2, 4..5],
-        [0..1, 2..3, 0..1],
-        [1..2, 1..2, 0..1],
-    ];
+    let slices = [[1..2, 0..1, 1..2]];
 
     let dev = types.device();
     for slice in slices {
         types = types.slice_assign(
             slice.clone(),
-            Tensor::full(slice.map(|x| x.len()), 5.0, &dev),
+            Tensor::full(slice.map(|x| x.len()), 50.0, &dev),
         );
     }
 
-    types = log_softmax(types, 2);
+    let type_categories = Tensor::<Autodiff<NdArray>, 3>::ones(
+        [n_lexemes, n_pos, n_categories],
+        &NdArrayDevice::default(),
+    );
 
-    let mut categories =
-        Tensor::<Autodiff<NdArray>, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
-    categories = categories.slice_assign([0..2, 0..3, 0..1], Tensor::full([2, 3, 1], 5.0, &dev));
-    categories = log_softmax(categories, 2);
+    let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default())
+        .slice_assign(
+            [0..n_lexemes, 1..2],
+            Tensor::full([n_lexemes, 1], 100.0, &NdArrayDevice::default()),
+        );
+    let weights = Tensor::<Autodiff<NdArray>, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
-    let mut lemmas =
-        Tensor::<Autodiff<NdArray>, 3>::zeros([n_lexemes, n_pos, 2], &NdArrayDevice::default());
-    lemmas = lemmas.slice_assign([0..2, 0..3, 1..2], Tensor::full([2, 3, 1], 5.0, &dev));
-    lemmas = log_softmax(lemmas, 2);
+    let licensee_categories = Tensor::<Autodiff<NdArray>, 3>::zeros(
+        [n_lexemes, n_licensees, n_categories],
+        &NdArrayDevice::default(),
+    );
 
-    let weights =
-        Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, n_pos], &NdArrayDevice::default());
-
+    let included_features = Tensor::<Autodiff<NdArray>, 2>::full(
+        [n_lexemes, n_licensees + n_pos],
+        -100.0,
+        &NdArrayDevice::default(),
+    )
+    .slice_assign(
+        [1..2, n_licensees..n_licensees + 1],
+        Tensor::full([1, 1], 100.0, &dev),
+    );
+    dbg!(&included_features);
     let targets =
         Tensor::<Autodiff<NdArray>, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
@@ -540,20 +553,21 @@ fn test_loss() -> Result<()> {
             4000,
         ),
     };
-    let (loss, _) = get_neural_outputs(
-        lemmas.clone(),
-        types.clone(),
-        categories.clone(),
+    let g = GrammarParameterization::new(
+        types,
+        type_categories,
+        licensee_categories,
+        included_features,
+        lemmas,
+        categories,
         weights,
-        targets,
-        &config,
-        &mut rng,
-        &cache,
-    );
+        1.0,
+    )?;
+    let (loss, _) = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
 
     let _g = loss.backward();
     let loss: f32 = loss.into_scalar().elem();
-    approx::assert_relative_eq!(loss, 88.4132);
+    approx::assert_relative_eq!(loss, 47.43114);
     Ok(())
 }
 
@@ -562,38 +576,59 @@ fn random_neural_generation() -> Result<()> {
     let cache = Cache::new(100);
     let n_lexemes = 2;
     let n_pos = 5;
-    let lemmas = log_softmax(
-        Tensor::<NdArray, 3>::random(
-            [n_lexemes, n_pos, 10],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
-        ),
-        2,
-    );
-
-    let types = log_softmax(
-        Tensor::<NdArray, 3>::random(
-            [n_lexemes, n_pos, N_TYPES],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
-        ),
-        2,
-    );
-
-    let categories = log_softmax(
-        Tensor::<NdArray, 3>::random(
-            [n_lexemes, n_pos, 2],
-            burn::tensor::Distribution::Default,
-            &NdArrayDevice::default(),
-        ),
-        2,
-    );
-    let weights = Tensor::<NdArray, 2>::random(
-        [n_lexemes, n_pos],
+    let n_licensee = 2;
+    let n_categories = 5;
+    let n_lemmas = 10;
+    let lemmas = Tensor::<NdArray, 2>::random(
+        [n_lexemes, n_lemmas],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
     );
 
+    let types = Tensor::<NdArray, 3>::random(
+        [n_lexemes, n_pos, N_TYPES],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+
+    let type_categories = Tensor::<NdArray, 3>::random(
+        [n_lexemes, n_pos, N_TYPES],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+
+    let licensee_categories = Tensor::<NdArray, 3>::random(
+        [n_lexemes, n_licensee, n_categories],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let included_features = Tensor::<NdArray, 2>::random(
+        [n_lexemes, n_licensee + n_categories],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+
+    let categories = Tensor::<NdArray, 2>::random(
+        [n_lexemes, n_categories],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+    let weights = Tensor::<NdArray, 1>::random(
+        [n_lexemes],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
+
+    let g = GrammarParameterization::new(
+        types,
+        type_categories,
+        licensee_categories,
+        included_features,
+        lemmas,
+        categories,
+        weights,
+        1.0,
+    )?;
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
@@ -611,15 +646,6 @@ fn random_neural_generation() -> Result<()> {
             2000,
         ),
     };
-    get_neural_outputs(
-        lemmas.clone(),
-        types.clone(),
-        categories.clone(),
-        weights,
-        targets,
-        &config,
-        &mut rng,
-        &cache,
-    );
+    get_neural_outputs(&g, targets, &config, &mut rng, &cache);
     Ok(())
 }

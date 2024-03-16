@@ -3,10 +3,10 @@ use std::ops::Range;
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
-use anyhow::Context;
-use bitvec::array::BitArray;
+use anyhow::{bail, Context};
 use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
+use burn::tensor::{Data, Int};
 use itertools::Itertools;
 use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
@@ -42,19 +42,19 @@ pub struct NeuralLexicon<B: Backend> {
 pub struct GrammarParameterization<B: Backend> {
     types: Tensor<B, 3>,               //(lexeme, lexeme_pos, type_distribution)
     type_categories: Tensor<B, 3>,     //(lexeme, lexeme_pos, categories_position)
-    licensor_categories: Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
+    licensee_categories: Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
     lemmas: Tensor<B, 2>,              //(lexeme, lemma_distribution)
     categories: Tensor<B, 2>,          //(lexeme, categories)
     weights: Tensor<B, 1>,             //(lexeme, lexeme_weight)
-    included_features: Tensor<B, 2>,   //(lexeme, n_licensor + n_features)
+    included_features: Tensor<B, 2>,   //(lexeme, n_licensee + n_features)
+    opposite_included_features: Tensor<B, 2>, //(lexeme, n_licensee + n_features)
     n_lexemes: usize,
     n_features: usize,
-    n_categories: usize,
-    n_licensors: usize,
+    n_licensees: usize,
     n_lemmas: usize,
     type_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     type_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
-    licensor_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
+    licensee_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     category_distributions: HashMap<usize, WeightedAliasIndex<f64>>,
     silent_lemma_probability: HashMap<usize, f64>,
     included_probs: HashMap<(usize, usize), f64>,
@@ -79,21 +79,31 @@ fn get_distribution<B: Backend, const D: usize>(
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
         types: Tensor<B, 3>,               // (lexeme, n_features, types)
-        type_categories: Tensor<B, 3>,     // (lexeme, n_features, categories)
-        licensor_categories: Tensor<B, 3>, // (lexeme, n_licensor, categories)
-        included_features: Tensor<B, 2>,   // (lexeme, n_licensor + n_features)
+        type_categories: Tensor<B, 3>,     // (lexeme, n_features, N_TYPES)
+        licensee_categories: Tensor<B, 3>, // (lexeme, n_licensee, categories)
+        included_features: Tensor<B, 2>,   // (lexeme, n_licensee + n_features)
         lemmas: Tensor<B, 2>,              // (lexeme, n_lemmas)
         categories: Tensor<B, 2>,          // (lexeme, n_categories)
         weights: Tensor<B, 1>,             // (lexeme)
         temperature: f64,
-    ) -> GrammarParameterization<B> {
+    ) -> anyhow::Result<GrammarParameterization<B>> {
         let [n_lexemes, n_features, n_categories] = type_categories.shape().dims;
         let n_lemmas = lemmas.shape().dims[1];
-        let n_licensors = licensor_categories.shape().dims[1];
+        let n_licensees = licensee_categories.shape().dims[1];
+
+        if n_lemmas <= 1 {
+            bail!(format!("The model needs at least 2 lemmas, not {n_lemmas} since idx=0 is the silent lemma."))
+        }
+        if types.shape().dims[2] != N_TYPES {
+            bail!(format!(
+                "Tensor types must be of shape [n_lexemes, n_features, {N_TYPES}]"
+            ));
+        }
+
         let mut type_distributions = HashMap::default();
         let mut type_category_distributions = HashMap::default();
         let mut category_distributions = HashMap::default();
-        let mut licensor_category_distributions = HashMap::default();
+        let mut licensee_category_distributions = HashMap::default();
         let mut silent_lemma_probability = HashMap::default();
         let mut included_probs = HashMap::default();
 
@@ -101,24 +111,29 @@ impl<B: Backend> GrammarParameterization<B> {
         let heated_type_categories = log_softmax(type_categories.clone() / temperature, 2);
         let heated_types = log_softmax(types.clone() / temperature, 2);
         let heated_lemmas = log_softmax(lemmas.clone() / temperature, 1);
-        let heated_licensor_categories = log_softmax(licensor_categories.clone() / temperature, 2);
+        let heated_licensee_categories = log_softmax(licensee_categories.clone() / temperature, 2);
 
         let included_features = log_sigmoid(included_features);
+        let opposite_included_features = (-included_features.clone().exp()).log1p();
 
         let types = log_softmax(types, 2);
         let type_categories = log_softmax(type_categories, 2);
         let lemmas = log_softmax(lemmas, 1);
-        let licensor_categories = log_softmax(licensor_categories, 1);
+        let licensee_categories = log_softmax(licensee_categories, 1);
         let categories = log_softmax(categories, 1);
 
-        let silent_probability = lemmas.clone().slice([0..n_lexemes, 0..1]);
-        let non_silent_probability =
-            log_sum_exp_dim(lemmas.clone().slice([0..n_lexemes, 1..n_lemmas]), 1);
+        let silent_probability: Tensor<B, 1> =
+            lemmas.clone().slice([0..n_lexemes, 0..1]).squeeze(1);
+        let non_silent_probability: Tensor<B, 1> =
+            log_sum_exp_dim::<B, 2, 1>(lemmas.clone().slice([0..n_lexemes, 1..n_lemmas]), 1);
 
         for lexeme_idx in 0..n_lexemes {
             category_distributions.insert(
                 lexeme_idx,
-                get_distribution(&heated_categories, [lexeme_idx..lexeme_idx + 1, 0..N_TYPES]),
+                get_distribution(
+                    &heated_categories,
+                    [lexeme_idx..lexeme_idx + 1, 0..n_categories],
+                ),
             );
 
             silent_lemma_probability.insert(
@@ -130,11 +145,11 @@ impl<B: Backend> GrammarParameterization<B> {
                     .into_scalar()
                     .elem(),
             );
-            for position in 0..n_licensors {
-                licensor_category_distributions.insert(
+            for position in 0..n_licensees {
+                licensee_category_distributions.insert(
                     (lexeme_idx, position),
                     get_distribution(
-                        &heated_licensor_categories,
+                        &heated_licensee_categories,
                         [
                             lexeme_idx..lexeme_idx + 1,
                             position..position + 1,
@@ -155,12 +170,12 @@ impl<B: Backend> GrammarParameterization<B> {
 
             for position in 0..n_features {
                 included_probs.insert(
-                    (lexeme_idx, position),
+                    (lexeme_idx, position + n_licensees),
                     included_features
                         .clone()
                         .slice([
                             lexeme_idx..lexeme_idx + 1,
-                            n_licensors + position..n_licensors + position + 1,
+                            n_licensees + position..n_licensees + position + 1,
                         ])
                         .exp()
                         .into_scalar()
@@ -184,34 +199,40 @@ impl<B: Backend> GrammarParameterization<B> {
                         [
                             lexeme_idx..lexeme_idx + 1,
                             position..position + 1,
-                            0..N_TYPES,
+                            0..n_categories,
                         ],
                     ),
                 );
             }
         }
 
-        GrammarParameterization {
+        Ok(GrammarParameterization {
             types,
             type_categories,
             lemmas,
             weights,
-            licensor_categories,
+            licensee_categories,
             included_features,
+            opposite_included_features,
             n_lexemes,
             n_features,
-            n_categories,
-            n_licensors,
+            n_licensees,
             n_lemmas,
             categories,
-            licensor_category_distributions,
+            licensee_category_distributions,
             category_distributions,
             type_distributions,
             included_probs,
             type_category_distributions,
             silent_lemma_probability,
-            silent_probabilities: Tensor::cat(vec![silent_probability, non_silent_probability], 1),
-        }
+            silent_probabilities: Tensor::cat(
+                vec![
+                    silent_probability.unsqueeze_dim(1),
+                    non_silent_probability.unsqueeze_dim(1),
+                ],
+                1,
+            ),
+        })
     }
 
     pub fn device(&self) -> Device<B> {
@@ -225,13 +246,13 @@ impl<B: Backend> GrammarParameterization<B> {
             .sample(rng)
     }
 
-    fn sample_licensor_category(
+    fn sample_licensee_category(
         &self,
         lexeme: usize,
         position: usize,
         rng: &mut impl Rng,
     ) -> usize {
-        self.licensor_category_distributions
+        self.licensee_category_distributions
             .get(&(lexeme, position))
             .unwrap()
             .sample(rng)
@@ -251,7 +272,7 @@ impl<B: Backend> GrammarParameterization<B> {
             .sample(rng)
     }
 
-    fn is_licensor(&self, lexeme: usize, n_feature: usize, rng: &mut impl Rng) -> bool {
+    fn is_licensee(&self, lexeme: usize, n_feature: usize, rng: &mut impl Rng) -> bool {
         rng.gen_bool(*self.included_probs.get(&(lexeme, n_feature)).unwrap())
     }
 
@@ -259,23 +280,130 @@ impl<B: Backend> GrammarParameterization<B> {
         rng.gen_bool(
             *self
                 .included_probs
-                .get(&(lexeme, self.n_licensors + n_feature))
+                .get(&(lexeme, self.n_licensees + n_feature))
                 .unwrap(),
         )
     }
 
     fn is_silent(&self, lexeme: usize, rng: &mut impl Rng) -> bool {
-        !rng.gen_bool(*self.silent_lemma_probability.get(&lexeme).unwrap())
+        rng.gen_bool(*self.silent_lemma_probability.get(&lexeme).unwrap())
     }
 
     fn get_lexeme_probability(
         &self,
-        licensors: &[(usize, usize)],
+        lexeme_idx: usize,
+        licensees: &[(usize, usize)],
         features: &[(usize, usize, usize)],
-        category: &usize,
+        lexeme_category: &usize,
         is_silent: &bool,
     ) -> Tensor<B, 1> {
-        todo!();
+        let mut probability = Tensor::zeros([1], &self.device());
+        let mut feature_positions: Vec<u32> = vec![];
+        for (licensee_pos, category) in licensees {
+            feature_positions.push(*licensee_pos as u32);
+            probability = probability
+                + self
+                    .licensee_categories
+                    .clone()
+                    .slice([
+                        lexeme_idx..lexeme_idx + 1,
+                        *licensee_pos..licensee_pos + 1,
+                        *category..category + 1,
+                    ])
+                    .reshape([1]);
+        }
+        for (feature_pos, category, feature_type) in features {
+            feature_positions.push((feature_pos + self.n_licensees) as u32);
+            probability = probability
+                + self
+                    .type_categories
+                    .clone()
+                    .slice([
+                        lexeme_idx..lexeme_idx + 1,
+                        *feature_pos..feature_pos + 1,
+                        *category..category + 1,
+                    ])
+                    .reshape([1])
+                + self
+                    .types
+                    .clone()
+                    .slice([
+                        lexeme_idx..lexeme_idx + 1,
+                        *feature_pos..feature_pos + 1,
+                        *feature_type..feature_type + 1,
+                    ])
+                    .reshape([1]);
+        }
+
+        probability = probability
+            + self
+                .categories
+                .clone()
+                .slice([
+                    lexeme_idx..lexeme_idx + 1,
+                    *lexeme_category..lexeme_category + 1,
+                ])
+                .squeeze(1);
+
+        probability = probability
+            + self
+                .silent_probabilities
+                .clone()
+                .slice([
+                    lexeme_idx..lexeme_idx + 1,
+                    match is_silent {
+                        true => 0..1,
+                        false => 1..2,
+                    },
+                ])
+                .squeeze(1);
+
+        let mut curr_feat = feature_positions.iter();
+        let mut next = curr_feat.next();
+        let opposite_idx = (0..(self.n_licensees + self.n_features) as u32)
+            .filter(|i| {
+                if let Some(pos) = next {
+                    if pos == i {
+                        next = curr_feat.next();
+                        false
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                }
+            })
+            .collect_vec();
+
+        let idx = Tensor::<B, 1, Int>::from_data(
+            Data::<_, 1>::from(feature_positions.as_slice()).convert(),
+            &self.device(),
+        );
+
+        let opposite_idx = Tensor::<B, 1, Int>::from_data(
+            Data::<_, 1>::from(opposite_idx.as_slice()).convert(),
+            &self.device(),
+        );
+
+        probability
+            + self
+                .included_features
+                .clone()
+                .slice([
+                    lexeme_idx..lexeme_idx + 1,
+                    0..(self.n_features + self.n_licensees),
+                ])
+                .select(1, idx)
+                .sum()
+            + self
+                .opposite_included_features
+                .clone()
+                .slice([
+                    lexeme_idx..lexeme_idx + 1,
+                    0..(self.n_features + self.n_licensees),
+                ])
+                .select(1, opposite_idx)
+                .sum()
     }
 
     pub fn n_lemmas(&self) -> usize {
@@ -306,17 +434,22 @@ impl<B: Backend> NeuralLexicon<B> {
         let mut grammar_prob = Tensor::<B, 1>::zeros([1], &grammar_params.device());
         let mut lexemes = vec![];
         for lexeme_idx in 0..grammar_params.n_lexemes {
-            let licensors: Vec<_> = (0..grammar_params.n_licensors)
-                .filter_map(|i| match grammar_params.is_licensor(lexeme_idx, i, rng) {
-                    true => Some((
-                        i,
-                        grammar_params.sample_licensor_category(lexeme_idx, i, rng),
-                    )),
-                    false => None,
-                })
-                .collect();
+            let licensees: Vec<_> = if lexeme_idx > 0 {
+                (0..grammar_params.n_licensees)
+                    .filter_map(|i| match grammar_params.is_licensee(lexeme_idx, i, rng) {
+                        true => Some((
+                            i,
+                            grammar_params.sample_licensee_category(lexeme_idx, i, rng),
+                        )),
+                        false => None,
+                    })
+                    .collect()
+            } else {
+                //Ensure there is always a lexeme of category 0 without licensees
+                vec![]
+            };
 
-            let features: Vec<_> = (0..grammar_params.n_licensors)
+            let features: Vec<_> = (0..grammar_params.n_features)
                 .filter_map(|i| match grammar_params.is_feature(lexeme_idx, i, rng) {
                     true => Some((
                         i,
@@ -327,15 +460,21 @@ impl<B: Backend> NeuralLexicon<B> {
                 })
                 .collect();
 
-            let category = grammar_params.sample_category(lexeme_idx, rng);
+            let category = if lexeme_idx == 0 {
+                //Ensure there is always a lexeme of category 0
+                0
+            } else {
+                grammar_params.sample_category(lexeme_idx, rng)
+            };
             let is_silent = grammar_params.is_silent(lexeme_idx, rng);
             grammar_prob = grammar_prob
-                + grammar_params
-                    .get_lexeme_probability(&licensors, &features, &category, &is_silent);
+                + grammar_params.get_lexeme_probability(
+                    lexeme_idx, &licensees, &features, &category, &is_silent,
+                );
 
-            let mut lexeme: Vec<NeuralFeature> = licensors
+            let mut lexeme: Vec<NeuralFeature> = licensees
                 .into_iter()
-                .map(|(_pos, cat)| NeuralFeature::Feature(Feature::Licensor(cat)))
+                .map(|(_pos, cat)| NeuralFeature::Feature(Feature::Licensee(cat)))
                 .collect();
             lexeme.push(NeuralFeature::Feature(Feature::Category(category)));
             lexeme.extend(
@@ -366,8 +505,12 @@ impl<B: Backend> NeuralLexicon<B> {
                         }
                     }
                 }
-                parent = node
-                    .unwrap_or_else(|| graph.add_node((Some(vec![lexeme_idx]), feature.clone())));
+
+                parent = node.unwrap_or_else(|| {
+                    let node = graph.add_node((Some(vec![lexeme_idx]), feature.clone()));
+                    graph.add_edge(parent, node, ());
+                    node
+                });
             }
         }
 
@@ -407,7 +550,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     for (n_i, n) in neighbours.iter().enumerate() {
                         let record = NeuralProbabilityRecord::Feature(*n);
                         let weight = weights.clone().slice([n_i..n_i + 1]);
-                        let log_prob = LogProb::new(weights.clone().into_scalar().elem()).unwrap();
+                        let log_prob = LogProb::new(weight.clone().into_scalar().elem()).unwrap();
                         node_map.insert(*n, Some((record, log_prob)));
                         weights_map.insert(record, weight);
                     }
@@ -420,6 +563,7 @@ impl<B: Backend> NeuralLexicon<B> {
             |n, (_log, feat)| (node_map.remove(&n).unwrap(), feat.clone()),
             |_, _: &()| (),
         );
+        dbg!(&lexemes);
 
         (
             grammar_prob,
@@ -488,54 +632,66 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
 #[cfg(test)]
 mod test {
     use burn::backend::{ndarray::NdArrayDevice, NdArray};
-    use burn::tensor::activation::log_softmax;
     use burn::tensor::Tensor;
-    use rand::SeedableRng;
 
-    use super::{NeuralLexicon, N_TYPES};
+    use super::{GrammarParameterization, N_TYPES};
 
     #[test]
-    fn sample_grammar() -> anyhow::Result<()> {
-        let lemmas = log_softmax(
-            Tensor::<NdArray, 3>::random(
-                [3, 5, 3],
-                burn::tensor::Distribution::Default,
-                &NdArrayDevice::default(),
-            ),
-            2,
-        );
-        let types = log_softmax(
-            Tensor::<NdArray, 3>::random(
-                [3, 5, N_TYPES],
-                burn::tensor::Distribution::Default,
-                &NdArrayDevice::default(),
-            ),
-            2,
-        );
-        let categories = log_softmax(
-            Tensor::<NdArray, 3>::random(
-                [3, 5, 2],
-                burn::tensor::Distribution::Default,
-                &NdArrayDevice::default(),
-            ),
-            2,
-        );
-        let weights = Tensor::<NdArray, 2>::random(
-            [3, 5],
+    fn get_param() -> anyhow::Result<()> {
+        let n_lexemes = 2;
+        let n_pos = 5;
+        let n_licensee = 2;
+        let n_categories = 5;
+        let n_lemmas = 10;
+        let lemmas = Tensor::<NdArray, 2>::random(
+            [n_lexemes, n_lemmas],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
 
-        let mut r = rand::rngs::StdRng::seed_from_u64(123);
+        let types = Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_pos, N_TYPES],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
 
-        NeuralLexicon::new_random(
-            &types,
-            &types,
-            &categories,
-            &categories,
-            &lemmas,
-            &weights,
-            &mut r,
+        let type_categories = Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_pos, N_TYPES],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+
+        let licensee_categories = Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_licensee, n_categories],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let included_features = Tensor::<NdArray, 2>::random(
+            [n_lexemes, n_licensee + n_pos],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+
+        let categories = Tensor::<NdArray, 2>::random(
+            [n_lexemes, n_categories],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let weights = Tensor::<NdArray, 1>::random(
+            [n_lexemes],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+
+        let _g = GrammarParameterization::new(
+            types,
+            type_categories,
+            licensee_categories,
+            included_features,
+            lemmas,
+            categories,
+            weights,
+            1.0,
         );
         Ok(())
     }

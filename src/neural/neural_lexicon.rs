@@ -563,8 +563,6 @@ impl<B: Backend> NeuralLexicon<B> {
             |n, (_log, feat)| (node_map.remove(&n).unwrap(), feat.clone()),
             |_, _: &()| (),
         );
-        dbg!(&lexemes);
-
         (
             grammar_prob,
             lexemes,

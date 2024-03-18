@@ -466,7 +466,7 @@ impl<B: Backend> NeuralLexicon<B> {
         grammar_params: &GrammarParameterization<B>,
         rng: &mut impl Rng,
     ) -> (Tensor<B, 1>, Vec<Vec<NeuralFeature>>, Self) {
-        type PositionLog = Vec<usize>;
+        type PositionLog = Vec<(usize, Option<usize>)>;
         let mut graph: DiGraph<(Option<PositionLog>, NeuralFeature), _> = DiGraph::new();
 
         let root = graph.add_node((None, FeatureOrLemma::Root));
@@ -511,26 +511,29 @@ impl<B: Backend> NeuralLexicon<B> {
                     lexeme_idx, &licensees, &features, &category, &is_silent,
                 );
 
-            let mut lexeme: Vec<NeuralFeature> = licensees
+            let mut lexeme: Vec<(NeuralFeature, Option<usize>)> = licensees
                 .into_iter()
-                .map(|(_pos, cat)| NeuralFeature::Feature(Feature::Licensee(cat)))
+                .map(|(pos, cat)| (NeuralFeature::Feature(Feature::Licensee(cat)), Some(pos)))
                 .collect();
-            lexeme.push(NeuralFeature::Feature(Feature::Category(category)));
+            lexeme.push((NeuralFeature::Feature(Feature::Category(category)), None));
             lexeme.extend(
                 features
                     .into_iter()
-                    .map(|(_pos, cat, feature_type)| to_feature(feature_type, cat)),
+                    .map(|(pos, cat, feature_type)| (to_feature(feature_type, cat), Some(pos))),
             );
-            lexeme.push(match is_silent {
-                true => NeuralFeature::Lemma(None),
-                false => NeuralFeature::Lemma(Some(lexeme_idx)),
-            });
+            lexeme.push((
+                match is_silent {
+                    true => NeuralFeature::Lemma(None),
+                    false => NeuralFeature::Lemma(Some(lexeme_idx)),
+                },
+                None,
+            ));
             lexemes.push(lexeme);
         }
 
         for (lexeme_idx, lexeme) in lexemes.iter().enumerate() {
             let mut parent = root;
-            for feature in lexeme {
+            for (feature, position) in lexeme {
                 let mut node = None;
                 for child in graph
                     .neighbors_directed(parent, petgraph::Direction::Outgoing)
@@ -540,13 +543,14 @@ impl<B: Backend> NeuralLexicon<B> {
                     if let (Some(log), child_feature) = graph.node_weight_mut(child).unwrap() {
                         if child_feature == feature {
                             node = Some(child);
-                            log.push(lexeme_idx);
+                            log.push((lexeme_idx, *position));
                         }
                     }
                 }
 
                 parent = node.unwrap_or_else(|| {
-                    let node = graph.add_node((Some(vec![lexeme_idx]), feature.clone()));
+                    let node =
+                        graph.add_node((Some(vec![(lexeme_idx, *position)]), feature.clone()));
                     graph.add_edge(parent, node, ());
                     node
                 });
@@ -576,10 +580,96 @@ impl<B: Backend> NeuralLexicon<B> {
                     let mut weights: Tensor<B, 1> =
                         Tensor::zeros([neighbours.len()], &grammar_params.device());
                     for (n_i, n) in neighbours.iter().enumerate() {
-                        let log: &PositionLog = graph[*n].0.as_ref().unwrap();
+                        let (log, feat) = &graph[*n];
+                        let log: &PositionLog = log.as_ref().unwrap();
                         let values = log
                             .iter()
-                            .map(|i| grammar_params.weights.clone().slice([*i..i + 1]))
+                            .map(|(i, feature_pos)| {
+                                let mut v = grammar_params.weights.clone().slice([*i..i + 1]);
+                                match feat {
+                                    FeatureOrLemma::Root => (),
+                                    FeatureOrLemma::Lemma(lemma) => {
+                                        v = v + grammar_params
+                                            .silent_probabilities
+                                            .clone()
+                                            .slice([
+                                                *i..i + 1,
+                                                match lemma.is_none() {
+                                                    true => 0..1,
+                                                    false => 1..2,
+                                                },
+                                            ])
+                                            .squeeze::<1>(1);
+                                    }
+                                    FeatureOrLemma::Feature(feat) => {
+                                        match feat {
+                                            Feature::Category(c) => {
+                                                v = v + grammar_params
+                                                    .categories
+                                                    .clone()
+                                                    .slice([*i..i + 1, *c..c + 1])
+                                                    .squeeze(1);
+                                            }
+                                            Feature::Licensee(c) => {
+                                                let feature_pos = feature_pos.unwrap();
+                                                v = v
+                                                    + grammar_params
+                                                        .licensee_categories
+                                                        .clone()
+                                                        .slice([
+                                                            *i..i + 1,
+                                                            feature_pos..feature_pos + 1,
+                                                            *c..c + 1,
+                                                        ])
+                                                        .reshape([1])
+                                                    + grammar_params
+                                                        .included_features
+                                                        .clone()
+                                                        .slice([
+                                                            *i..i + 1,
+                                                            feature_pos..feature_pos + 1,
+                                                        ])
+                                                        .reshape([1]);
+                                            }
+                                            _ => {
+                                                let (type_of_feat, category) = from_feature(feat);
+                                                let feature_pos = feature_pos.unwrap();
+                                                v = v
+                                                    + grammar_params
+                                                        .type_categories
+                                                        .clone()
+                                                        .slice([
+                                                            *i..i + 1,
+                                                            feature_pos..feature_pos + 1,
+                                                            category..category + 1,
+                                                        ])
+                                                        .reshape([1])
+                                                    + grammar_params
+                                                        .types
+                                                        .clone()
+                                                        .slice([
+                                                            *i..*i + 1,
+                                                            feature_pos..feature_pos + 1,
+                                                            type_of_feat..type_of_feat + 1,
+                                                        ])
+                                                        .reshape([1])
+                                                    + grammar_params
+                                                        .included_features
+                                                        .clone()
+                                                        .slice([
+                                                            *i..i + 1,
+                                                            feature_pos + grammar_params.n_licensees
+                                                                ..feature_pos
+                                                                    + grammar_params.n_licensees
+                                                                    + 1,
+                                                        ])
+                                                        .reshape([1]);
+                                            }
+                                        };
+                                    }
+                                };
+                                v
+                            })
                             .fold(Tensor::zeros([1], &grammar_params.device()), |c, acc| {
                                 acc + c
                             });
@@ -605,7 +695,10 @@ impl<B: Backend> NeuralLexicon<B> {
         );
         (
             grammar_prob,
-            lexemes,
+            lexemes
+                .into_iter()
+                .map(|v| v.into_iter().map(|(a, b)| a).collect())
+                .collect(),
             NeuralLexicon {
                 graph,
                 weights: weights_map,

@@ -259,7 +259,7 @@ pub fn get_neural_outputs<B: Backend>(
         } else {
             get_string_prob(string_probs, &lexicon, neural_config, &targets.device())
         };
-        grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
+        grammars.push(grammar); //+ p_of_lex.unsqueeze_dims(&[1, 2]));
         probs.push(string_probs);
     }
     //(n_grammars, n_strings_per_grammar);

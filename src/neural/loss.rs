@@ -98,15 +98,19 @@ fn get_string_prob<B: Backend>(
         [neural_config.n_strings_per_grammar],
         EPSILON_INV - n_strings,
         device,
-    )
-    .slice_assign(
-        [string_paths.len()..neural_config.n_strings_per_grammar],
-        Tensor::<B, 1>::full(
-            [neural_config.n_strings_per_grammar - string_paths.len()],
-            EPSILON - n_fakes,
-            device,
-        ),
     );
+
+    if neural_config.n_strings_per_grammar > string_paths.len() {
+        string_path_tensor = string_path_tensor.slice_assign(
+            [string_paths.len()..neural_config.n_strings_per_grammar],
+            Tensor::<B, 1>::full(
+                [neural_config.n_strings_per_grammar - string_paths.len()],
+                EPSILON - n_fakes,
+                device,
+            ),
+        );
+    }
+
     for (i, string_path) in string_paths.iter().enumerate() {
         let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
         for (prob_type, count) in string_path.iter() {

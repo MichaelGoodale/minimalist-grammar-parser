@@ -56,7 +56,7 @@ fn string_path_to_tensor<B: Backend>(
 ) -> Tensor<B, 3> {
     let mut s_tensor: Tensor<B, 3> = log_softmax(
         Tensor::zeros([1, g.n_lemmas()], &g.device())
-            .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &g.device())),
+            .slice_assign([0..1, 0..1], Tensor::full([1, 1], 50, &g.device())),
         1,
     )
     .repeat(0, neural_config.padding_length)

@@ -237,6 +237,7 @@ pub fn get_neural_outputs<B: Backend>(
     //(n_grammar_strings, padding_length, n_lemmas)
     let mut grammars = vec![];
     let mut probs = vec![];
+    let mut grammar_probs = vec![];
 
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
@@ -253,14 +254,14 @@ pub fn get_neural_outputs<B: Backend>(
                 EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
                 &g.device(),
             );
-            (s_tensor + p_of_lex.unsqueeze_dims(&[1, 2]), string_probs)
+            (s_tensor, string_probs)
         } else {
             //(1,1, n_grammar_strings)
             let string_probs: Tensor<B, 1> =
                 get_string_prob(string_probs, &lexicon, neural_config, &targets.device());
 
             //(n_grammar_strings, padding_length, n_lemmas)
-            (s_tensor + p_of_lex.unsqueeze_dims(&[1, 2]), string_probs)
+            (s_tensor, string_probs)
 
             /*let reward: f32 = get_reward_loss(
                 &mut target_set,
@@ -273,9 +274,12 @@ pub fn get_neural_outputs<B: Backend>(
         };
         grammars.push(grammar);
         probs.push(string_probs);
+        grammar_probs.push(p_of_lex)
     }
     //(n_grammars, n_strings_per_grammar);
     let string_probs: Tensor<B, 2> = Tensor::stack(probs, 1);
+
+    let grammar_probs: Tensor<B, 1> = Tensor::cat(grammar_probs, 0);
 
     //(n_grammar_strings, n_grammars, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = Tensor::stack(grammars, 1);
@@ -290,17 +294,16 @@ pub fn get_neural_outputs<B: Backend>(
 
     //Probability of generating every string for each grammar.
     //(n_targets, n_grammar_strings, n_grammars)
-    let loss = grammar
+    let loss: Tensor<B, 3> = grammar
         .gather(4, targets)
         .squeeze::<4>(4)
         .sum_dim(3)
         .squeeze::<3>(3)
         + string_probs.unsqueeze_dim(0);
 
-    //Average across grammars
-    let loss: Tensor<B, 2> = log_sum_exp_dim(loss, 1) - (neural_config.n_grammars as f64).ln();
+    //(n_grammars)
+    let loss: Tensor<B, 1> = log_sum_exp_dim::<B, 3, 2>(loss, 1).sum_dim(0).squeeze(0);
 
-    //Probability of generating each of the strings
-    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).sum_dim(0);
-    -loss
+    -(log_sum_exp_dim((loss + grammar_probs).unsqueeze_dim::<2>(1), 0)
+        - (neural_config.n_grammars as f64).ln())
 }

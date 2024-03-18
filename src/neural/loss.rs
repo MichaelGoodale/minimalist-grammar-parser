@@ -225,50 +225,6 @@ pub fn get_grammar<B: Backend>(
     )
 }
 
-pub fn get_stacked_grammars<B: Backend>(
-    g: &GrammarParameterization<B>,
-    neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
-    cache: &NeuralGrammarCache,
-) -> (Tensor<B, 4>, Tensor<B, 2>, Tensor<B, 1>) {
-    //(n_grammar_strings, padding_length, n_lemmas)
-    let mut grammars = vec![];
-    let mut probs = vec![];
-    let mut grammar_probs = vec![];
-
-    for _ in 0..neural_config.n_grammars {
-        let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
-
-        let entry = cache
-            .entry(lexemes)
-            .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
-        let (strings, string_probs) = entry.value();
-
-        let grammar = string_path_to_tensor(strings, g, neural_config);
-
-        let string_probs = if strings.is_empty() {
-            Tensor::full(
-                [neural_config.n_strings_per_grammar],
-                EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
-                &g.device(),
-            )
-        } else {
-            get_string_prob(string_probs, &lexicon, neural_config, &g.device())
-        };
-        grammars.push(grammar);
-        probs.push(string_probs);
-        grammar_probs.push(p_of_lex)
-    }
-    //(n_grammars, n_strings_per_grammar);
-    let string_probs: Tensor<B, 2> = Tensor::stack(probs, 1);
-
-    let grammar_probs: Tensor<B, 1> = Tensor::cat(grammar_probs, 0);
-
-    //(n_grammar_strings, n_grammars, padding_length, n_lemmas)
-    let grammar: Tensor<B, 4> = Tensor::stack(grammars, 1);
-    (grammar, string_probs, grammar_probs)
-}
-
 pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,
@@ -281,7 +237,6 @@ pub fn get_neural_outputs<B: Backend>(
     //(n_grammar_strings, padding_length, n_lemmas)
     let mut grammars = vec![];
     let mut probs = vec![];
-    let mut grammar_probs = vec![];
 
     for _ in 0..neural_config.n_grammars {
         let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
@@ -291,39 +246,21 @@ pub fn get_neural_outputs<B: Backend>(
             .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
         let (strings, string_probs) = entry.value();
 
-        let s_tensor = string_path_to_tensor(strings, g, neural_config);
-        let (grammar, string_probs) = if strings.is_empty() {
-            let string_probs = Tensor::full(
+        let grammar = string_path_to_tensor(strings, g, neural_config);
+        let string_probs = if strings.is_empty() {
+            Tensor::full(
                 [neural_config.n_strings_per_grammar],
                 EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
                 &g.device(),
-            );
-            (s_tensor, string_probs)
+            )
         } else {
-            //(1,1, n_grammar_strings)
-            let string_probs: Tensor<B, 1> =
-                get_string_prob(string_probs, &lexicon, neural_config, &targets.device());
-
-            //(n_grammar_strings, padding_length, n_lemmas)
-            (s_tensor, string_probs)
-
-            /*let reward: f32 = get_reward_loss(
-                &mut target_set,
-                &grammar.clone(),
-                neural_config.n_strings_to_sample,
-                rng,
-            );*/
-
-            //alternate_loss = alternate_loss + (-p_of_lex.clone() * reward);
+            get_string_prob(string_probs, &lexicon, neural_config, &targets.device())
         };
-        grammars.push(grammar);
+        grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
         probs.push(string_probs);
-        grammar_probs.push(p_of_lex)
     }
     //(n_grammars, n_strings_per_grammar);
     let string_probs: Tensor<B, 2> = Tensor::stack(probs, 1);
-
-    let grammar_probs: Tensor<B, 1> = Tensor::cat(grammar_probs, 0);
 
     //(n_grammar_strings, n_grammars, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = Tensor::stack(grammars, 1);
@@ -348,6 +285,5 @@ pub fn get_neural_outputs<B: Backend>(
     //(n_grammars)
     let loss: Tensor<B, 1> = log_sum_exp_dim::<B, 3, 2>(loss, 1).sum_dim(0).squeeze(0);
 
-    -(log_sum_exp_dim((loss + grammar_probs).unsqueeze_dim::<2>(1), 0)
-        - (neural_config.n_grammars as f64).ln())
+    -(log_sum_exp_dim((loss).unsqueeze_dim::<2>(1), 0) - (neural_config.n_grammars as f64).ln())
 }

@@ -53,6 +53,7 @@ pub struct GrammarParameterization<B: Backend> {
     n_licensees: usize,
     n_lemmas: usize,
     pad_vector: Tensor<B, 1>, //(n_lemmas)
+    end_vector: Tensor<B, 1>, //(n_lemmas)
     type_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     type_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     licensee_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
@@ -101,6 +102,7 @@ impl<B: Backend> GrammarParameterization<B> {
         categories: Tensor<B, 2>,          // (lexeme, n_categories)
         weights: Tensor<B, 1>,             // (lexeme)
         pad_vector: Tensor<B, 1>,
+        end_vector: Tensor<B, 1>,
         temperature: f64,
     ) -> anyhow::Result<GrammarParameterization<B>> {
         let [n_lexemes, n_features, n_categories] = type_categories.shape().dims;
@@ -133,15 +135,16 @@ impl<B: Backend> GrammarParameterization<B> {
         let opposite_included_features = (-included_features.clone().exp()).log1p();
 
         let types = log_softmax(types, 2);
+        let pad_vector = log_softmax(pad_vector, 0);
+        let end_vector = log_softmax(end_vector, 0);
         let type_categories = log_softmax(type_categories, 2);
         let lemmas = log_softmax(lemmas, 1);
         let licensee_categories = log_softmax(licensee_categories, 1);
         let categories = log_softmax(categories, 1);
 
         let silent_probability: Tensor<B, 1> =
-            lemmas.clone().slice([0..n_lexemes, 0..1]).squeeze(1);
-        let non_silent_probability: Tensor<B, 1> =
-            log_sum_exp_dim::<B, 2, 1>(lemmas.clone().slice([0..n_lexemes, 1..n_lemmas]), 1);
+            lemmas.clone().slice([0..n_lexemes, 2..3]).squeeze(1);
+        let non_silent_probability: Tensor<B, 1> = (-silent_probability.clone().exp()).log1p();
 
         for lexeme_idx in 0..n_lexemes {
             category_distributions.insert(
@@ -245,6 +248,7 @@ impl<B: Backend> GrammarParameterization<B> {
             category_distributions,
             type_distributions,
             pad_vector,
+            end_vector,
             included_probs,
             type_category_distributions,
             silent_lemma_probability,
@@ -260,6 +264,10 @@ impl<B: Backend> GrammarParameterization<B> {
 
     pub fn pad_vector(&self) -> &Tensor<B, 1> {
         &self.pad_vector
+    }
+
+    pub fn end_vector(&self) -> &Tensor<B, 1> {
+        &self.end_vector
     }
 
     pub fn device(&self) -> Device<B> {
@@ -716,6 +724,10 @@ mod test {
             [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
             &NdArrayDevice::default(),
         );
+        let end_vector = Tensor::<NdArray, 1>::from_floats(
+            [0., 10., 0., 0., 0., 0., 0., 0., 0., 0.],
+            &NdArrayDevice::default(),
+        );
 
         let _g = GrammarParameterization::new(
             types,
@@ -726,6 +738,7 @@ mod test {
             categories,
             weights,
             pad_vector,
+            end_vector,
             1.0,
         );
         Ok(())

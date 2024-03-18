@@ -513,9 +513,9 @@ fn test_loss() -> Result<()> {
         &NdArrayDevice::default(),
     );
 
-    let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default())
+    let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
         .slice_assign(
-            [0..n_lexemes, 1..2],
+            [0..n_lexemes, 3..4],
             Tensor::full([n_lexemes, 1], 100.0, &NdArrayDevice::default()),
         );
     let weights = Tensor::<Autodiff<NdArray>, 1>::zeros([n_lexemes], &NdArrayDevice::default());
@@ -534,9 +534,8 @@ fn test_loss() -> Result<()> {
         [1..2, n_licensees..n_licensees + 1],
         Tensor::full([1, 1], 100.0, &dev),
     );
-    dbg!(&included_features);
     let targets =
-        Tensor::<Autodiff<NdArray>, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+        Tensor::<Autodiff<NdArray>, 2, _>::full([10, 10], 3, &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 23,
@@ -554,7 +553,9 @@ fn test_loss() -> Result<()> {
         ),
     };
     let pad_vector =
-        Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0.], &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0., 0., 0.], &NdArrayDevice::default());
+    let end_vector =
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 10., 0., 0.], &NdArrayDevice::default());
     let g = GrammarParameterization::new(
         types,
         type_categories,
@@ -564,6 +565,7 @@ fn test_loss() -> Result<()> {
         categories,
         weights,
         pad_vector,
+        end_vector,
         1.0,
     )?;
     let loss = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
@@ -628,6 +630,10 @@ fn random_neural_generation() -> Result<()> {
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
         &NdArrayDevice::default(),
     );
+    let end_vector = Tensor::<NdArray, 1>::from_floats(
+        [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        &NdArrayDevice::default(),
+    );
 
     let g = GrammarParameterization::new(
         types,
@@ -638,6 +644,7 @@ fn random_neural_generation() -> Result<()> {
         categories,
         weights,
         pad_vector,
+        end_vector,
         1.0,
     )?;
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);

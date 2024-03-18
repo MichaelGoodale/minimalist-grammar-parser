@@ -54,7 +54,9 @@ fn string_path_to_tensor<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
 ) -> Tensor<B, 3> {
-    let mut s_tensor: Tensor<B, 3> = log_softmax(g.pad_vector().clone(), 0)
+    let mut s_tensor: Tensor<B, 3> = g
+        .pad_vector()
+        .clone()
         .unsqueeze_dim::<2>(0)
         .repeat(0, neural_config.padding_length)
         .unsqueeze_dim(0)
@@ -69,6 +71,10 @@ fn string_path_to_tensor<B: Backend>(
                 .unsqueeze_dim(0);
             s_tensor = s_tensor.slice_assign([s_i..s_i + 1, w_i..w_i + 1, 0..g.n_lemmas()], values)
         }
+        s_tensor = s_tensor.slice_assign(
+            [s_i..s_i + 1, s.len()..s.len() + 1, 0..g.n_lemmas()],
+            g.end_vector().clone().unsqueeze_dims(&[0, 1]),
+        )
     }
     s_tensor
 }

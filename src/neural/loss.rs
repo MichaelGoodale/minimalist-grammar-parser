@@ -208,8 +208,7 @@ pub fn get_grammar<B: Backend>(
             None
         } else {
             //(1, n_grammar_strings)
-            let string_probs =
-                get_string_prob(string_probs, &lexicon, neural_config, &g.device()).squeeze(0);
+            let string_probs = get_string_prob(string_probs, &lexicon, neural_config, &g.device());
 
             //(n_grammar_strings, padding_length, n_lemmas)
             Some((

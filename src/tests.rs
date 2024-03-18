@@ -1,6 +1,6 @@
 use crate::{
     lexicon::Feature,
-    neural::loss::{get_neural_outputs, NeuralConfig},
+    neural::loss::{get_grammar, get_neural_outputs, NeuralConfig},
 };
 use anyhow::Result;
 use rand::SeedableRng;
@@ -568,6 +568,8 @@ fn test_loss() -> Result<()> {
     let _g = loss.backward();
     let loss: f32 = loss.into_scalar().elem();
     approx::assert_relative_eq!(loss, 47.43122);
+
+    get_grammar(&g, &config, &mut rng, &cache);
     Ok(())
 }
 

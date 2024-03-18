@@ -244,30 +244,16 @@ pub fn get_stacked_grammars<B: Backend>(
             .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
         let (strings, string_probs) = entry.value();
 
-        let s_tensor = string_path_to_tensor(strings, g, neural_config);
-        let (grammar, string_probs) = if strings.is_empty() {
-            let string_probs = Tensor::full(
+        let grammar = string_path_to_tensor(strings, g, neural_config);
+
+        let string_probs = if strings.is_empty() {
+            Tensor::full(
                 [neural_config.n_strings_per_grammar],
                 EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
                 &g.device(),
-            );
-            (s_tensor, string_probs)
+            )
         } else {
-            //(1,1, n_grammar_strings)
-            let string_probs: Tensor<B, 1> =
-                get_string_prob(string_probs, &lexicon, neural_config, &g.device());
-
-            //(n_grammar_strings, padding_length, n_lemmas)
-            (s_tensor, string_probs)
-
-            /*let reward: f32 = get_reward_loss(
-                &mut target_set,
-                &grammar.clone(),
-                neural_config.n_strings_to_sample,
-                rng,
-            );*/
-
-            //alternate_loss = alternate_loss + (-p_of_lex.clone() * reward);
+            get_string_prob(string_probs, &lexicon, neural_config, &g.device())
         };
         grammars.push(grammar);
         probs.push(string_probs);

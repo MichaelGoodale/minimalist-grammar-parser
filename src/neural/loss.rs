@@ -282,8 +282,9 @@ pub fn get_neural_outputs<B: Backend>(
         .squeeze::<3>(3)
         + string_probs.unsqueeze_dim(0);
 
-    //(n_grammars)
-    let loss: Tensor<B, 1> = log_sum_exp_dim::<B, 3, 2>(loss, 1).sum_dim(0).squeeze(0);
+    let loss: Tensor<B, 2> = log_sum_exp_dim(loss, 1) - (neural_config.n_grammars as f64).ln();
 
-    -(log_sum_exp_dim((loss).unsqueeze_dim::<2>(1), 0) - (neural_config.n_grammars as f64).ln())
+    //Probability of generating each of the strings
+    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).sum_dim(0);
+    -loss
 }

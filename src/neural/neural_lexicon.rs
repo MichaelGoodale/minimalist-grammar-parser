@@ -579,17 +579,21 @@ impl<B: Backend> NeuralLexicon<B> {
                 _ => {
                     let mut weights: Tensor<B, 1> =
                         Tensor::zeros([neighbours.len()], &grammar_params.device());
+                    let mut p: Tensor<B, 1> =
+                        Tensor::zeros([neighbours.len()], &grammar_params.device());
                     for (n_i, n) in neighbours.iter().enumerate() {
                         let (log, feat) = &graph[*n];
                         let log: &PositionLog = log.as_ref().unwrap();
-                        let values = log
+                        let (weight_values, p_values) = log
                             .iter()
                             .map(|(i, feature_pos)| {
-                                let mut v = grammar_params.weights.clone().slice([*i..i + 1]);
+                                let v = grammar_params.weights.clone().slice([*i..i + 1]);
+                                let mut p: Tensor<B, 1> =
+                                    Tensor::zeros([1], &grammar_params.device());
                                 match feat {
                                     FeatureOrLemma::Root => (),
                                     FeatureOrLemma::Lemma(lemma) => {
-                                        v = v + grammar_params
+                                        p = grammar_params
                                             .silent_probabilities
                                             .clone()
                                             .slice([
@@ -604,7 +608,7 @@ impl<B: Backend> NeuralLexicon<B> {
                                     FeatureOrLemma::Feature(feat) => {
                                         match feat {
                                             Feature::Category(c) => {
-                                                v = v + grammar_params
+                                                p = grammar_params
                                                     .categories
                                                     .clone()
                                                     .slice([*i..i + 1, *c..c + 1])
@@ -612,16 +616,15 @@ impl<B: Backend> NeuralLexicon<B> {
                                             }
                                             Feature::Licensee(c) => {
                                                 let feature_pos = feature_pos.unwrap();
-                                                v = v
-                                                    + grammar_params
-                                                        .licensee_categories
-                                                        .clone()
-                                                        .slice([
-                                                            *i..i + 1,
-                                                            feature_pos..feature_pos + 1,
-                                                            *c..c + 1,
-                                                        ])
-                                                        .reshape([1])
+                                                p = grammar_params
+                                                    .licensee_categories
+                                                    .clone()
+                                                    .slice([
+                                                        *i..i + 1,
+                                                        feature_pos..feature_pos + 1,
+                                                        *c..c + 1,
+                                                    ])
+                                                    .reshape([1])
                                                     + grammar_params
                                                         .included_features
                                                         .clone()
@@ -634,16 +637,15 @@ impl<B: Backend> NeuralLexicon<B> {
                                             _ => {
                                                 let (type_of_feat, category) = from_feature(feat);
                                                 let feature_pos = feature_pos.unwrap();
-                                                v = v
-                                                    + grammar_params
-                                                        .type_categories
-                                                        .clone()
-                                                        .slice([
-                                                            *i..i + 1,
-                                                            feature_pos..feature_pos + 1,
-                                                            category..category + 1,
-                                                        ])
-                                                        .reshape([1])
+                                                p = grammar_params
+                                                    .type_categories
+                                                    .clone()
+                                                    .slice([
+                                                        *i..i + 1,
+                                                        feature_pos..feature_pos + 1,
+                                                        category..category + 1,
+                                                    ])
+                                                    .reshape([1])
                                                     + grammar_params
                                                         .types
                                                         .clone()
@@ -668,12 +670,17 @@ impl<B: Backend> NeuralLexicon<B> {
                                         };
                                     }
                                 };
-                                v
+                                (v, p)
                             })
-                            .fold(Tensor::zeros([1], &grammar_params.device()), |c, acc| {
-                                acc + c
-                            });
-                        weights = weights.slice_assign([n_i..n_i + 1], values);
+                            .fold(
+                                (
+                                    Tensor::zeros([1], &grammar_params.device()),
+                                    Tensor::zeros([1], &grammar_params.device()),
+                                ),
+                                |(v, p), (v_acc, p_acc)| ((v_acc + v), (p_acc + p)),
+                            );
+                        weights = weights.slice_assign([n_i..n_i + 1], weight_values);
+                        p = p.slice_assign([n_i..n_i + 1], p_values);
                     }
                     weights = log_softmax(weights, 0);
                     for (n_i, n) in neighbours.iter().enumerate() {
@@ -682,7 +689,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         let log_prob = LogProb::new(weight.clone().into_scalar().elem())
                             .unwrap_or_else(|_| LogProb::new(0.0).unwrap());
                         node_map.insert(*n, Some((record, log_prob)));
-                        weights_map.insert(record, weight);
+                        weights_map.insert(record, weight + p.clone().slice([n_i..n_i + 1]));
                     }
                 }
             }

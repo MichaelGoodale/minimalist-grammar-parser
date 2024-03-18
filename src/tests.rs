@@ -553,6 +553,8 @@ fn test_loss() -> Result<()> {
             4000,
         ),
     };
+    let pad_vector =
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0.], &NdArrayDevice::default());
     let g = GrammarParameterization::new(
         types,
         type_categories,
@@ -561,6 +563,7 @@ fn test_loss() -> Result<()> {
         lemmas,
         categories,
         weights,
+        pad_vector,
         1.0,
     )?;
     let loss = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
@@ -621,6 +624,11 @@ fn random_neural_generation() -> Result<()> {
         &NdArrayDevice::default(),
     );
 
+    let pad_vector = Tensor::<NdArray, 1>::from_floats(
+        [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        &NdArrayDevice::default(),
+    );
+
     let g = GrammarParameterization::new(
         types,
         type_categories,
@@ -629,6 +637,7 @@ fn random_neural_generation() -> Result<()> {
         lemmas,
         categories,
         weights,
+        pad_vector,
         1.0,
     )?;
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);

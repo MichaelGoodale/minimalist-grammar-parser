@@ -52,6 +52,7 @@ pub struct GrammarParameterization<B: Backend> {
     n_features: usize,
     n_licensees: usize,
     n_lemmas: usize,
+    pad_vector: Tensor<B, 1>, //(n_lemmas)
     type_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     type_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
     licensee_category_distributions: HashMap<(usize, usize), WeightedAliasIndex<f64>>,
@@ -99,6 +100,7 @@ impl<B: Backend> GrammarParameterization<B> {
         lemmas: Tensor<B, 2>,              // (lexeme, n_lemmas)
         categories: Tensor<B, 2>,          // (lexeme, n_categories)
         weights: Tensor<B, 1>,             // (lexeme)
+        pad_vector: Tensor<B, 1>,
         temperature: f64,
     ) -> anyhow::Result<GrammarParameterization<B>> {
         let [n_lexemes, n_features, n_categories] = type_categories.shape().dims;
@@ -242,6 +244,7 @@ impl<B: Backend> GrammarParameterization<B> {
             licensee_category_distributions,
             category_distributions,
             type_distributions,
+            pad_vector,
             included_probs,
             type_category_distributions,
             silent_lemma_probability,
@@ -253,6 +256,10 @@ impl<B: Backend> GrammarParameterization<B> {
                 1,
             ),
         })
+    }
+
+    pub fn pad_vector(&self) -> &Tensor<B, 1> {
+        &self.pad_vector
     }
 
     pub fn device(&self) -> Device<B> {
@@ -705,6 +712,10 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
+        let pad_vector = Tensor::<NdArray, 1>::from_floats(
+            [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+            &NdArrayDevice::default(),
+        );
 
         let _g = GrammarParameterization::new(
             types,
@@ -714,6 +725,7 @@ mod test {
             lemmas,
             categories,
             weights,
+            pad_vector,
             1.0,
         );
         Ok(())

@@ -54,14 +54,11 @@ fn string_path_to_tensor<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
 ) -> Tensor<B, 3> {
-    let mut s_tensor: Tensor<B, 3> = log_softmax(
-        Tensor::zeros([1, g.n_lemmas()], &g.device())
-            .slice_assign([0..1, 0..1], Tensor::full([1, 1], 50, &g.device())),
-        1,
-    )
-    .repeat(0, neural_config.padding_length)
-    .unsqueeze_dim(0)
-    .repeat(0, neural_config.n_strings_per_grammar);
+    let mut s_tensor: Tensor<B, 3> = log_softmax(g.pad_vector().clone(), 0)
+        .unsqueeze_dim::<2>(0)
+        .repeat(0, neural_config.padding_length)
+        .unsqueeze_dim(0)
+        .repeat(0, neural_config.n_strings_per_grammar);
 
     for (s_i, s) in strings.iter().enumerate() {
         for (w_i, lexeme) in s.iter().enumerate() {
@@ -282,7 +279,7 @@ pub fn get_neural_outputs<B: Backend>(
         .squeeze::<3>(3)
         + string_probs.unsqueeze_dim(0);
 
-    let loss: Tensor<B, 2> = log_sum_exp_dim(loss, 1) - (neural_config.n_grammars as f64).ln();
+    let loss: Tensor<B, 2> = log_sum_exp_dim(loss, 2) - (neural_config.n_grammars as f64).ln();
 
     //Probability of generating each of the strings
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).sum_dim(0);

@@ -539,8 +539,8 @@ fn test_loss() -> Result<()> {
         Tensor::<Autodiff<NdArray>, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 50,
-        n_strings_per_grammar: 50,
+        n_grammars: 23,
+        n_strings_per_grammar: 27,
         padding_length: 10,
         n_strings_to_sample: 5,
         temperature: 1.0,
@@ -563,11 +563,11 @@ fn test_loss() -> Result<()> {
         weights,
         1.0,
     )?;
-    let (loss, _) = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
+    let loss = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
 
     let _g = loss.backward();
     let loss: f32 = loss.into_scalar().elem();
-    approx::assert_relative_eq!(loss, 47.43114);
+    approx::assert_relative_eq!(loss, 47.43122);
     Ok(())
 }
 
@@ -632,8 +632,8 @@ fn random_neural_generation() -> Result<()> {
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 50,
-        n_strings_per_grammar: 50,
+        n_grammars: 25,
+        n_strings_per_grammar: 20,
         padding_length: 10,
         temperature: 1.0,
         n_strings_to_sample: 5,

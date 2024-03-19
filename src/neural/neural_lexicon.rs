@@ -768,7 +768,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 }
             }
         }
-
+        /*
         let graph2 = graph.clone();
         let graph2 = graph2.map(
             |n_i, (_, n)| {
@@ -781,8 +781,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 )
             },
             |_, _| "",
-        );
-        println!("{}", petgraph::dot::Dot::new(&graph2));
+        );*/
 
         let graph = graph.map(
             |n, (_log, feat)| (node_map.remove(&n).unwrap(), feat.clone()),

@@ -260,8 +260,6 @@ pub fn get_neural_outputs<B: Backend>(
         } else {
             get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
         };
-        dbg!(grammar.clone().argmax(2).squeeze::<2>(2));
-        dbg!(string_probs.clone().detach());
         grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
         probs.push(string_probs);
     }

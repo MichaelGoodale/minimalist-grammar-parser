@@ -242,14 +242,15 @@ pub fn get_neural_outputs<B: Backend>(
     let mut probs = vec![];
 
     for _ in 0..neural_config.n_grammars {
-        let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
+        let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
 
-        let entry = cache
-            .entry(lexemes)
-            .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
-        let (strings, string_probs) = entry.value();
+        let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
+        //let entry = cache
+        //    .entry(lexemes)
+        //    .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
+        //let (strings, string_probs) = entry.value();
 
-        let grammar = string_path_to_tensor(strings, g, neural_config);
+        let grammar = string_path_to_tensor(&strings, g, neural_config);
         let string_probs = if strings.is_empty() {
             Tensor::full(
                 [neural_config.n_strings_per_grammar],
@@ -257,7 +258,7 @@ pub fn get_neural_outputs<B: Backend>(
                 &g.device(),
             )
         } else {
-            get_string_prob(string_probs, &lexicon, neural_config, &targets.device())
+            get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
         };
         grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
         probs.push(string_probs);

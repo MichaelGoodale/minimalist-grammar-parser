@@ -51,6 +51,7 @@ pub struct GrammarParameterization<B: Backend> {
     n_lexemes: usize,
     n_features: usize,
     n_licensees: usize,
+    n_categories: usize,
     n_lemmas: usize,
     pad_vector: Tensor<B, 1>, //(n_lemmas)
     end_vector: Tensor<B, 1>, //(n_lemmas)
@@ -243,6 +244,7 @@ impl<B: Backend> GrammarParameterization<B> {
             n_features,
             n_licensees,
             n_lemmas,
+            n_categories,
             categories,
             licensee_category_distributions,
             category_distributions,
@@ -460,6 +462,225 @@ impl<B: Backend> NeuralLexicon<B> {
 
     pub fn device(&self) -> &B::Device {
         &self.device
+    }
+
+    pub fn new_superimposed(
+        grammar_params: &GrammarParameterization<B>,
+        rng: &mut impl Rng,
+    ) -> (Tensor<B, 1>, Self) {
+        type PositionLog<B> = Vec<(usize, Option<usize>, Tensor<B, 1>)>;
+        let mut graph: DiGraph<(Option<PositionLog<B>>, NeuralFeature), _> = DiGraph::new();
+
+        let root = graph.add_node((None, FeatureOrLemma::Root));
+        let mut grammar_prob = Tensor::<B, 1>::zeros([1], &grammar_params.device());
+        let mut lexemes = vec![];
+        for lexeme_idx in 0..grammar_params.n_lexemes {
+            let licensees: Vec<_> = if lexeme_idx > 0 {
+                (0..grammar_params.n_licensees)
+                    .filter_map(|i| match grammar_params.is_licensee(lexeme_idx, i, rng) {
+                        true => Some((
+                            Some(i),
+                            (0..grammar_params.n_categories)
+                                .map(|x| {
+                                    (
+                                        FeatureOrLemma::Feature(Feature::Licensee(x)),
+                                        grammar_params
+                                            .licensee_categories
+                                            .clone()
+                                            .slice([lexeme_idx..lexeme_idx + 1, i..i + 1, x..x + 1])
+                                            .reshape([1]),
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )),
+                        false => None,
+                    })
+                    .collect()
+            } else {
+                //Ensure there is always a lexeme of category 0 without licensees
+                vec![]
+            };
+
+            let categories = (
+                None,
+                (0..grammar_params.n_categories)
+                    .map(|c| {
+                        (
+                            FeatureOrLemma::Feature(Feature::Category(c)),
+                            grammar_params
+                                .categories
+                                .clone()
+                                .slice([lexeme_idx..lexeme_idx + 1, c..c + 1])
+                                .reshape([1]),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            );
+
+            let features: Vec<_> = (0..grammar_params.n_features)
+                .filter_map(|i| match grammar_params.is_feature(lexeme_idx, i, rng) {
+                    true => Some((
+                        Some(i),
+                        (0..grammar_params.n_categories)
+                            .cartesian_product(0..N_TYPES)
+                            .map(|(c, t)| {
+                                (
+                                    to_feature(t, c),
+                                    (grammar_params.type_categories.clone().slice([
+                                        lexeme_idx..lexeme_idx + 1,
+                                        i..i + 1,
+                                        c..c + 1,
+                                    ]) + grammar_params.types.clone().slice([
+                                        lexeme_idx..lexeme_idx + 1,
+                                        i..i + 1,
+                                        t..t + 1,
+                                    ]))
+                                    .reshape([1]),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )),
+                    false => None,
+                })
+                .collect();
+
+            let lemma = (
+                None,
+                vec![
+                    (
+                        FeatureOrLemma::Lemma(None),
+                        grammar_params
+                            .silent_probabilities
+                            .clone()
+                            .slice([lexeme_idx..lexeme_idx + 1, 0..1])
+                            .reshape([1]),
+                    ),
+                    (
+                        FeatureOrLemma::Lemma(Some(lexeme_idx)),
+                        grammar_params
+                            .silent_probabilities
+                            .clone()
+                            .slice([lexeme_idx..lexeme_idx + 1, 1..2])
+                            .reshape([1]),
+                    ),
+                ],
+            );
+
+            let mut lexeme = licensees;
+            lexeme.push(categories);
+            lexeme.extend(features);
+            lexeme.push(lemma);
+            lexemes.push(lexeme);
+        }
+
+        for (lexeme_idx, features) in lexemes.into_iter().enumerate() {
+            let mut parents = vec![root];
+            for (position, possibles) in features.into_iter() {
+                let mut new_parents = vec![];
+                for (feature, prob) in possibles.into_iter() {
+                    for parent in parents.iter() {
+                        let mut node = None;
+                        for child in graph
+                            .neighbors_directed(*parent, petgraph::Direction::Outgoing)
+                            .collect_vec()
+                            .into_iter()
+                        {
+                            if let (Some(log), child_feature) =
+                                graph.node_weight_mut(child).unwrap()
+                            {
+                                if *child_feature == feature {
+                                    node = Some(child);
+                                    log.push((lexeme_idx, position, prob.clone()));
+                                }
+                            }
+                        }
+
+                        new_parents.push(node.unwrap_or_else(|| {
+                            let node = graph.add_node((
+                                Some(vec![(lexeme_idx, position, prob.clone())]),
+                                feature.clone(),
+                            ));
+                            graph.add_edge(*parent, node, ());
+                            node
+                        }));
+                    }
+                }
+                parents = new_parents;
+            }
+        }
+
+        let mut weights_map: HashMap<NeuralProbabilityRecord, Tensor<B, 1>> = HashMap::default();
+        let mut node_map: HashMap<NodeIndex, Option<(NeuralProbabilityRecord, LogProb<f64>)>> =
+            HashMap::default();
+        node_map.insert(root, None);
+
+        //Renormalise probabilities to sum to one.
+        for node_index in graph.node_indices() {
+            let neighbours: Vec<_> = graph
+                .neighbors_directed(node_index, petgraph::Direction::Outgoing)
+                .collect();
+
+            match neighbours.len() {
+                0 => (),
+                1 => {
+                    node_map.insert(
+                        *neighbours.first().unwrap(),
+                        Some((NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap())),
+                    );
+                }
+                _ => {
+                    let mut weights: Tensor<B, 1> =
+                        Tensor::zeros([neighbours.len()], &grammar_params.device());
+                    let mut probs: Tensor<B, 1> =
+                        Tensor::zeros([neighbours.len()], &grammar_params.device());
+                    for (n_i, n) in neighbours.iter().enumerate() {
+                        let (log, _feat) = &graph[*n];
+                        let log: &PositionLog<B> = log.as_ref().unwrap();
+                        let (weight_values, prob_values): (_, Vec<Tensor<B, 1>>) = log
+                            .iter()
+                            .map(|(i, _feature_pos, p)| {
+                                (grammar_params.weights.clone().slice([*i..i + 1]), p)
+                            })
+                            .fold(
+                                (Tensor::zeros([1], &grammar_params.device()), vec![]),
+                                |mut acc, c| {
+                                    acc.1.push(c.1.clone());
+                                    (c.0 + acc.0, acc.1)
+                                },
+                            );
+                        probs = probs.slice_assign(
+                            [n_i..n_i + 1],
+                            log_sum_exp_dim(Tensor::<B, 1>::stack::<2>(prob_values, 1), 1),
+                        );
+                        weights = weights.slice_assign([n_i..n_i + 1], weight_values);
+                    }
+                    weights = log_softmax(weights, 0);
+                    for (n_i, n) in neighbours.iter().enumerate() {
+                        let record = NeuralProbabilityRecord::Feature(*n);
+                        let weight = weights.clone().slice([n_i..n_i + 1])
+                            + probs.clone().slice([n_i..n_i + 1]);
+                        let log_prob = LogProb::new(weight.clone().into_scalar().elem())
+                            .unwrap_or_else(|_| LogProb::new(0.0).unwrap());
+                        node_map.insert(*n, Some((record, log_prob)));
+                        weights_map.insert(record, weight);
+                    }
+                }
+            }
+        }
+
+        let graph = graph.map(
+            |n, (_log, feat)| (node_map.remove(&n).unwrap(), feat.clone()),
+            |_, _: &()| (),
+        );
+        (
+            grammar_prob,
+            NeuralLexicon {
+                graph,
+                weights: weights_map,
+                root,
+                device: grammar_params.device(),
+            },
+        )
     }
 
     pub fn new_random(
@@ -781,7 +1002,7 @@ mod test {
         let n_pos = 5;
         let n_licensee = 2;
         let n_categories = 5;
-        let n_lemmas = 10;
+        let n_lemmas = 6;
         let lemmas = Tensor::<NdArray, 2>::random(
             [n_lexemes, n_lemmas],
             burn::tensor::Distribution::Default,

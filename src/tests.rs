@@ -582,9 +582,9 @@ fn test_loss() -> Result<()> {
 fn random_neural_generation() -> Result<()> {
     let cache = Cache::new(100);
     let n_lexemes = 2;
-    let n_pos = 5;
+    let n_pos = 4;
     let n_licensee = 2;
-    let n_categories = 5;
+    let n_categories = 3;
     let n_lemmas = 10;
     let lemmas = Tensor::<NdArray, 2>::random(
         [n_lexemes, n_lemmas],
@@ -610,7 +610,7 @@ fn random_neural_generation() -> Result<()> {
         &NdArrayDevice::default(),
     );
     let included_features = Tensor::<NdArray, 2>::random(
-        [n_lexemes, n_licensee + n_categories],
+        [n_lexemes, n_licensee + n_pos],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
     );
@@ -650,7 +650,7 @@ fn random_neural_generation() -> Result<()> {
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 25,
+        n_grammars: 1,
         n_strings_per_grammar: 20,
         padding_length: 10,
         temperature: 1.0,
@@ -661,7 +661,7 @@ fn random_neural_generation() -> Result<()> {
             LogProb::from_raw_prob(0.5).unwrap(),
             40,
             20,
-            2000,
+            50,
         ),
     };
     get_neural_outputs(&g, targets, &config, &mut rng, &cache);

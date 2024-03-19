@@ -538,18 +538,18 @@ fn test_loss() -> Result<()> {
         Tensor::<Autodiff<NdArray>, 2, _>::full([10, 10], 3, &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 23,
-        n_strings_per_grammar: 27,
+        n_grammars: 10,
+        n_strings_per_grammar: 100,
         padding_length: 10,
         n_strings_to_sample: 5,
         temperature: 1.0,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
-            LogProb::new(-128.0).unwrap(),
+            LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            40,
-            20,
-            4000,
+            100,
+            100,
+            40000,
         ),
     };
     let pad_vector =
@@ -581,8 +581,8 @@ fn test_loss() -> Result<()> {
 #[test]
 fn random_neural_generation() -> Result<()> {
     let cache = Cache::new(100);
-    let n_lexemes = 2;
-    let n_pos = 4;
+    let n_lexemes = 4;
+    let n_pos = 3;
     let n_licensee = 2;
     let n_categories = 3;
     let n_lemmas = 10;

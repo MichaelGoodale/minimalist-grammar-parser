@@ -575,24 +575,28 @@ impl<B: Backend> NeuralLexicon<B> {
 
         for (lexeme_idx, features) in lexemes.into_iter().enumerate() {
             let mut parents = vec![root];
+            let mut first = true;
             for (position, possibles) in features.into_iter() {
                 let mut new_parents = vec![];
                 for (feature, prob) in possibles.into_iter() {
                     for parent in parents.iter() {
                         let mut node = None;
-                        for child in graph
-                            .neighbors_directed(*parent, petgraph::Direction::Outgoing)
-                            .collect_vec()
-                            .into_iter()
-                        {
-                            if let (Some(log), child_feature) =
-                                graph.node_weight_mut(child).unwrap()
+                        if first {
+                            for child in graph
+                                .neighbors_directed(*parent, petgraph::Direction::Outgoing)
+                                .collect_vec()
+                                .into_iter()
                             {
-                                if *child_feature == feature {
-                                    node = Some(child);
-                                    log.push((lexeme_idx, position, prob.clone()));
+                                if let (Some(log), child_feature) =
+                                    graph.node_weight_mut(child).unwrap()
+                                {
+                                    if *child_feature == feature {
+                                        node = Some(child);
+                                        log.push((lexeme_idx, position, prob.clone()));
+                                    }
                                 }
                             }
+                            first = false
                         }
 
                         new_parents.push(node.unwrap_or_else(|| {

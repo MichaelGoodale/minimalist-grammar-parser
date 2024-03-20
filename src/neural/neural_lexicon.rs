@@ -637,7 +637,7 @@ impl<B: Backend> NeuralLexicon<B> {
             let mut features = features.into_iter();
             let mut parents = vec![];
             let (position, first_features) = features.next().unwrap();
-            for (i, (feature, prob)) in first_features.into_iter().enumerate() {
+            for (feature, prob) in first_features.into_iter() {
                 let node = graph.add_node((Some(vec![(lexeme_idx, position, prob)]), feature));
                 let feature = &graph[node].1;
                 match feature {
@@ -652,6 +652,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     }
                 };
                 graph.add_edge(root, node, ());
+                parents.push(node);
             }
 
             for (position, possibles) in features {

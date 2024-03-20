@@ -2,12 +2,13 @@ use std::ops::Range;
 
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
-use ahash::{HashMap, HashSet};
+use ahash::HashMap;
 use anyhow::{bail, Context};
 use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
-use burn::tensor::{Bool, Data, Int};
+use burn::tensor::{Data, Int};
 use itertools::Itertools;
+use logprob::log_sum_exp_float;
 use logprob::LogProb;
 use petgraph::{graph::DiGraph, graph::NodeIndex, visit::EdgeRef};
 use rand::Rng;
@@ -137,12 +138,13 @@ impl<B: Backend> GrammarParameterization<B> {
         let included_features = log_sigmoid(included_features);
         let opposite_included_features = (-included_features.clone().exp()).log1p();
 
+        let weights = log_softmax(weights, 0);
         let types = log_softmax(types, 2);
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
         let type_categories = log_softmax(type_categories, 2);
         let lemmas = log_softmax(lemmas, 1);
-        let licensee_categories = log_softmax(licensee_categories, 1);
+        let licensee_categories = log_softmax(licensee_categories, 2);
         let categories = log_softmax(categories, 1);
 
         let silent_probability: Tensor<B, 1> =
@@ -470,12 +472,9 @@ impl<B: Backend> NeuralLexicon<B> {
         grammar_params: &GrammarParameterization<B>,
         rng: &mut impl Rng,
     ) -> (Tensor<B, 1>, Self) {
-        type PositionLog<B> = Vec<(usize, Option<usize>, Tensor<B, 1>)>;
-        let mut graph: DiGraph<(Option<PositionLog<B>>, NeuralFeature), _> = DiGraph::new();
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
 
-        let root = graph.add_node((None, FeatureOrLemma::Root));
         let mut grammar_prob = Tensor::<B, 1>::zeros([1], &grammar_params.device());
         let mut lexemes = vec![];
         for lexeme_idx in 0..grammar_params.n_lexemes {
@@ -632,13 +631,15 @@ impl<B: Backend> NeuralLexicon<B> {
             lexeme.push(lemma);
             lexemes.push(lexeme);
         }
+        let mut graph: DiGraph<(Option<(usize, Tensor<B, 1>)>, NeuralFeature), ()> = DiGraph::new();
+        let root = graph.add_node((None, FeatureOrLemma::Root));
 
         for (lexeme_idx, features) in lexemes.into_iter().enumerate() {
             let mut features = features.into_iter();
             let mut parents = vec![];
-            let (position, first_features) = features.next().unwrap();
+            let (_position, first_features) = features.next().unwrap();
             for (feature, prob) in first_features.into_iter() {
-                let node = graph.add_node((Some(vec![(lexeme_idx, position, prob)]), feature));
+                let node = graph.add_node((Some((lexeme_idx, prob)), feature));
                 let feature = &graph[node].1;
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {
@@ -655,14 +656,11 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents.push(node);
             }
 
-            for (position, possibles) in features {
+            for (_position, possibles) in features {
                 let mut nodes = vec![];
 
                 for (feature, prob) in possibles.into_iter() {
-                    nodes.push(graph.add_node((
-                        Some(vec![(lexeme_idx, position, prob.clone())]),
-                        feature.clone(),
-                    )));
+                    nodes.push(graph.add_node((Some((lexeme_idx, prob.clone())), feature.clone())));
                 }
                 for (parent, child) in parents.iter().cartesian_product(nodes.iter()) {
                     if !graph.contains_edge(*parent, *child) {
@@ -673,115 +671,35 @@ impl<B: Backend> NeuralLexicon<B> {
             }
         }
 
-        let mut weights_map: HashMap<NeuralProbabilityRecord, Tensor<B, 1>> = HashMap::default();
-        let mut node_map: HashMap<NodeIndex, Option<(NeuralProbabilityRecord, LogProb<f64>)>> =
-            HashMap::default();
-        node_map.insert(root, None);
-
         //Renormalise probabilities to sum to one.
-        for node_index in graph.node_indices() {
-            let neighbours: Vec<_> = graph
-                .neighbors_directed(node_index, petgraph::Direction::Outgoing)
-                .collect();
+        //
+        //
 
-            match neighbours.len() {
-                0 => (),
-                1 => {
-                    node_map.insert(
-                        *neighbours.first().unwrap(),
-                        Some((NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap())),
-                    );
-                }
-                _ => {
-                    let mut probs = vec![];
-                    let mut impossible_lexemes: Vec<_> = std::iter::repeat(true)
-                        .take(grammar_params.n_lexemes)
-                        .collect();
-                    let mut attested_lexemes = vec![];
-
-                    for n in neighbours.iter() {
-                        let (log, _feat) = &graph[*n];
-                        let log: &PositionLog<B> = log.as_ref().unwrap();
-                        let mut attested: Vec<u32> = vec![];
-                        let prob_values: Vec<Tensor<B, 1>> = log
-                            .iter()
-                            .map(|(i, _feature_pos, p)| (i, p))
-                            .fold(vec![], |mut acc, c| {
-                                acc.push(c.1.clone());
-                                attested.push(*c.0 as u32);
-                                impossible_lexemes[*c.0] = false;
-                                acc
-                            });
-                        attested_lexemes.push(attested);
-                        probs.push(Tensor::cat(prob_values, 0));
-                    }
-
-                    let n_attested: usize = impossible_lexemes.iter().map(|x| !x as usize).sum();
-
-                    let mut final_weights = vec![];
-                    if n_attested == 1 {
-                        final_weights = probs;
-                    } else {
-                        let mask = Tensor::<B, 1, Bool>::from_data(
-                            Data::from(impossible_lexemes.as_slice()),
-                            &grammar_params.device(),
-                        );
-
-                        let weights = log_softmax(
-                            {
-                                grammar_params.weights.clone()
-                                    + Tensor::zeros_like(&grammar_params.weights)
-                                        .mask_fill(mask, -20.0)
-                            },
-                            0,
-                        );
-
-                        for (p, a) in probs.iter().zip(&attested_lexemes) {
-                            let idx = Tensor::<B, 1, Int>::from_data(
-                                Data::from(a.as_slice()).convert(),
-                                &grammar_params.device(),
-                            );
-                            let p = p.clone();
-                            let weights = weights.clone().select(0, idx);
-                            let z = if a.len() == 1 {
-                                p + weights
-                            } else {
-                                let p_of_none = (-((p + weights).exp())).log1p().sum();
-                                (-(p_of_none.exp())).log1p()
-                            };
-                            final_weights.push(z);
-                        }
-                    }
-
-                    for (n, w) in neighbours.iter().zip(final_weights.into_iter()) {
-                        let record = NeuralProbabilityRecord::Feature(*n);
-                        let log_prob = LogProb::new(w.clone().into_scalar().elem())
-                            .unwrap_or_else(|_| LogProb::new(0.0).unwrap());
-                        node_map.insert(*n, Some((record, log_prob)));
-                        weights_map.insert(record, w);
-                    }
-                }
-            }
-        }
-        /*
-        let graph2 = graph.clone();
-        let graph2 = graph2.map(
-            |n_i, (_, n)| {
-                format!(
-                    "{n} {:.2}",
-                    match node_map.get(&n_i).unwrap() {
-                        Some((_, p)) => p.into_inner(),
-                        None => 0.0,
-                    }
-                )
-            },
-            |_, _| "",
-        );*/
-
+        let mut weights_map: HashMap<NeuralProbabilityRecord, Tensor<B, 1>> = HashMap::default();
+        let mut ree: HashMap<NodeIndex, usize> = HashMap::default();
         let graph = graph.map(
-            |n, (_log, feat)| (node_map.remove(&n).unwrap(), feat.clone()),
+            |nx, (x, feat)| match x {
+                Some((lexeme_idx, prob)) => {
+                    let mut prob = prob.clone();
+                    if graph.contains_edge(root, nx) {
+                        prob = prob
+                            + grammar_params
+                                .weights
+                                .clone()
+                                .slice([*lexeme_idx..lexeme_idx + 1]);
+                    }
+                    ree.insert(nx, *lexeme_idx);
+                    let record = NeuralProbabilityRecord::Feature(nx);
+                    let log_prob = LogProb::new(prob.clone().into_scalar().elem())
+                        .unwrap_or_else(|_| LogProb::new(0.0).unwrap());
+                    weights_map.insert(record, prob);
+                    (Some((record, log_prob)), feat.clone())
+                }
+                None => (None, feat.clone()),
+            },
             |_, _: &()| (),
         );
+
         (
             grammar_prob,
             NeuralLexicon {

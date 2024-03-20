@@ -1,5 +1,5 @@
 use crate::Direction;
-use ahash::AHashSet;
+use ahash::{AHashSet, HashMap, HashSet};
 use anyhow::{bail, Context, Result};
 use logprob::{LogProb, Softmax};
 use petgraph::{
@@ -8,6 +8,7 @@ use petgraph::{
     visit::{EdgeRef, IntoNodeReferences},
 };
 use std::{
+    default,
     fmt::{Debug, Display},
     hash::Hash,
 };
@@ -20,8 +21,8 @@ pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
     fn n_children(&self, nx: NodeIndex) -> usize;
     fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_;
     fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, Self::Probability)>;
-    fn find_licensee(&self, category: &Category) -> Result<NodeIndex>;
-    fn find_category(&self, category: &Category) -> Result<NodeIndex>;
+    fn find_licensee(&self, category: &Category) -> Result<&[NodeIndex]>;
+    fn find_category(&self, category: &Category) -> Result<&[NodeIndex]>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,10 +130,12 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
+    categories: HashMap<Category, Vec<NodeIndex>>,
+    licensees: HashMap<Category, Vec<NodeIndex>>,
     leaves: Vec<(NodeIndex, f64)>,
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
+impl<T: Eq + std::fmt::Debug + Clone, Category: Hash + Eq + std::fmt::Debug + Clone> PartialEq
     for Lexicon<T, Category>
 {
     //Super inefficient but we can leave it for now
@@ -146,7 +149,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Pa
         true
     }
 }
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash> Eq
     for Lexicon<T, Category>
 {
 }
@@ -251,7 +254,9 @@ impl<
     }
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash>
+    Lexicon<T, Category>
+{
     pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
         let mut v = vec![];
         for (leaf, weight) in self.leaves.iter() {
@@ -299,16 +304,18 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         let mut graph = DiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
+        let mut categories = HashMap::<Category, Vec<NodeIndex>>::default();
+        let mut licensees = HashMap::<Category, Vec<NodeIndex>>::default();
 
         for (lexeme, weight) in items.into_iter().zip(weights.into_iter()) {
             let lexeme: Vec<FeatureOrLemma<T, Category>> = lexeme.into();
-            let mut node_index = root_index;
+            let mut parent = root_index;
 
             for feature in lexeme.into_iter().rev() {
                 //We go down the feature list and add nodes and edges corresponding to features
                 //If they exist already, we just follow the path until we have to start adding.
-                node_index = if let Some((nx, edge_index)) = graph
-                    .edges_directed(node_index, petgraph::Direction::Outgoing)
+                let node_index = if let Some((nx, edge_index)) = graph
+                    .edges_directed(parent, petgraph::Direction::Outgoing)
                     .find(|x| graph[x.target()] == feature)
                     .map(|x| (x.target(), x.id()))
                 {
@@ -316,13 +323,33 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     nx
                 } else {
                     let new_node_index = graph.add_node(feature);
-                    graph.add_edge(node_index, new_node_index, weight);
+                    if parent == root_index {
+                        if let FeatureOrLemma::Feature(Feature::Category(c)) =
+                            &graph[new_node_index]
+                        {
+                            categories
+                                .entry(c.clone())
+                                .or_insert_with(|| vec![])
+                                .push(new_node_index);
+                        }
+                        if let FeatureOrLemma::Feature(Feature::Licensee(c)) =
+                            &graph[new_node_index]
+                        {
+                            licensees
+                                .entry(c.clone())
+                                .or_insert_with(|| vec![])
+                                .push(new_node_index);
+                        }
+                    }
+
+                    graph.add_edge(parent, new_node_index, weight);
                     new_node_index
                 };
 
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
                     leaves.push((node_index, weight));
                 };
+                parent = node_index;
             }
         }
         //Renormalise probabilities to sum to one.
@@ -358,6 +385,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         let graph = graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap());
         Lexicon {
             graph,
+            categories,
+            licensees,
             leaves,
             root: root_index,
         }
@@ -402,7 +431,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 }
 
-impl<T: Eq + Debug, Category: Eq + Debug> Lexiconable<T, Category> for Lexicon<T, Category> {
+impl<T: Eq + Debug, Category: Eq + Debug + Hash> Lexiconable<T, Category> for Lexicon<T, Category> {
     type Probability = LogProb<f64>;
 
     fn probability_of_one(&self) -> Self::Probability {
@@ -435,23 +464,17 @@ impl<T: Eq + Debug, Category: Eq + Debug> Lexiconable<T, Category> for Lexicon<T
         }
     }
 
-    fn find_licensee(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                FeatureOrLemma::Feature(Feature::Licensee(c)) => c == category,
-                _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    fn find_licensee(&self, category: &Category) -> Result<&[NodeIndex]> {
+        self.licensees
+            .get(category)
+            .map(Vec::as_slice)
+            .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
     }
 
-    fn find_category(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                FeatureOrLemma::Feature(Feature::Category(c)) => c == category,
-                _ => false,
-            })
+    fn find_category(&self, category: &Category) -> Result<&[NodeIndex]> {
+        self.categories
+            .get(category)
+            .map(Vec::as_slice)
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 }

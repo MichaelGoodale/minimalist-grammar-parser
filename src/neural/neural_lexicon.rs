@@ -34,6 +34,8 @@ type NeuralGraph = DiGraph<
 #[derive(Debug, Clone)]
 pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
+    categories: HashMap<usize, Vec<NodeIndex>>,
+    licensees: HashMap<usize, Vec<NodeIndex>>,
     graph: NeuralGraph,
     root: NodeIndex,
     device: B::Device,
@@ -470,6 +472,8 @@ impl<B: Backend> NeuralLexicon<B> {
     ) -> (Tensor<B, 1>, Self) {
         type PositionLog<B> = Vec<(usize, Option<usize>, Tensor<B, 1>)>;
         let mut graph: DiGraph<(Option<PositionLog<B>>, NeuralFeature), _> = DiGraph::new();
+        let mut licensees_map = HashMap::default();
+        let mut categories_map = HashMap::default();
 
         let root = graph.add_node((None, FeatureOrLemma::Root));
         let mut grammar_prob = Tensor::<B, 1>::zeros([1], &grammar_params.device());
@@ -633,31 +637,21 @@ impl<B: Backend> NeuralLexicon<B> {
             let mut features = features.into_iter();
             let mut parents = vec![];
             let (position, first_features) = features.next().unwrap();
-            let mut nodes = std::iter::repeat(None)
-                .take(first_features.len())
-                .collect::<Vec<_>>();
             for (i, (feature, prob)) in first_features.into_iter().enumerate() {
-                for child in graph
-                    .neighbors_directed(root, petgraph::Direction::Outgoing)
-                    .collect_vec()
-                    .into_iter()
-                {
-                    if let (Some(log), child_feature) = graph.node_weight_mut(child).unwrap() {
-                        if *child_feature == feature {
-                            nodes[i] = Some(child);
-                            log.push((lexeme_idx, position, prob.clone()));
-                            break;
-                        }
+                let node = graph.add_node((Some(vec![(lexeme_idx, position, prob)]), feature));
+                let feature = &graph[node].1;
+                match feature {
+                    FeatureOrLemma::Feature(Feature::Category(c)) => {
+                        categories_map.entry(*c).or_insert(vec![]).push(node);
                     }
-                }
-                parents.push(nodes[i].unwrap_or_else(|| {
-                    graph.add_node((Some(vec![(lexeme_idx, position, prob)]), feature))
-                }));
-            }
-            for node in parents.iter() {
-                if !graph.contains_edge(root, *node) {
-                    graph.add_edge(root, *node, ());
-                }
+                    FeatureOrLemma::Feature(Feature::Licensee(c)) => {
+                        licensees_map.entry(*c).or_insert(vec![]).push(node);
+                    }
+                    _ => {
+                        panic!("Invalid first feature!")
+                    }
+                };
+                graph.add_edge(root, node, ());
             }
 
             for (position, possibles) in features {
@@ -791,6 +785,8 @@ impl<B: Backend> NeuralLexicon<B> {
             grammar_prob,
             NeuralLexicon {
                 graph,
+                licensees: licensees_map,
+                categories: categories_map,
                 weights: weights_map,
                 root,
                 device: grammar_params.device(),
@@ -1041,10 +1037,12 @@ impl<B: Backend> NeuralLexicon<B> {
             grammar_prob,
             lexemes
                 .into_iter()
-                .map(|v| v.into_iter().map(|(a, b)| a).collect())
+                .map(|v| v.into_iter().map(|(a, _b)| a).collect())
                 .collect(),
             NeuralLexicon {
                 graph,
+                licensees: HashMap::default(),
+                categories: HashMap::default(),
                 weights: weights_map,
                 root,
                 device: grammar_params.device(),
@@ -1083,23 +1081,17 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
         }
     }
 
-    fn find_licensee(&self, category: &usize) -> anyhow::Result<petgraph::prelude::NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                (_, FeatureOrLemma::Feature(Feature::Licensee(c))) => c == category,
-                _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+    fn find_licensee(&self, category: &usize) -> anyhow::Result<&[petgraph::prelude::NodeIndex]> {
+        self.licensees
+            .get(category)
+            .map(Vec::as_slice)
+            .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
     }
 
-    fn find_category(&self, category: &usize) -> anyhow::Result<petgraph::prelude::NodeIndex> {
-        self.graph
-            .neighbors_directed(self.root, petgraph::Direction::Outgoing)
-            .find(|i| match &self.graph[*i] {
-                (_, FeatureOrLemma::Feature(Feature::Category(c))) => c == category,
-                _ => false,
-            })
+    fn find_category(&self, category: &usize) -> anyhow::Result<&[petgraph::prelude::NodeIndex]> {
+        self.categories
+            .get(category)
+            .map(Vec::as_slice)
             .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
     }
 }

@@ -72,37 +72,39 @@ pub struct NeuralBeam {
 }
 
 impl NeuralBeam {
-    pub fn new<B: Backend>(
-        lexicon: &NeuralLexicon<B>,
+    pub fn new<'a, B: Backend>(
+        lexicon: &'a NeuralLexicon<B>,
         initial_category: usize,
         record_rules: bool,
-    ) -> Result<NeuralBeam> {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
-        let category_index = lexicon.find_category(&initial_category)?;
+    ) -> Result<impl Iterator<Item = NeuralBeam> + 'a> {
+        let category_indexes = lexicon.find_category(&initial_category)?;
 
-        queue.push(Reverse(ParseMoment::new(
-            FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            thin_vec![],
-        )));
+        Ok(category_indexes.iter().map(move |category_index| {
+            let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
+            queue.push(Reverse(ParseMoment::new(
+                FutureTree {
+                    node: *category_index,
+                    index: GornIndex::default(),
+                    id: 0,
+                },
+                thin_vec![],
+            )));
 
-        Ok(NeuralBeam {
-            log_probability: (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()),
-            queue,
-            generated_sentence: StringPath(vec![]),
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
-            probability_path: StringProbHistory::default(),
-            top_id: 0,
-            steps: 0,
-            record_rules,
-        })
+            NeuralBeam {
+                log_probability: (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()),
+                queue,
+                generated_sentence: StringPath(vec![]),
+                rules: if record_rules {
+                    thin_vec![Rule::Start(*category_index)]
+                } else {
+                    thin_vec![]
+                },
+                probability_path: StringProbHistory::default(),
+                top_id: 0,
+                steps: 0,
+                record_rules,
+            }
+        }))
     }
 
     pub fn yield_good_parse(self) -> Option<(StringPath, StringProbHistory)> {

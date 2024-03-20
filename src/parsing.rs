@@ -2,6 +2,7 @@ use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use crate::{Direction, ParseHeap};
 use anyhow::Result;
 use beam::Beam;
+use itertools::repeat_n;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 pub(crate) use trees::FutureTree;
@@ -124,55 +125,57 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T, Probability = L::Probability>,
+    B: Beam<T, Probability = L::Probability> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
     moment: &ParseMoment,
-    mut beam: B,
+    beam: B,
     cat: &Category,
     dir: &Direction,
     child_node: NodeIndex,
     child_prob: L::Probability,
     rule_prob: L::Probability,
 ) -> Result<()> {
-    let complement = lexicon.find_category(cat)?;
-    beam.push_moment(ParseMoment::new(
-        FutureTree {
-            node: complement,
-            index: moment.tree.index.clone_push(*dir),
-            id: beam.top_id() + 1,
-        },
-        match dir {
-            Direction::Right => moment.movers.clone(),
-            Direction::Left => thin_vec![],
-        },
-    ));
-    beam.push_moment(ParseMoment::new(
-        FutureTree {
-            node: child_node,
-            index: moment.tree.index.clone_push(dir.flip()),
-            id: beam.top_id() + 2,
-        },
-        match dir {
-            Direction::Right => thin_vec![],
-            Direction::Left => moment.movers.clone(),
-        },
-    ));
+    let complements = lexicon.find_category(cat)?;
+    for (complement, mut beam) in complements.iter().zip(repeat_n(beam, complements.len())) {
+        beam.push_moment(ParseMoment::new(
+            FutureTree {
+                node: *complement,
+                index: moment.tree.index.clone_push(*dir),
+                id: beam.top_id() + 1,
+            },
+            match dir {
+                Direction::Right => moment.movers.clone(),
+                Direction::Left => thin_vec![],
+            },
+        ));
+        beam.push_moment(ParseMoment::new(
+            FutureTree {
+                node: child_node,
+                index: moment.tree.index.clone_push(dir.flip()),
+                id: beam.top_id() + 2,
+            },
+            match dir {
+                Direction::Right => thin_vec![],
+                Direction::Left => moment.movers.clone(),
+            },
+        ));
 
-    beam.add_to_log_prob(child_prob);
-    beam.add_to_log_prob(rule_prob);
-    if beam.record_rules() {
-        beam.push_rule(Rule::Unmerge {
-            child: child_node,
-            parent: moment.tree.id,
-            child_id: beam.top_id() + 2,
-            complement_id: beam.top_id() + 1,
-        });
+        beam.add_to_log_prob(child_prob.clone());
+        beam.add_to_log_prob(rule_prob.clone());
+        if beam.record_rules() {
+            beam.push_rule(Rule::Unmerge {
+                child: child_node,
+                parent: moment.tree.id,
+                child_id: beam.top_id() + 2,
+                complement_id: beam.top_id() + 1,
+            });
+        }
+        *beam.top_id_mut() += 2;
+        beam.inc();
+        v.push(beam);
     }
-    *beam.top_id_mut() += 2;
-    beam.inc();
-    v.push(beam);
     Ok(())
 }
 
@@ -249,47 +252,49 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
-    B: Beam<T, Probability = L::Probability>,
+    B: Beam<T, Probability = L::Probability> + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &L,
     moment: &ParseMoment,
-    mut beam: B,
+    beam: B,
     cat: &Category,
     child_node: NodeIndex,
     child_prob: L::Probability,
     rule_prob: L::Probability,
 ) -> Result<()> {
-    let stored = lexicon.find_licensee(cat)?;
+    let storeds = lexicon.find_licensee(cat)?;
 
-    beam.push_moment(ParseMoment::new(
-        FutureTree {
-            node: child_node,
-            index: moment.tree.index.clone_push(Direction::Right),
-            id: beam.top_id() + 1,
-        },
-        clone_push(
-            &moment.movers,
+    for (stored, mut beam) in storeds.iter().zip(repeat_n(beam, storeds.len())) {
+        beam.push_moment(ParseMoment::new(
             FutureTree {
-                node: stored,
-                index: moment.tree.index.clone_push(Direction::Left),
-                id: beam.top_id() + 2,
+                node: child_node,
+                index: moment.tree.index.clone_push(Direction::Right),
+                id: beam.top_id() + 1,
             },
-        ),
-    ));
-    beam.add_to_log_prob(child_prob);
-    beam.add_to_log_prob(rule_prob);
+            clone_push(
+                &moment.movers,
+                FutureTree {
+                    node: *stored,
+                    index: moment.tree.index.clone_push(Direction::Left),
+                    id: beam.top_id() + 2,
+                },
+            ),
+        ));
+        beam.add_to_log_prob(child_prob.clone());
+        beam.add_to_log_prob(rule_prob.clone());
 
-    if beam.record_rules() {
-        beam.push_rule(Rule::Unmove {
-            child_id: beam.top_id() + 1,
-            stored_id: beam.top_id() + 2,
-            parent: moment.tree.id,
-        });
+        if beam.record_rules() {
+            beam.push_rule(Rule::Unmove {
+                child_id: beam.top_id() + 1,
+                stored_id: beam.top_id() + 2,
+                parent: moment.tree.id,
+            });
+        }
+        *beam.top_id_mut() += 2;
+        beam.inc();
+        v.push(beam);
     }
-    *beam.top_id_mut() += 2;
-    beam.inc();
-    v.push(beam);
     Ok(())
 }
 

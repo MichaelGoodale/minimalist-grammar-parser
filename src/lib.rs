@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 use anyhow::Result;
@@ -124,8 +125,11 @@ where
 type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], Vec<Rule>);
 type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, Vec<Rule>);
 
-pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
-{
+pub struct FuzzyParser<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
+> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, FuzzyBeam<'a, T>>,
     move_log_prob: LogProb<f64>,
@@ -135,7 +139,7 @@ pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone
 impl<'a, T, Category> FuzzyParser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     pub fn new<U>(
         lexicon: &'a Lexicon<T, Category>,
@@ -190,7 +194,7 @@ where
 impl<'a, T, Category> Iterator for FuzzyParser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     type Item = GeneratorOutput<T>;
 
@@ -214,7 +218,11 @@ where
     }
 }
 
-pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
+pub struct Parser<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
+> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, ParseBeam<'a, T>>,
     move_log_prob: LogProb<f64>,
@@ -225,7 +233,7 @@ pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + st
 impl<'a, T, Category> Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     pub fn new(
         lexicon: &'a Lexicon<T, Category>,
@@ -349,7 +357,7 @@ where
 impl<'a, T, Category> Iterator for Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     type Item = ParserOutput<'a, T>;
 
@@ -383,7 +391,11 @@ where
 }
 
 #[derive(Debug)]
-pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
+pub struct Generator<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
+> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, GeneratorBeam<T>>,
     move_log_prob: LogProb<f64>,
@@ -393,7 +405,7 @@ pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone +
 impl<'a, T, Category> Generator<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     pub fn new(
         lexicon: &'a Lexicon<T, Category>,
@@ -441,7 +453,7 @@ where
 impl<T, Category> Iterator for Generator<'_, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Hash + Eq + Clone + std::fmt::Debug,
 {
     type Item = GeneratorOutput<T>;
 
@@ -475,7 +487,7 @@ pub struct NeuralGenerator<'a, B: Backend> {
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
     pub fn new(lexicon: &'a NeuralLexicon<B>, config: &'a ParsingConfig) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(NeuralBeam::new(lexicon, 0, false).unwrap());
+        parse_heap.extend(NeuralBeam::new(lexicon, 0, false).unwrap());
         NeuralGenerator {
             lexicon,
             move_log_prob: (NeuralProbabilityRecord::MoveRuleProb, config.move_prob),

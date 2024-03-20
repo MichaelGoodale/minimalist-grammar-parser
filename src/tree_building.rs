@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::Hash;
 
 use crate::lexicon::{FeatureOrLemma, Lexicon, Lexiconable};
 use crate::parsing::Rule;
@@ -17,7 +18,7 @@ pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &[Rule]) -> DiGraph<Stri
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone,
-    C: Eq + std::fmt::Debug + std::clone::Clone,
+    C: Eq + std::fmt::Debug + std::clone::Clone + Hash,
 {
     let mut g = DiGraph::<String, Empty>::new();
     let mut id2node = HashMap::new();

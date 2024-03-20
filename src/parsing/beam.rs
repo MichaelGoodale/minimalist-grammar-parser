@@ -2,12 +2,13 @@ use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::{Lexicon, Lexiconable};
 use crate::{ParseHeap, ParsingConfig};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fmt::Debug;
+use std::hash::Hash;
 use thin_vec::{thin_vec, ThinVec};
 
 pub trait Beam<T>: Sized + Ord {
@@ -173,7 +174,7 @@ where
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
-    pub fn new_multiple<U, Category: Eq + std::fmt::Debug + Clone>(
+    pub fn new_multiple<U, Category: Eq + std::fmt::Debug + Clone + Hash>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
@@ -184,6 +185,12 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
     {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
+
+        if category_index.len() != 1 {
+            //TODO: Make this into a iterator over the slice
+            bail!("Multiple redudant categories!");
+        }
+        let category_index = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -209,7 +216,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         })
     }
 
-    pub fn new_single<Category: Eq + std::fmt::Debug + Clone>(
+    pub fn new_single<Category: Eq + std::fmt::Debug + Clone + Hash>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentence: &'a [T],
@@ -217,6 +224,12 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
     ) -> Result<ParseBeam<'a, T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
+
+        if category_index.len() != 1 {
+            //TODO: Make this into a iterator over the slice
+            bail!("Multiple redudant categories!");
+        }
+        let category_index = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -273,7 +286,7 @@ pub struct FuzzyBeam<'a, T> {
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
-    pub fn new<U, Category: Eq + std::fmt::Debug + Clone>(
+    pub fn new<U, Category: Eq + std::fmt::Debug + Clone + Hash>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
@@ -284,6 +297,11 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
     {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
+        if category_index.len() != 1 {
+            //TODO: Make this into a iterator over the slice
+            bail!("Multiple redudant categories!");
+        }
+        let category_index = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -554,13 +572,18 @@ where
 }
 
 impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
-    pub fn new<Category: Eq + std::fmt::Debug + Clone>(
+    pub fn new<Category: Eq + std::fmt::Debug + Clone + Hash>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         record_rules: bool,
     ) -> Result<GeneratorBeam<T>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
+        if category_index.len() != 1 {
+            //TODO: Make this into a iterator over the slice
+            bail!("Multiple redudant categories!");
+        }
+        let category_index = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {

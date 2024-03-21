@@ -190,7 +190,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
             //TODO: Make this into a iterator over the slice
             bail!("Multiple redudant categories!");
         }
-        let category_index = *category_index.first().unwrap();
+        let (log_probability, category_index) = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -202,7 +202,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         )));
 
         Ok(ParseBeam {
-            log_probability: LogProb::new(0_f64).unwrap(),
+            log_probability,
             queue,
             sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             rules: if record_rules {
@@ -229,7 +229,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
             //TODO: Make this into a iterator over the slice
             bail!("Multiple redudant categories!");
         }
-        let category_index = *category_index.first().unwrap();
+        let (log_probability, category_index) = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -241,7 +241,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         )));
 
         Ok(ParseBeam {
-            log_probability: LogProb::new(0_f64).unwrap(),
+            log_probability,
             queue,
             sentence: vec![(sentence, 0)],
             rules: if record_rules {
@@ -301,7 +301,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             //TODO: Make this into a iterator over the slice
             bail!("Multiple redudant categories!");
         }
-        let category_index = *category_index.first().unwrap();
+        let (log_probability, category_index) = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -313,7 +313,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
         )));
 
         Ok(FuzzyBeam {
-            log_probability: LogProb::new(0_f64).unwrap(),
+            log_probability,
             queue,
             sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             generated_sentences: vec![],
@@ -583,7 +583,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
             //TODO: Make this into a iterator over the slice
             bail!("Multiple redudant categories!");
         }
-        let category_index = *category_index.first().unwrap();
+        let (log_probability, category_index) = *category_index.first().unwrap();
 
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -595,7 +595,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         )));
 
         Ok(GeneratorBeam {
-            log_probability: LogProb::new(0_f64).unwrap(),
+            log_probability,
             queue,
             sentence: vec![],
             rules: if record_rules {

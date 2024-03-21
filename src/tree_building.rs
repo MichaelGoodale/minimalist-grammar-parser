@@ -25,7 +25,7 @@ where
     for rule in rules.iter() {
         match rule {
             Rule::Start(nx) => {
-                let c = lexicon.get(*nx).unwrap().0;
+                let c = lexicon.get(*nx).unwrap();
                 id2node.insert(0, g.add_node(format!("{c}P").to_string()));
             }
             Rule::Unmerge {
@@ -104,7 +104,7 @@ where
             }
             Rule::Scan { node, parent } => {
                 let parent_category = lexicon.get_category(*node).unwrap();
-                let node = lexicon.get(*node).unwrap().0;
+                let node = lexicon.get(*node).unwrap();
                 let node = g.add_node(node.to_string());
                 let parent_node = g.add_node(parent_category.to_string());
 

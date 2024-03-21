@@ -68,8 +68,8 @@ fn unmerge_from_mover<
 ) -> L::Probability {
     let mut output = lexicon.probability_of_one();
     for mover in moment.movers.iter() {
-        for stored_child_node in lexicon.children_of(mover.node) {
-            let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
+        for (stored_prob, stored_child_node) in lexicon.children_of(mover.node) {
+            let stored = lexicon.get(stored_child_node).unwrap();
             match stored {
                 FeatureOrLemma::Feature(Feature::Category(stored)) if stored == cat => {
                     let mut beam = beam.clone();
@@ -138,7 +138,9 @@ fn unmerge<
     rule_prob: L::Probability,
 ) -> Result<()> {
     let complements = lexicon.find_category(cat)?;
-    for (complement, mut beam) in complements.iter().zip(repeat_n(beam, complements.len())) {
+    for ((complement_prob, complement), mut beam) in
+        complements.iter().zip(repeat_n(beam, complements.len()))
+    {
         beam.push_moment(ParseMoment::new(
             FutureTree {
                 node: *complement,
@@ -162,6 +164,7 @@ fn unmerge<
             },
         ));
 
+        beam.add_to_log_prob(complement_prob.clone());
         beam.add_to_log_prob(child_prob.clone());
         beam.add_to_log_prob(rule_prob.clone());
         if beam.record_rules() {
@@ -199,8 +202,8 @@ fn unmove_from_mover<
 ) -> L::Probability {
     let mut output = lexicon.probability_of_one();
     for mover in moment.movers.iter() {
-        for stored_child_node in lexicon.children_of(mover.node) {
-            let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
+        for (stored_prob, stored_child_node) in lexicon.children_of(mover.node) {
+            let stored = lexicon.get(stored_child_node).unwrap();
             match stored {
                 FeatureOrLemma::Feature(Feature::Licensee(s)) if cat == s => {
                     let mut beam = beam.clone();
@@ -265,7 +268,7 @@ fn unmove<
 ) -> Result<()> {
     let storeds = lexicon.find_licensee(cat)?;
 
-    for (stored, mut beam) in storeds.iter().zip(repeat_n(beam, storeds.len())) {
+    for ((stored_prob, stored), mut beam) in storeds.iter().zip(repeat_n(beam, storeds.len())) {
         beam.push_moment(ParseMoment::new(
             FutureTree {
                 node: child_node,
@@ -281,6 +284,7 @@ fn unmove<
                 },
             ),
         ));
+        beam.add_to_log_prob(stored_prob.clone());
         beam.add_to_log_prob(child_prob.clone());
         beam.add_to_log_prob(rule_prob.clone());
 
@@ -317,8 +321,8 @@ pub fn expand<
 
     new_beams
         .zip(lexicon.children_of(moment.tree.node))
-        .for_each(|(beam, child_node)| {
-            let (child, child_prob) = lexicon.get(child_node).unwrap();
+        .for_each(|(beam, (child_prob, child_node))| {
+            let child = lexicon.get(child_node).unwrap();
             match &child {
                 FeatureOrLemma::Lemma(s) if moment.no_movers() => {
                     B::scan(extender, &moment, beam, s, child_node, child_prob);

@@ -79,11 +79,11 @@ impl NeuralBeam {
     ) -> Result<impl Iterator<Item = NeuralBeam> + 'a> {
         let category_indexes = lexicon.find_category(&initial_category)?;
 
-        Ok(category_indexes.iter().map(move |category_index| {
+        Ok(category_indexes.iter().map(move |(log_probability, node)| {
             let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
             queue.push(Reverse(ParseMoment::new(
                 FutureTree {
-                    node: *category_index,
+                    node: *node,
                     index: GornIndex::default(),
                     id: 0,
                 },
@@ -91,11 +91,11 @@ impl NeuralBeam {
             )));
 
             NeuralBeam {
-                log_probability: (NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()),
+                log_probability: log_probability.clone(),
                 queue,
                 generated_sentence: StringPath(vec![]),
                 rules: if record_rules {
-                    thin_vec![Rule::Start(*category_index)]
+                    thin_vec![Rule::Start(*node)]
                 } else {
                     thin_vec![]
                 },

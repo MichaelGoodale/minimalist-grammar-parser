@@ -1,14 +1,13 @@
 use crate::Direction;
-use ahash::{AHashSet, HashMap, HashSet};
+use ahash::{AHashSet, HashMap};
 use anyhow::{bail, Context, Result};
 use logprob::{LogProb, Softmax};
 use petgraph::{
     graph::DiGraph,
-    graph::NodeIndex,
+    graph::{Node, NodeIndex},
     visit::{EdgeRef, IntoNodeReferences},
 };
 use std::{
-    default,
     fmt::{Debug, Display},
     hash::Hash,
 };
@@ -19,10 +18,13 @@ pub trait Lexiconable<T: Eq, Category: Eq>: Debug {
     fn probability_of_one(&self) -> Self::Probability;
 
     fn n_children(&self, nx: NodeIndex) -> usize;
-    fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_;
-    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, Self::Probability)>;
-    fn find_licensee(&self, category: &Category) -> Result<&[NodeIndex]>;
-    fn find_category(&self, category: &Category) -> Result<&[NodeIndex]>;
+    fn children_of(
+        &self,
+        nx: NodeIndex,
+    ) -> impl Iterator<Item = (Self::Probability, NodeIndex)> + '_;
+    fn get(&self, nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>>;
+    fn find_licensee(&self, category: &Category) -> Result<&[(Self::Probability, NodeIndex)]>;
+    fn find_category(&self, category: &Category) -> Result<&[(Self::Probability, NodeIndex)]>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -130,8 +132,8 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
-    categories: HashMap<Category, Vec<NodeIndex>>,
-    licensees: HashMap<Category, Vec<NodeIndex>>,
+    categories: HashMap<Category, Vec<(LogProb<f64>, NodeIndex)>>,
+    licensees: HashMap<Category, Vec<(LogProb<f64>, NodeIndex)>>,
     leaves: Vec<(NodeIndex, f64)>,
 }
 
@@ -304,8 +306,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
         let mut graph = DiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
-        let mut categories = HashMap::<Category, Vec<NodeIndex>>::default();
-        let mut licensees = HashMap::<Category, Vec<NodeIndex>>::default();
+        let mut categories = HashMap::default();
+        let mut licensees = HashMap::default();
 
         for (lexeme, weight) in items.into_iter().zip(weights.into_iter()) {
             let lexeme: Vec<FeatureOrLemma<T, Category>> = lexeme.into();
@@ -330,7 +332,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
                             categories
                                 .entry(c.clone())
                                 .or_insert_with(|| vec![])
-                                .push(new_node_index);
+                                .push((LogProb::new(0.0).unwrap(), new_node_index));
                         }
                         if let FeatureOrLemma::Feature(Feature::Licensee(c)) =
                             &graph[new_node_index]
@@ -338,7 +340,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
                             licensees
                                 .entry(c.clone())
                                 .or_insert_with(|| vec![])
-                                .push(new_node_index);
+                                .push((LogProb::new(0.0).unwrap(), new_node_index));
                         }
                     }
 
@@ -353,6 +355,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
             }
         }
         //Renormalise probabilities to sum to one.
+        //TODO: Don't normalise on categories!
         for node_index in graph.node_indices() {
             let edges: Vec<_> = graph
                 .edges_directed(node_index, petgraph::Direction::Outgoing)
@@ -444,34 +447,24 @@ impl<T: Eq + Debug, Category: Eq + Debug + Hash> Lexiconable<T, Category> for Le
             .count()
     }
 
-    fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
+    fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = (LogProb<f64>, NodeIndex)> + '_ {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
-            .map(|e| e.target())
+            .map(|e| (*e.weight(), e.target()))
     }
 
-    fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
-        if let Some(x) = self.graph.node_weight(nx) {
-            let p = self
-                .graph
-                .edges_directed(nx, petgraph::Direction::Incoming)
-                .next()
-                .unwrap()
-                .weight();
-            Some((x, *p))
-        } else {
-            None
-        }
+    fn get(&self, nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
+        self.graph.node_weight(nx)
     }
 
-    fn find_licensee(&self, category: &Category) -> Result<&[NodeIndex]> {
+    fn find_licensee(&self, category: &Category) -> Result<&[(Self::Probability, NodeIndex)]> {
         self.licensees
             .get(category)
             .map(Vec::as_slice)
             .with_context(|| format!("{category:?} is not a valid licensee in the lexicon!"))
     }
 
-    fn find_category(&self, category: &Category) -> Result<&[NodeIndex]> {
+    fn find_category(&self, category: &Category) -> Result<&[(Self::Probability, NodeIndex)]> {
         self.categories
             .get(category)
             .map(Vec::as_slice)

@@ -198,33 +198,24 @@ pub fn get_grammar<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
     cache: &NeuralGrammarCache,
-) -> (
-    Option<(Tensor<B, 3>, Tensor<B, 1>)>,
-    Tensor<B, 1>,
-    Vec<Vec<NeuralFeature>>,
-) {
-    let (p_of_lex, lexemes, lexicon) = NeuralLexicon::new_random(g, rng);
-
-    let entry = cache
-        .entry(lexemes.clone())
-        .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
-    let (strings, string_probs) = entry.value();
+) -> (Option<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>) {
+    let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
+    let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 
     (
         if strings.is_empty() {
             None
         } else {
             //(1, n_grammar_strings)
-            let string_probs = get_string_prob(string_probs, &lexicon, neural_config, &g.device());
+            let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
 
             //(n_grammar_strings, padding_length, n_lemmas)
             Some((
-                string_path_to_tensor(strings, g, neural_config),
+                string_path_to_tensor(&strings, g, neural_config),
                 string_probs,
             ))
         },
         p_of_lex,
-        lexemes,
     )
 }
 

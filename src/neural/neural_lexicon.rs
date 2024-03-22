@@ -257,9 +257,9 @@ impl<B: Backend> GrammarParameterization<B> {
                 .clone()
                 .slice([
                     lexeme_idx..lexeme_idx + 1,
-                    self.n_licensees + (n - 1)..self.n_licensees + n,
+                    self.n_licensees + n - 1..self.n_licensees + n,
                 ])
-                .sum(),
+                .reshape([1]),
         }
     }
 }
@@ -284,7 +284,6 @@ impl<B: Backend> NeuralLexicon<B> {
         let root = graph.add_node((None, FeatureOrLemma::Root));
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
-            let mut parents = vec![];
             let first_features = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
@@ -339,7 +338,6 @@ impl<B: Backend> NeuralLexicon<B> {
                         panic!("Invalid first feature!")
                     }
                 };
-                parents.push(node);
             }
 
             for (licensee, category) in parent_licensees.iter().zip(all_categories.iter()) {
@@ -370,7 +368,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     let node = graph.add_node((Some(tensor_to_log_prob(&prob)), feature));
                     for parent in parent_licensees.iter() {
                         let e_prob = grammar_params.prob_of_n_licensees(lexeme_idx, i);
-                        let e = graph.add_edge(node, *parent, tensor_to_log_prob(&e_prob));
+                        let e = graph.add_edge(*parent, node, tensor_to_log_prob(&e_prob));
                         weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                     }
                     for category in all_categories.iter() {
@@ -461,15 +459,13 @@ impl<B: Backend> NeuralLexicon<B> {
             }
         }
 
-        /*
-                let g = graph.clone();
+        let g = graph.clone();
 
-                let g = g.map(
-                    |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
-                    |e_i, e| e,
-                );
-                println!("{}", petgraph::dot::Dot::new(&g));
-        */
+        let g = g.map(
+            |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
+            |e_i, e| e,
+        );
+        println!("{}", petgraph::dot::Dot::new(&g));
 
         NeuralLexicon {
             graph,

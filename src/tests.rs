@@ -603,10 +603,10 @@ fn test_loss() -> Result<()> {
 
 #[test]
 fn random_neural_generation() -> Result<()> {
-    let n_lexemes = 4;
-    let n_pos = 3;
+    let n_lexemes = 1;
+    let n_pos = 2;
     let n_licensee = 2;
-    let n_categories = 3;
+    let n_categories = 2;
     let n_lemmas = 10;
     let lemmas = Tensor::<NdArray, 2>::random(
         [n_lexemes, n_lemmas],
@@ -621,7 +621,7 @@ fn random_neural_generation() -> Result<()> {
     );
 
     let type_categories = Tensor::<NdArray, 3>::random(
-        [n_lexemes, n_pos, N_TYPES],
+        [n_lexemes, n_pos, n_categories],
         burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
     );

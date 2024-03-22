@@ -13,11 +13,11 @@ use petgraph::graph::NodeIndex;
 
 use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
-use logprob::LogProb;
-
 use thin_vec::{thin_vec, ThinVec};
 
 use ahash::HashMap;
+
+use super::neural_lexicon::NeuralProbability;
 
 #[derive(Debug, Clone, Default)]
 pub struct StringPath(Vec<usize>);
@@ -61,7 +61,7 @@ impl StringProbHistory {
 
 #[derive(Debug, Clone)]
 pub struct NeuralBeam {
-    log_probability: (NeuralProbabilityRecord, LogProb<f64>),
+    log_probability: NeuralProbability,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
     rules: ThinVec<Rule>,
@@ -135,23 +135,23 @@ impl Eq for NeuralBeam {}
 
 impl Ord for NeuralBeam {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a = self.log_probability.1;
-        let b = other.log_probability.1;
+        let a = self.log_probability.0 .1;
+        let b = other.log_probability.0 .1;
         a.cmp(&b)
     }
 }
 
 impl Beam<usize> for NeuralBeam {
-    type Probability = (NeuralProbabilityRecord, LogProb<f64>);
+    type Probability = NeuralProbability;
 
     fn log_probability(&self) -> &Self::Probability {
         &self.log_probability
     }
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
-        let (record, log_prob) = x;
+        let NeuralProbability((record, log_prob)) = x;
         self.probability_path.add_step(record);
-        self.log_probability.1 += log_prob;
+        self.log_probability.0 .1 += log_prob;
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -187,9 +187,9 @@ impl Beam<usize> for NeuralBeam {
             beam.generated_sentence.0.push(*x);
         }
 
-        let (record, log_prob) = child_prob;
+        let NeuralProbability((record, log_prob)) = child_prob;
         beam.probability_path.add_step(record);
-        beam.log_probability.1 += log_prob;
+        beam.log_probability.0 .1 += log_prob;
 
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {

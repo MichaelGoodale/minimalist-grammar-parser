@@ -488,7 +488,7 @@ fn test_loss() -> Result<()> {
     let cache = Cache::new(100);
     let n_lexemes = 2;
     let n_pos = 3;
-    let n_categories = 1;
+    let n_categories = 2;
     let n_licensees = 1;
 
     let categories =
@@ -527,18 +527,18 @@ fn test_loss() -> Result<()> {
 
     let included_features = Tensor::<Autodiff<NdArray>, 2>::full(
         [n_lexemes, n_licensees + n_pos],
-        -100.0,
+        -10,
         &NdArrayDevice::default(),
     )
     .slice_assign(
         [1..2, n_licensees..n_licensees + 1],
-        Tensor::full([1, 1], 100.0, &dev),
+        Tensor::full([1, 1], 10, &dev),
     );
     let targets =
         Tensor::<Autodiff<NdArray>, 2, _>::full([10, 10], 3, &NdArrayDevice::default()).tril(0);
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
-        n_grammars: 10,
+        n_grammars: 1,
         n_strings_per_grammar: 100,
         padding_length: 10,
         n_strings_to_sample: 5,
@@ -665,5 +665,6 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
     get_neural_outputs(&g, targets, &config, &mut rng, &cache);
+    panic!();
     Ok(())
 }

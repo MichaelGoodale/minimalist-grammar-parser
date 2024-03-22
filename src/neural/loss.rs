@@ -3,6 +3,7 @@ use super::neural_lexicon::{
     GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
 };
 use super::utils::log_sum_exp_dim;
+use crate::lexicon::Lexiconable;
 use crate::{neural, NeuralGenerator, ParsingConfig};
 use ahash::HashMap;
 use burn::tensor::Int;
@@ -133,61 +134,23 @@ fn get_string_prob<B: Backend>(
                             .mul_scalar(*count),
                     );
                 }
+                NeuralProbabilityRecord::EdgeAndFeature((n, e)) => {
+                    let e = NeuralProbabilityRecord::Edge(*e);
+                    let n = NeuralProbabilityRecord::Feature(*n);
+                    p = p.add(
+                        (lexicon.get_weight(&n).unwrap().clone()
+                            + lexicon.get_weight(&e).unwrap().clone())
+                        .mul_scalar(*count),
+                    );
+                }
+                NeuralProbabilityRecord::Edge(_) => {
+                    panic!("This should never be in a parse path")
+                }
             }
         }
         string_path_tensor = string_path_tensor.slice_assign([i..i + 1], p);
     }
     string_path_tensor
-}
-
-fn get_reward_loss<B: Backend>(
-    target_set: &mut HashMap<Vec<u32>, bool>,
-    grammar: &Tensor<B, 3>,
-    n_samples: usize,
-    rng: &mut impl Rng,
-) -> f32 {
-    target_set.iter_mut().for_each(|(_k, v)| *v = false);
-
-    let [n_strings, length, n_lemmas] = grammar.shape().dims;
-    let lemmas_ids: Vec<_> = (0..n_lemmas).collect();
-
-    for string_i in 0..n_strings {
-        let dists: Vec<Vec<f64>> = (0..length)
-            .map(|i| {
-                grammar
-                    .clone()
-                    .slice([string_i..string_i + 1, i..i + 1, 0..n_lemmas])
-                    .exp()
-                    .to_data()
-                    .convert::<f64>()
-                    .value
-            })
-            .collect();
-
-        for _ in 0..n_samples {
-            let mut sample: Vec<u32> = std::iter::repeat(0).take(length).collect();
-            for (j, word) in sample.iter_mut().enumerate() {
-                *word = (*lemmas_ids.choose_weighted(rng, |i| dists[j][*i]).unwrap())
-                    .try_into()
-                    .unwrap();
-            }
-
-            match target_set.entry(sample) {
-                Entry::Occupied(v) => {
-                    *v.into_mut() = true;
-                }
-                Entry::Vacant(_) => {}
-            }
-        }
-    }
-
-    target_set
-        .values()
-        .map(|in_grammar| {
-            let x: f32 = (*in_grammar).into();
-            x
-        })
-        .sum::<f32>()
 }
 
 pub type NeuralGrammarCache =
@@ -232,28 +195,24 @@ pub fn get_neural_outputs<B: Backend>(
     let mut grammars = vec![];
     let mut probs = vec![];
 
-    for _ in 0..neural_config.n_grammars {
-        let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
+    let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
 
-        let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
-        //let entry = cache
-        //    .entry(lexemes)
-        //    .or_insert_with(|| retrieve_strings(&lexicon, neural_config));
-        //let (strings, string_probs) = entry.value();
+    let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 
-        let grammar = string_path_to_tensor(&strings, g, neural_config);
-        let string_probs = if strings.is_empty() {
-            Tensor::full(
-                [neural_config.n_strings_per_grammar],
-                EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
-                &g.device(),
-            )
-        } else {
-            get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
-        };
-        grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
-        probs.push(string_probs);
-    }
+    let grammar = string_path_to_tensor(&strings, g, neural_config);
+    let string_probs = if strings.is_empty() {
+        Tensor::full(
+            [neural_config.n_strings_per_grammar],
+            EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
+            &g.device(),
+        )
+    } else {
+        get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
+    };
+    dbg!(grammar.clone().argmax(2).squeeze::<2>(2));
+    dbg!(string_probs.clone());
+    grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
+    probs.push(string_probs);
     //(n_grammars, n_strings_per_grammar);
     let string_probs: Tensor<B, 2> = Tensor::stack(probs, 1);
 

@@ -8,7 +8,7 @@ use lexicon::Lexicon;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
-use neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
+use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbabilityRecord};
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
@@ -480,8 +480,8 @@ where
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, usize, NeuralBeam>,
-    move_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
-    merge_log_prob: (NeuralProbabilityRecord, LogProb<f64>),
+    move_log_prob: NeuralProbability,
+    merge_log_prob: NeuralProbability,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
@@ -490,11 +490,14 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         parse_heap.extend(NeuralBeam::new(lexicon, 0, false).unwrap());
         NeuralGenerator {
             lexicon,
-            move_log_prob: (NeuralProbabilityRecord::MoveRuleProb, config.move_prob),
-            merge_log_prob: (
+            move_log_prob: NeuralProbability((
+                NeuralProbabilityRecord::MoveRuleProb,
+                config.move_prob,
+            )),
+            merge_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MergeRuleProb,
                 config.move_prob.opposite_prob(),
-            ),
+            )),
             parse_heap: ParseHeap {
                 global_steps: 0,
                 done: false,

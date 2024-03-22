@@ -72,11 +72,11 @@ pub struct NeuralBeam {
 }
 
 impl NeuralBeam {
-    pub fn new<'a, B: Backend>(
-        lexicon: &'a NeuralLexicon<B>,
+    pub fn new<B: Backend>(
+        lexicon: &NeuralLexicon<B>,
         initial_category: usize,
         record_rules: bool,
-    ) -> Result<impl Iterator<Item = NeuralBeam> + 'a> {
+    ) -> Result<impl Iterator<Item = NeuralBeam> + '_> {
         let category_indexes = lexicon.find_category(&initial_category)?;
 
         Ok(category_indexes.iter().map(move |(log_probability, node)| {
@@ -90,8 +90,12 @@ impl NeuralBeam {
                 thin_vec![],
             )));
 
+            let record = log_probability.0 .0;
+            let mut history = StringProbHistory::default();
+            history.0.insert(record, 1);
+
             NeuralBeam {
-                log_probability: log_probability.clone(),
+                log_probability: *log_probability,
                 queue,
                 generated_sentence: StringPath(vec![]),
                 rules: if record_rules {
@@ -99,7 +103,7 @@ impl NeuralBeam {
                 } else {
                     thin_vec![]
                 },
-                probability_path: StringProbHistory::default(),
+                probability_path: history,
                 top_id: 0,
                 steps: 0,
                 record_rules,

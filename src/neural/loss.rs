@@ -101,22 +101,19 @@ fn get_string_prob<B: Backend>(
                 }
                 NeuralProbabilityRecord::Feature(lexeme) => {
                     let feature = NeuralProbabilityRecord::Feature(*lexeme);
-                    p = p.add(
-                        lexicon
-                            .get_weight(&feature)
-                            .unwrap()
-                            .clone()
-                            .mul_scalar(*count),
-                    );
+                    p = p + lexicon
+                        .get_weight(&feature)
+                        .unwrap()
+                        .clone()
+                        .mul_scalar(*count);
                 }
                 NeuralProbabilityRecord::EdgeAndFeature((n, e)) => {
                     let e = NeuralProbabilityRecord::Edge(*e);
                     let n = NeuralProbabilityRecord::Feature(*n);
-                    p = p.add(
-                        (lexicon.get_weight(&n).unwrap().clone()
+                    p = p
+                        + (lexicon.get_weight(&n).unwrap().clone()
                             + lexicon.get_weight(&e).unwrap().clone())
-                        .mul_scalar(*count),
-                    );
+                        .mul_scalar(*count);
                 }
                 NeuralProbabilityRecord::Edge(_) => {
                     panic!("This should never be in a parse path")

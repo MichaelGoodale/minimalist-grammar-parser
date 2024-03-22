@@ -569,8 +569,7 @@ fn test_loss() -> Result<()> {
     let end_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 10., 0., 0.], &NdArrayDevice::default());
     let mut loss: Vec<f32> = vec![];
-    for t in [0.1] {
-        //, 0.25, 0.5, 1.0, 2.0, 5.0] {
+    for t in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0] {
         let mut avg = 0.0;
         for _ in 0..3 {
             let g = GrammarParameterization::new(
@@ -594,9 +593,9 @@ fn test_loss() -> Result<()> {
     }
 
     let stored_losses = [
-        39.86359, 35.37904, 30.754171, 15.393458, 26.603754, 44.084595,
+        60.79906, 58.44992, 48.410168, 23.538162, 38.190914, 50.82726,
     ];
-    panic!();
+    dbg!(&loss);
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
         approx::assert_relative_eq!(loss, stored_loss);
     }

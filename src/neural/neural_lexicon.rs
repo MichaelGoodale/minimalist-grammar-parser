@@ -320,9 +320,12 @@ impl<B: Backend> NeuralLexicon<B> {
                 let prob_of_n_licensees =
                     grammar_params.prob_of_n_licensees(lexeme_idx, n_licensees);
                 let e = graph.add_edge(root, node, tensor_to_log_prob(&prob_of_n_licensees));
+                let p = NeuralProbability((
+                    NeuralProbabilityRecord::EdgeAndFeature((node, e)),
+                    p + tensor_to_log_prob(&prob_of_n_licensees),
+                ));
                 weights_map.insert(NeuralProbabilityRecord::Edge(e), prob_of_n_licensees);
                 weights_map.insert(NeuralProbabilityRecord::Feature(node), prob);
-                let p = NeuralProbability((NeuralProbabilityRecord::EdgeAndFeature((node, e)), p));
 
                 let feature = &graph[node].1;
                 match feature {

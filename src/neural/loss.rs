@@ -166,7 +166,6 @@ pub fn get_neural_outputs<B: Backend>(
     //(n_strings_per_grammar);
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
 
-    dbg!(log_sum_exp_dim::<B, 2, 1>(string_probs.clone().unsqueeze_dim::<2>(0), 1).detach());
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 

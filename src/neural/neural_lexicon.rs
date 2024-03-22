@@ -458,14 +458,15 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents = new_parents;
             }
         }
+        /*
+                let g = graph.clone();
 
-        let g = graph.clone();
-
-        let g = g.map(
-            |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
-            |e_i, e| e,
-        );
-        println!("{}", petgraph::dot::Dot::new(&g));
+                let g = g.map(
+                    |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
+                    |e_i, e| e,
+                );
+                println!("{}", petgraph::dot::Dot::new(&g));
+        */
 
         NeuralLexicon {
             graph,

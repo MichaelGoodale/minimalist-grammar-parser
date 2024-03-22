@@ -216,7 +216,7 @@ impl<B: Backend> GrammarParameterization<B> {
             0 => self
                 .opposite_included_features
                 .clone()
-                .slice([lexeme_idx..lexeme_idx + 1, 0..self.n_licensees])
+                .slice([lexeme_idx..lexeme_idx + 1, 0..1])
                 .sum(),
             _ => self
                 .included_features
@@ -228,7 +228,7 @@ impl<B: Backend> GrammarParameterization<B> {
     fn prob_of_not_n_licensees(&self, lexeme_idx: usize, n: usize) -> Tensor<B, 1> {
         self.opposite_included_features
             .clone()
-            .slice([lexeme_idx..lexeme_idx + 1, n..self.n_licensees])
+            .slice([lexeme_idx..lexeme_idx + 1, n..n + 1])
             .sum()
     }
 
@@ -237,7 +237,7 @@ impl<B: Backend> GrammarParameterization<B> {
             .clone()
             .slice([
                 lexeme_idx..lexeme_idx + 1,
-                n + self.n_licensees..self.n_licensees + self.n_features,
+                self.n_licensees + n..self.n_licensees + n + 1,
             ])
             .sum()
     }
@@ -249,7 +249,7 @@ impl<B: Backend> GrammarParameterization<B> {
                 .clone()
                 .slice([
                     lexeme_idx..lexeme_idx + 1,
-                    self.n_licensees..self.n_features + self.n_licensees,
+                    self.n_licensees..self.n_licensees + 1,
                 ])
                 .sum(),
             _ => self

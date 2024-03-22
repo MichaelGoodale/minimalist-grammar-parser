@@ -569,7 +569,8 @@ fn test_loss() -> Result<()> {
     let end_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 10., 0., 0.], &NdArrayDevice::default());
     let mut loss: Vec<f32> = vec![];
-    for t in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0] {
+    for t in [0.1] {
+        //, 0.25, 0.5, 1.0, 2.0, 5.0] {
         let mut avg = 0.0;
         for _ in 0..3 {
             let g = GrammarParameterization::new(
@@ -595,6 +596,7 @@ fn test_loss() -> Result<()> {
     let stored_losses = [
         39.86359, 35.37904, 30.754171, 15.393458, 26.603754, 44.084595,
     ];
+    panic!();
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
         approx::assert_relative_eq!(loss, stored_loss);
     }
@@ -608,45 +610,23 @@ fn random_neural_generation() -> Result<()> {
     let n_licensee = 2;
     let n_categories = 2;
     let n_lemmas = 10;
-    let lemmas = Tensor::<NdArray, 2>::random(
-        [n_lexemes, n_lemmas],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
+    let lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, n_lemmas], &NdArrayDevice::default());
 
-    let types = Tensor::<NdArray, 3>::random(
-        [n_lexemes, n_pos, N_TYPES],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
+    let types = Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, N_TYPES], &NdArrayDevice::default());
 
-    let type_categories = Tensor::<NdArray, 3>::random(
-        [n_lexemes, n_pos, n_categories],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
+    let type_categories =
+        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, n_categories], &NdArrayDevice::default());
 
-    let licensee_categories = Tensor::<NdArray, 3>::random(
+    let licensee_categories = Tensor::<NdArray, 3>::zeros(
         [n_lexemes, n_licensee, n_categories],
-        burn::tensor::Distribution::Default,
         &NdArrayDevice::default(),
     );
-    let included_features = Tensor::<NdArray, 2>::random(
-        [n_lexemes, n_licensee + n_pos],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
+    let included_features =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + n_pos], &NdArrayDevice::default());
 
-    let categories = Tensor::<NdArray, 2>::random(
-        [n_lexemes, n_categories],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
-    let weights = Tensor::<NdArray, 1>::random(
-        [n_lexemes],
-        burn::tensor::Distribution::Default,
-        &NdArrayDevice::default(),
-    );
+    let categories =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
+    let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
@@ -680,11 +660,11 @@ fn random_neural_generation() -> Result<()> {
         n_strings_to_sample: 5,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_global_steps(
-            LogProb::new(-128.0).unwrap(),
+            LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            40,
+            500,
             20,
-            50,
+            5000,
         ),
     };
     get_neural_outputs(&g, targets, &config);

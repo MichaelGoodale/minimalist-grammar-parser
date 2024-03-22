@@ -56,7 +56,7 @@ fn string_path_to_tensor<B: Backend>(
         .unsqueeze_dim::<2>(0)
         .repeat(0, neural_config.padding_length)
         .unsqueeze_dim(0)
-        .repeat(0, neural_config.n_strings_per_grammar);
+        .repeat(0, strings.len());
 
     for (s_i, s) in strings.iter().enumerate() {
         for (w_i, lexeme) in s.iter().enumerate() {
@@ -75,9 +75,6 @@ fn string_path_to_tensor<B: Backend>(
     s_tensor
 }
 
-const EPSILON: f64 = -10.0;
-const EPSILON_INV: f64 = -0.000045400960370489214;
-
 fn get_string_prob<B: Backend>(
     string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
@@ -91,24 +88,7 @@ fn get_string_prob<B: Backend>(
         .opposite_prob()
         .into_inner();
 
-    let n_strings: f64 = (string_paths.len() as f64).ln();
-    let n_fakes: f64 = ((neural_config.n_strings_per_grammar - string_paths.len()) as f64).ln();
-    let mut string_path_tensor = Tensor::<B, 1>::full(
-        [neural_config.n_strings_per_grammar],
-        EPSILON_INV - n_strings,
-        device,
-    );
-
-    if neural_config.n_strings_per_grammar > string_paths.len() {
-        string_path_tensor = string_path_tensor.slice_assign(
-            [string_paths.len()..neural_config.n_strings_per_grammar],
-            Tensor::<B, 1>::full(
-                [neural_config.n_strings_per_grammar - string_paths.len()],
-                EPSILON - n_fakes,
-                device,
-            ),
-        );
-    }
+    let mut string_path_tensor = Tensor::<B, 1>::full([string_paths.len()], 0.0, device);
 
     for (i, string_path) in string_paths.iter().enumerate() {
         let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
@@ -178,28 +158,20 @@ pub fn get_neural_outputs<B: Backend>(
     let lexicon = NeuralLexicon::new_superimposed(g);
 
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
+    let n_strings = strings.len();
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
 
     //(n_strings_per_grammar);
-    let string_probs = if strings.is_empty() {
-        Tensor::full(
-            [neural_config.n_strings_per_grammar],
-            EPSILON - (neural_config.n_strings_per_grammar as f64).ln(),
-            &g.device(),
-        )
-    } else {
-        get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
-    };
+    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
 
+    dbg!(log_sum_exp_dim::<B, 2, 1>(string_probs.clone().unsqueeze_dim::<2>(0), 1).detach());
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 
     //(n_targets, n_strings_per_grammar, padding_length, 1)
-    let targets: Tensor<B, 4, Int> = targets
-        .unsqueeze_dims(&[1, 3])
-        .repeat(1, neural_config.n_strings_per_grammar);
+    let targets: Tensor<B, 4, Int> = targets.unsqueeze_dims(&[1, 3]).repeat(1, n_strings);
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings)

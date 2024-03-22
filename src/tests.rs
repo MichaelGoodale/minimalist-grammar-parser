@@ -13,7 +13,7 @@ use crate::{
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
 use lazy_static::lazy_static;
-use std::{collections::HashSet, f64::consts::LN_2};
+use std::{collections::HashSet, default, f64::consts::LN_2};
 
 lazy_static! {
     static ref CONFIG: ParsingConfig = ParsingConfig::new(
@@ -475,7 +475,7 @@ fn proper_distributions() -> Result<()> {
     Ok(())
 }
 
-use burn::tensor::{ElementConversion, Tensor};
+use burn::tensor::{Data, ElementConversion, Int, Tensor};
 use burn::{
     backend::Autodiff,
     backend::{ndarray::NdArrayDevice, NdArray},
@@ -534,8 +534,21 @@ fn test_loss() -> Result<()> {
         [1..2, n_licensees..n_licensees + 1],
         Tensor::full([1, 1], 10, &dev),
     );
-    let targets =
-        Tensor::<Autodiff<NdArray>, 2, _>::full([10, 10], 3, &NdArrayDevice::default()).tril(0);
+
+    let targets = (1..6)
+        .map(|i| {
+            let mut s: [u32; 10] = [0; 10];
+            s.iter_mut().take(i).for_each(|x| *x = 3);
+            s[i] = 1;
+            Tensor::<Autodiff<NdArray>, 1, Int>::from_data(
+                Data::from(s).convert(),
+                &NdArrayDevice::default(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let targets = Tensor::stack(targets, 0);
+
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 1,
@@ -572,9 +585,7 @@ fn test_loss() -> Result<()> {
 
     let _g = loss.backward();
     let loss: f32 = loss.into_scalar().elem();
-    approx::assert_relative_eq!(loss, 94.461395);
-
-    //get_grammar(&g, &config, &mut rng, &cache);
+    approx::assert_relative_eq!(loss, 22.069603);
     Ok(())
 }
 
@@ -665,6 +676,5 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
     get_neural_outputs(&g, targets, &config, &mut rng, &cache);
-    panic!();
     Ok(())
 }

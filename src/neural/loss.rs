@@ -160,25 +160,17 @@ pub fn get_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-    cache: &NeuralGrammarCache,
-) -> (Option<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>) {
-    let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
+) -> (Tensor<B, 3>, Tensor<B, 1>) {
+    let lexicon = NeuralLexicon::new_superimposed(g, rng);
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 
-    (
-        if strings.is_empty() {
-            None
-        } else {
-            //(1, n_grammar_strings)
-            let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
+    //(1, n_grammar_strings)
+    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
 
-            //(n_grammar_strings, padding_length, n_lemmas)
-            Some((
-                string_path_to_tensor(&strings, g, neural_config),
-                string_probs,
-            ))
-        },
-        p_of_lex,
+    //(n_grammar_strings, padding_length, n_lemmas)
+    (
+        string_path_to_tensor(&strings, g, neural_config),
+        string_probs,
     )
 }
 
@@ -191,15 +183,14 @@ pub fn get_neural_outputs<B: Backend>(
 ) -> Tensor<B, 1> {
     let n_targets = targets.shape().dims[0];
 
-    //(n_grammar_strings, padding_length, n_lemmas)
-    let mut grammars = vec![];
-    let mut probs = vec![];
-
-    let (p_of_lex, lexicon) = NeuralLexicon::new_superimposed(g, rng);
+    let lexicon = NeuralLexicon::new_superimposed(g, rng);
 
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 
+    //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
+
+    //(n_strings_per_grammar);
     let string_probs = if strings.is_empty() {
         Tensor::full(
             [neural_config.n_strings_per_grammar],
@@ -209,36 +200,25 @@ pub fn get_neural_outputs<B: Backend>(
     } else {
         get_string_prob(&string_probs, &lexicon, neural_config, &targets.device())
     };
-    dbg!(grammar.clone().argmax(2).squeeze::<2>(2));
-    dbg!(string_probs.clone());
-    grammars.push(grammar + p_of_lex.unsqueeze_dims(&[1, 2]));
-    probs.push(string_probs);
-    //(n_grammars, n_strings_per_grammar);
-    let string_probs: Tensor<B, 2> = Tensor::stack(probs, 1);
 
-    //(n_grammar_strings, n_grammars, padding_length, n_lemmas)
-    let grammar: Tensor<B, 4> = Tensor::stack(grammars, 1);
+    //(n_targets, n_grammar_strings, padding_length, n_lemmas)
+    let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 
-    //(n_targets, n_grammar_strings, n_grammars, padding_length, n_lemmas)
-    let grammar: Tensor<B, 5> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
+    //(n_targets, n_strings_per_grammar, padding_length, 1)
+    let targets: Tensor<B, 4, Int> = targets
+        .unsqueeze_dims(&[1, 3])
+        .repeat(1, neural_config.n_strings_per_grammar);
 
-    let targets: Tensor<B, 5, Int> = targets
-        .unsqueeze_dims(&[1, 2, 4])
-        .repeat(1, neural_config.n_strings_per_grammar)
-        .repeat(2, neural_config.n_grammars);
-
-    //Probability of generating every string for each grammar.
-    //(n_targets, n_grammar_strings, n_grammars)
-    let loss: Tensor<B, 3> = grammar
-        .gather(4, targets)
-        .squeeze::<4>(4)
-        .sum_dim(3)
+    //Probability of generating every target for each string.
+    //(n_targets, n_grammar_strings)
+    let loss: Tensor<B, 2> = grammar
+        .gather(3, targets)
         .squeeze::<3>(3)
+        .sum_dim(2)
+        .squeeze(2)
         + string_probs.unsqueeze_dim(0);
 
-    let loss: Tensor<B, 2> = log_sum_exp_dim(loss, 2) - (neural_config.n_grammars as f64).ln();
-
-    //Probability of generating each of the strings
-    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).sum_dim(0);
-    -loss
+    //Probability of generating each of the targets
+    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1);
+    -loss.sum()
 }

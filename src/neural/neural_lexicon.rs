@@ -249,7 +249,7 @@ impl<B: Backend> NeuralLexicon<B> {
     pub fn new_superimposed(
         grammar_params: &GrammarParameterization<B>,
         rng: &mut impl Rng,
-    ) -> (Tensor<B, 1>, Self) {
+    ) -> Self {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -436,25 +436,24 @@ impl<B: Backend> NeuralLexicon<B> {
             }
         }
 
-        let g = graph.clone();
+        /*
+                let g = graph.clone();
 
-        let g = g.map(
-            |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
-            |e_i, e| e,
-        );
-        println!("{}", petgraph::dot::Dot::new(&g));
+                let g = g.map(
+                    |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
+                    |e_i, e| e,
+                );
+                println!("{}", petgraph::dot::Dot::new(&g));
+        */
 
-        (
-            grammar_prob,
-            NeuralLexicon {
-                graph,
-                licensees: licensees_map,
-                categories: categories_map,
-                weights: weights_map,
-                root,
-                device: grammar_params.device(),
-            },
-        )
+        NeuralLexicon {
+            graph,
+            licensees: licensees_map,
+            categories: categories_map,
+            weights: weights_map,
+            root,
+            device: grammar_params.device(),
+        }
     }
 }
 

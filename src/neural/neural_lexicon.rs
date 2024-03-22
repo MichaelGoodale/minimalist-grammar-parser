@@ -1,20 +1,19 @@
-use std::ops::Range;
-
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::{bail, Context};
 use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
-use burn::tensor::{Data, Int};
+use burn::tensor::{Data, Shape};
 use itertools::Itertools;
 use logprob::LogProb;
-use petgraph::visit::{EdgeRef, NodeRef};
+use petgraph::visit::EdgeRef;
 use petgraph::{
     graph::DiGraph,
     graph::{EdgeIndex, NodeIndex},
 };
 use rand::Rng;
+use rand_distr::{Distribution, Gumbel};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NeuralProbabilityRecord {
@@ -94,6 +93,33 @@ fn tensor_to_log_prob<B: Backend>(x: &Tensor<B, 1>) -> LogProb<f64> {
     LogProb::new(clamp_prob(x.clone().into_scalar().elem()).unwrap()).unwrap()
 }
 
+fn gumbel_vector<B: Backend, const D: usize>(
+    shape: Shape<D>,
+    device: &B::Device,
+    rng: &mut impl Rng,
+) -> Tensor<B, D> {
+    let n = shape.dims.iter().product();
+    let g = Gumbel::<f64>::new(0.0, 1.0).unwrap();
+    let v = g.sample_iter(rng).take(n).collect::<Vec<_>>();
+    let data = Data::from(v.as_slice());
+    Tensor::from_data(data.convert(), device).reshape(shape)
+}
+
+fn gumbel_activation<B: Backend, const D: usize>(
+    tensor: Tensor<B, D>,
+    dim: usize,
+    inverse_temperature: f64,
+    rng: &mut impl Rng,
+) -> Tensor<B, D> {
+    let shape = tensor.shape();
+    let device = tensor.device();
+
+    log_softmax(
+        (log_softmax(tensor, dim) + gumbel_vector(shape, &device, rng)) * inverse_temperature,
+        dim,
+    )
+}
+
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
         types: Tensor<B, 3>,               // (lexeme, n_features, types)
@@ -106,6 +132,7 @@ impl<B: Backend> GrammarParameterization<B> {
         pad_vector: Tensor<B, 1>,
         end_vector: Tensor<B, 1>,
         temperature: f64,
+        rng: &mut impl Rng,
     ) -> anyhow::Result<GrammarParameterization<B>> {
         let [n_lexemes, n_features, n_categories] = type_categories.shape().dims;
         let n_lemmas = lemmas.shape().dims[1];
@@ -124,14 +151,16 @@ impl<B: Backend> GrammarParameterization<B> {
         let included_features = log_sigmoid(included_features_unnormalized.clone());
         let opposite_included_features = log_sigmoid(-included_features_unnormalized);
 
+        let inverse_temperature = 1.0 / temperature;
         let weights = log_softmax(weights, 0);
-        let types = log_softmax(types, 2);
+        let types = gumbel_activation(types, 2, inverse_temperature, rng);
+        let type_categories = gumbel_activation(type_categories, 2, inverse_temperature, rng);
+        let lemmas = gumbel_activation(lemmas, 1, inverse_temperature, rng);
+        let licensee_categories =
+            gumbel_activation(licensee_categories, 2, inverse_temperature, rng);
+        let categories = gumbel_activation(categories, 1, inverse_temperature, rng);
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
-        let type_categories = log_softmax(type_categories, 2);
-        let lemmas = log_softmax(lemmas, 1);
-        let licensee_categories = log_softmax(licensee_categories, 2);
-        let categories = log_softmax(categories, 1);
 
         let silent_probability: Tensor<B, 1> =
             lemmas.clone().slice([0..n_lexemes, 2..3]).squeeze(1);
@@ -246,15 +275,11 @@ impl<B: Backend> NeuralLexicon<B> {
 
     //TODO: look into if weights should be done only over categories
 
-    pub fn new_superimposed(
-        grammar_params: &GrammarParameterization<B>,
-        rng: &mut impl Rng,
-    ) -> Self {
+    pub fn new_superimposed(grammar_params: &GrammarParameterization<B>) -> Self {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
 
-        let grammar_prob = Tensor::<B, 1>::zeros([1], &grammar_params.device());
         let mut graph: NeuralGraph = DiGraph::new();
         let root = graph.add_node((None, FeatureOrLemma::Root));
 
@@ -517,6 +542,7 @@ mod test {
     use burn::tensor::Tensor;
 
     use super::{GrammarParameterization, N_TYPES};
+    use rand::SeedableRng;
 
     #[test]
     fn get_param() -> anyhow::Result<()> {
@@ -572,6 +598,7 @@ mod test {
             [0., 10., 0., 0., 0., 0., 0., 0., 0., 0.],
             &NdArrayDevice::default(),
         );
+        let mut rng = rand::rngs::StdRng::seed_from_u64(32);
 
         let _g = GrammarParameterization::new(
             types,
@@ -584,6 +611,7 @@ mod test {
             pad_vector,
             end_vector,
             1.0,
+            &mut rng,
         );
         Ok(())
     }

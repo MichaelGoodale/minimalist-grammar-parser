@@ -28,11 +28,3 @@ pub fn to_feature(pos: usize, category: usize) -> NeuralFeature {
         _ => panic!("Invalid position!"),
     }
 }
-pub fn from_feature(f: &Feature<usize>) -> (usize, usize) {
-    match f {
-        Feature::Licensor(c) => (LICENSOR_POS, *c),
-        Feature::Selector(c, crate::Direction::Left) => (LEFT_SELECTOR_POS, *c),
-        Feature::Selector(c, crate::Direction::Right) => (RIGHT_SELECTOR_POS, *c),
-        _ => panic!("Invalid position!"),
-    }
-}

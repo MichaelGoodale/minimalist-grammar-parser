@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use logprob::{LogProb, Softmax};
 use petgraph::{
     graph::DiGraph,
-    graph::{Node, NodeIndex},
+    graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
 use std::{

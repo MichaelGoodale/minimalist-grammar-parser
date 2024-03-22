@@ -485,7 +485,6 @@ use neural::N_TYPES;
 
 #[test]
 fn test_loss() -> Result<()> {
-    let cache = Cache::new(100);
     let n_lexemes = 2;
     let n_pos = 3;
     let n_categories = 2;
@@ -504,7 +503,7 @@ fn test_loss() -> Result<()> {
     for slice in slices {
         types = types.slice_assign(
             slice.clone(),
-            Tensor::full(slice.map(|x| x.len()), 50.0, &dev),
+            Tensor::full(slice.map(|x| x.len()), 10.0, &dev),
         );
     }
 
@@ -516,7 +515,7 @@ fn test_loss() -> Result<()> {
     let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
         .slice_assign(
             [0..n_lexemes, 3..4],
-            Tensor::full([n_lexemes, 1], 100.0, &NdArrayDevice::default()),
+            Tensor::full([n_lexemes, 1], 10.0, &NdArrayDevice::default()),
         );
     let weights = Tensor::<Autodiff<NdArray>, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
@@ -549,7 +548,8 @@ fn test_loss() -> Result<()> {
 
     let targets = Tensor::stack(targets, 0);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+
     let config = NeuralConfig {
         n_grammars: 1,
         n_strings_per_grammar: 100,
@@ -557,41 +557,52 @@ fn test_loss() -> Result<()> {
         n_strings_to_sample: 5,
         temperature: 1.0,
         negative_weight: None,
-        parsing_config: ParsingConfig::new_with_global_steps(
+        parsing_config: ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            100,
-            40000,
+            200,
+            200,
         ),
     };
     let pad_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 10., 0., 0.], &NdArrayDevice::default());
-    let g = GrammarParameterization::new(
-        types,
-        type_categories,
-        licensee_categories,
-        included_features,
-        lemmas,
-        categories,
-        weights,
-        pad_vector,
-        end_vector,
-        1.0,
-    )?;
-    let loss = get_neural_outputs(&g, targets, &config, &mut rng, &cache);
+    let mut loss: Vec<f32> = vec![];
+    for t in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0] {
+        let mut avg = 0.0;
+        for _ in 0..3 {
+            let g = GrammarParameterization::new(
+                types.clone(),
+                type_categories.clone(),
+                licensee_categories.clone(),
+                included_features.clone(),
+                lemmas.clone(),
+                categories.clone(),
+                weights.clone(),
+                pad_vector.clone(),
+                end_vector.clone(),
+                t,
+                &mut rng,
+            )?;
+            avg += get_neural_outputs(&g, targets.clone(), &config)
+                .into_scalar()
+                .elem::<f32>();
+        }
+        loss.push(avg / 3.0);
+    }
 
-    let _g = loss.backward();
-    let loss: f32 = loss.into_scalar().elem();
-    approx::assert_relative_eq!(loss, 22.069603);
+    let stored_losses = [
+        39.86359, 35.37904, 30.754171, 15.393458, 26.603754, 44.084595,
+    ];
+    for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
+        approx::assert_relative_eq!(loss, stored_loss);
+    }
     Ok(())
 }
 
 #[test]
 fn random_neural_generation() -> Result<()> {
-    let cache = Cache::new(100);
     let n_lexemes = 4;
     let n_pos = 3;
     let n_licensee = 2;
@@ -645,6 +656,7 @@ fn random_neural_generation() -> Result<()> {
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
         &NdArrayDevice::default(),
     );
+    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
 
     let g = GrammarParameterization::new(
         types,
@@ -657,9 +669,9 @@ fn random_neural_generation() -> Result<()> {
         pad_vector,
         end_vector,
         1.0,
+        &mut rng,
     )?;
     let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
-    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
     let config = NeuralConfig {
         n_grammars: 1,
         n_strings_per_grammar: 20,
@@ -675,6 +687,6 @@ fn random_neural_generation() -> Result<()> {
             50,
         ),
     };
-    get_neural_outputs(&g, targets, &config, &mut rng, &cache);
+    get_neural_outputs(&g, targets, &config);
     Ok(())
 }

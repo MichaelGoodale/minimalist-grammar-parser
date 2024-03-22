@@ -3,15 +3,10 @@ use super::neural_lexicon::{
     GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
 };
 use super::utils::log_sum_exp_dim;
-use crate::lexicon::Lexiconable;
-use crate::{neural, NeuralGenerator, ParsingConfig};
-use ahash::HashMap;
+use crate::{NeuralGenerator, ParsingConfig};
 use burn::tensor::Int;
-use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
+use burn::tensor::{backend::Backend, Tensor};
 use moka::sync::Cache;
-use rand::seq::SliceRandom;
-use rand::Rng;
-use std::collections::hash_map::Entry;
 
 pub struct NeuralConfig {
     pub n_grammars: usize,
@@ -159,9 +154,8 @@ pub type NeuralGrammarCache =
 pub fn get_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
 ) -> (Tensor<B, 3>, Tensor<B, 1>) {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng);
+    let lexicon = NeuralLexicon::new_superimposed(g);
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 
     //(1, n_grammar_strings)
@@ -178,12 +172,10 @@ pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
-    cache: &NeuralGrammarCache,
 ) -> Tensor<B, 1> {
     let n_targets = targets.shape().dims[0];
 
-    let lexicon = NeuralLexicon::new_superimposed(g, rng);
+    let lexicon = NeuralLexicon::new_superimposed(g);
 
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
 

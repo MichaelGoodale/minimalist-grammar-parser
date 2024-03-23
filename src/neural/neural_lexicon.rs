@@ -147,16 +147,8 @@ impl<B: Backend> GrammarParameterization<B> {
         }
 
         let inverse_temperature = 1.0 / temperature;
-        let included_features_unnormalized = included_features;
         let included_features = gumbel_activation(
-            Tensor::stack::<3>(
-                [
-                    included_features_unnormalized.clone(),
-                    -included_features_unnormalized,
-                ]
-                .to_vec(),
-                2,
-            ),
+            Tensor::stack::<3>([included_features.clone(), -included_features].to_vec(), 2),
             2,
             inverse_temperature,
             rng,
@@ -392,7 +384,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             let e = graph.add_edge(node, *category, tensor_to_log_prob(&e_prob));
                             weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                         } else {
-                            let e_prob = grammar_params.prob_of_not_n_licensees(lexeme_idx, i);
+                            let e_prob = grammar_params.prob_of_not_n_licensees(lexeme_idx, i + 1);
                             let e = graph.add_edge(node, *category, tensor_to_log_prob(&e_prob));
                             weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                         }
@@ -464,7 +456,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         let e = graph.add_edge(*node, *lemma, tensor_to_log_prob(&e_prob));
                         weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                     } else {
-                        let e_prob = grammar_params.prob_of_not_n_features(lexeme_idx, i);
+                        let e_prob = grammar_params.prob_of_not_n_features(lexeme_idx, i + 1);
                         let e = graph.add_edge(*node, *lemma, tensor_to_log_prob(&e_prob));
                         weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                     }

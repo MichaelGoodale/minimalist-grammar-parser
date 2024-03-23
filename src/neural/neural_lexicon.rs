@@ -66,8 +66,7 @@ pub struct GrammarParameterization<B: Backend> {
     lemmas: Tensor<B, 2>,              //(lexeme, lemma_distribution)
     categories: Tensor<B, 2>,          //(lexeme, categories)
     weights: Tensor<B, 1>,             //(lexeme, lexeme_weight)
-    included_features: Tensor<B, 2>,   //(lexeme, n_licensee + n_features)
-    opposite_included_features: Tensor<B, 2>, //(lexeme, n_licensee + n_features)
+    included_features: Tensor<B, 3>,   //(lexeme, n_licensee + n_features, true/false)
     n_lexemes: usize,
     n_features: usize,
     n_licensees: usize,
@@ -147,11 +146,22 @@ impl<B: Backend> GrammarParameterization<B> {
             ));
         }
 
-        let included_features_unnormalized = included_features;
-        let included_features = log_sigmoid(included_features_unnormalized.clone());
-        let opposite_included_features = log_sigmoid(-included_features_unnormalized);
-
         let inverse_temperature = 1.0 / temperature;
+        let included_features_unnormalized = included_features;
+        let included_features = gumbel_activation(
+            Tensor::stack::<3>(
+                [
+                    included_features_unnormalized.clone(),
+                    -included_features_unnormalized,
+                ]
+                .to_vec(),
+                2,
+            ),
+            2,
+            inverse_temperature,
+            rng,
+        );
+
         let weights = log_softmax(weights, 0);
         let types = gumbel_activation(types, 2, inverse_temperature, rng);
         let type_categories = gumbel_activation(type_categories, 2, inverse_temperature, rng);
@@ -173,7 +183,6 @@ impl<B: Backend> GrammarParameterization<B> {
             weights,
             licensee_categories,
             included_features,
-            opposite_included_features,
             n_lexemes,
             n_features,
             n_licensees,
@@ -214,30 +223,31 @@ impl<B: Backend> GrammarParameterization<B> {
     fn prob_of_n_licensees(&self, lexeme_idx: usize, n: usize) -> Tensor<B, 1> {
         match n {
             0 => self
-                .opposite_included_features
+                .included_features
                 .clone()
-                .slice([lexeme_idx..lexeme_idx + 1, 0..1])
+                .slice([lexeme_idx..lexeme_idx + 1, 0..1, 1..2])
                 .sum(),
             _ => self
                 .included_features
                 .clone()
-                .slice([lexeme_idx..lexeme_idx + 1, (n - 1)..n])
+                .slice([lexeme_idx..lexeme_idx + 1, (n - 1)..n, 0..1])
                 .reshape([1]),
         }
     }
     fn prob_of_not_n_licensees(&self, lexeme_idx: usize, n: usize) -> Tensor<B, 1> {
-        self.opposite_included_features
+        self.included_features
             .clone()
-            .slice([lexeme_idx..lexeme_idx + 1, n..n + 1])
+            .slice([lexeme_idx..lexeme_idx + 1, n..n + 1, 1..2])
             .sum()
     }
 
     fn prob_of_not_n_features(&self, lexeme_idx: usize, n: usize) -> Tensor<B, 1> {
-        self.opposite_included_features
+        self.included_features
             .clone()
             .slice([
                 lexeme_idx..lexeme_idx + 1,
                 self.n_licensees + n..self.n_licensees + n + 1,
+                1..2,
             ])
             .sum()
     }
@@ -245,11 +255,12 @@ impl<B: Backend> GrammarParameterization<B> {
     fn prob_of_n_features(&self, lexeme_idx: usize, n: usize) -> Tensor<B, 1> {
         match n {
             0 => self
-                .opposite_included_features
+                .included_features
                 .clone()
                 .slice([
                     lexeme_idx..lexeme_idx + 1,
                     self.n_licensees..self.n_licensees + 1,
+                    1..2,
                 ])
                 .sum(),
             _ => self
@@ -258,6 +269,7 @@ impl<B: Backend> GrammarParameterization<B> {
                 .slice([
                     lexeme_idx..lexeme_idx + 1,
                     self.n_licensees + n - 1..self.n_licensees + n,
+                    0..1,
                 ])
                 .reshape([1]),
         }

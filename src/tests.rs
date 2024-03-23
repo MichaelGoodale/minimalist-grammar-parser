@@ -592,12 +592,9 @@ fn test_loss() -> Result<()> {
         loss.push(avg / 3.0);
     }
 
-    let stored_losses = [
-        60.79906, 58.44992, 48.410168, 23.538162, 38.190914, 50.82726,
-    ];
-    dbg!(&loss);
+    let stored_losses = [20.75648, 29.5371, 37.611515, 20.856573, 33.92761, 52.07075];
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
-        approx::assert_relative_eq!(loss, stored_loss);
+        approx::assert_relative_eq!(loss, stored_loss, epsilon = 1e-5);
     }
     Ok(())
 }

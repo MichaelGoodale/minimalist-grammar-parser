@@ -374,7 +374,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 for (feature, prob) in licensees {
                     let node = graph.add_node((Some(tensor_to_log_prob(&prob)), feature));
                     for parent in parent_licensees.iter() {
-                        let e_prob = grammar_params.prob_of_n_licensees(lexeme_idx, i);
+                        let e_prob = grammar_params.prob_of_n_licensees(lexeme_idx, i + 1);
                         let e = graph.add_edge(*parent, node, tensor_to_log_prob(&e_prob));
                         weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                     }
@@ -446,7 +446,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     })
                     .collect::<Vec<_>>();
                 for (node, parent) in new_parents.iter().cartesian_product(parents.iter()) {
-                    let e_prob = grammar_params.prob_of_n_features(lexeme_idx, i);
+                    let e_prob = grammar_params.prob_of_n_features(lexeme_idx, i + 1);
                     let e = graph.add_edge(*parent, *node, tensor_to_log_prob(&e_prob));
                     weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
                 }

@@ -593,7 +593,7 @@ fn test_loss() -> Result<()> {
     }
 
     let stored_losses = [
-        20.75648, 29.5371, 37.611515, 20.856573, 34.121227, 60.056416,
+        79.10021, 36.954823, 42.12445, 23.265802, 22.685387, 42.907303,
     ];
     dbg!(&loss);
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {

@@ -166,7 +166,21 @@ pub fn get_neural_outputs<B: Backend>(
     dbg!(targets.clone().to_data());
 
     let lexicon = NeuralLexicon::new_superimposed(g);
-    let target_vec = vec![];
+    let target_vec = (0..n_targets)
+        .map(|i| {
+            let v: Vec<usize> = targets
+                .clone()
+                .slice([i..i + 1])
+                .to_data()
+                .convert::<u32>()
+                .value
+                .into_iter()
+                .take_while(|&x| x != 1)
+                .map(|x| x as usize)
+                .collect();
+            v
+        })
+        .collect();
 
     let (strings, string_probs) =
         retrieve_strings(&lexicon, &target_vec, g.lemma_lookups(), neural_config);

@@ -163,7 +163,6 @@ pub fn get_neural_outputs<B: Backend>(
     neural_config: &NeuralConfig,
 ) -> anyhow::Result<Tensor<B, 1>> {
     let n_targets = targets.shape().dims[0];
-    dbg!(targets.clone().to_data());
 
     let lexicon = NeuralLexicon::new_superimposed(g);
     let target_vec = (0..n_targets)

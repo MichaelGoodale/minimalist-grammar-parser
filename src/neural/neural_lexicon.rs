@@ -120,6 +120,19 @@ fn gumbel_activation<B: Backend, const D: usize>(
     )
 }
 
+fn log_1m<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
+    let mask = tensor.clone().log().greater_elem(-(2_f64.ln()));
+    let a = (-tensor.clone().exp() + 1).log();
+    (-tensor.exp()).log1p().mask_where(mask, a)
+
+    //mask = -math.log(2) < x  # x < 0
+    //return torch.where(
+    //    mask,
+    //    (-x.expm1()).log(),
+    //    (-x.exp()).log1p(),
+    //)
+}
+
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
         types: Tensor<B, 3>,               // (lexeme, n_features, types)
@@ -167,7 +180,7 @@ impl<B: Backend> GrammarParameterization<B> {
 
         let silent_probability: Tensor<B, 1> =
             lemmas.clone().slice([0..n_lexemes, 2..3]).squeeze(1);
-        let non_silent_probability: Tensor<B, 1> = (-silent_probability.clone().exp()).log1p();
+        let non_silent_probability: Tensor<B, 1> = log_1m(silent_probability.clone());
 
         let mut lemma_lookups = HashMap::default();
         for lexeme_i in 0..n_lexemes {
@@ -455,11 +468,11 @@ impl<B: Backend> NeuralLexicon<B> {
             let lemma = NeuralFeature::Lemma(Some(lexeme_idx));
             let silent_lemma = NeuralFeature::Lemma(None);
             let lemma = graph.add_node((
-                Some(tensor_to_log_prob(&nonsilent_p).context("silent lemma")?),
+                Some(tensor_to_log_prob(&nonsilent_p).context("lemma")?),
                 lemma,
             ));
             let silent_lemma = graph.add_node((
-                Some(tensor_to_log_prob(&silent_p).context("lemma")?),
+                Some(tensor_to_log_prob(&silent_p).context("silent lemma")?),
                 silent_lemma,
             ));
 

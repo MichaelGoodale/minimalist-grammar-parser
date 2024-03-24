@@ -80,8 +80,10 @@ fn clamp_prob(x: f64) -> anyhow::Result<f64> {
     if x > 0.0 {
         eprintln!("Clampling prob {x} to 0.0");
         Ok(0.0)
-    } else if x.is_nan() || x.is_infinite() {
-        bail!("Probability is NaN or inf");
+    } else if x.is_nan() {
+        bail!("Probability is NaN");
+    } else if x.is_infinite() {
+        bail!("Probability is inf");
     } else {
         Ok(x)
     }

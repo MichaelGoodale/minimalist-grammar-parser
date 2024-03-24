@@ -603,7 +603,7 @@ fn test_loss() -> Result<()> {
 
 #[test]
 fn random_neural_generation() -> Result<()> {
-    let n_lexemes = 1;
+    let n_lexemes = 4;
     let n_pos = 2;
     let n_licensee = 2;
     let n_categories = 2;
@@ -636,35 +636,37 @@ fn random_neural_generation() -> Result<()> {
     );
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
 
-    let g = GrammarParameterization::new(
-        types,
-        type_categories,
-        licensee_categories,
-        included_features,
-        lemmas,
-        categories,
-        weights,
-        pad_vector,
-        end_vector,
-        1.0,
-        &mut rng,
-    )?;
-    let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
-    let config = NeuralConfig {
-        n_grammars: 1,
-        n_strings_per_grammar: 20,
-        padding_length: 10,
-        temperature: 1.0,
-        n_strings_to_sample: 5,
-        negative_weight: None,
-        parsing_config: ParsingConfig::new_with_global_steps(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            500,
-            20,
-            5000,
-        ),
-    };
-    get_neural_outputs(&g, targets, &config)?;
+    for temperature in [0.1, 0.5, 1.0] {
+        let g = GrammarParameterization::new(
+            types.clone(),
+            type_categories.clone(),
+            licensee_categories.clone(),
+            included_features.clone(),
+            lemmas.clone(),
+            categories.clone(),
+            weights.clone(),
+            pad_vector.clone(),
+            end_vector.clone(),
+            temperature,
+            &mut rng,
+        )?;
+        let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+        let config = NeuralConfig {
+            n_grammars: 1,
+            n_strings_per_grammar: 20,
+            padding_length: 10,
+            temperature: 1.0,
+            n_strings_to_sample: 5,
+            negative_weight: None,
+            parsing_config: ParsingConfig::new_with_global_steps(
+                LogProb::new(-256.0).unwrap(),
+                LogProb::from_raw_prob(0.5).unwrap(),
+                500,
+                20,
+                5000,
+            ),
+        };
+        get_neural_outputs(&g, targets, &config)?;
+    }
     Ok(())
 }

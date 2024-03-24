@@ -585,7 +585,7 @@ fn test_loss() -> Result<()> {
                 t,
                 &mut rng,
             )?;
-            avg += get_neural_outputs(&g, targets.clone(), &config)
+            avg += get_neural_outputs(&g, targets.clone(), &config)?
                 .into_scalar()
                 .elem::<f32>();
         }
@@ -666,6 +666,6 @@ fn random_neural_generation() -> Result<()> {
             5000,
         ),
     };
-    get_neural_outputs(&g, targets, &config);
+    get_neural_outputs(&g, targets, &config)?;
     Ok(())
 }

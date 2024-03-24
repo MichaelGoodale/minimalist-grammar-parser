@@ -4,6 +4,7 @@ use super::neural_lexicon::{
 };
 use super::utils::log_sum_exp_dim;
 use crate::{NeuralGenerator, ParsingConfig};
+use anyhow::bail;
 use burn::tensor::Int;
 use burn::tensor::{backend::Backend, Tensor};
 use moka::sync::Cache;
@@ -139,13 +140,17 @@ pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-) -> Tensor<B, 1> {
+) -> anyhow::Result<Tensor<B, 1>> {
     let n_targets = targets.shape().dims[0];
 
     let lexicon = NeuralLexicon::new_superimposed(g);
 
     let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
     let n_strings = strings.len();
+
+    if n_strings == 0 {
+        bail!("Zero outputted strings!");
+    }
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
@@ -168,8 +173,7 @@ pub fn get_neural_outputs<B: Backend>(
         .squeeze(2)
         + string_probs.unsqueeze_dim(0);
 
-    dbg!(loss.shape());
     //Probability of generating each of the targets
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).squeeze(1);
-    -loss.sum()
+    Ok(-loss.sum())
 }

@@ -1,6 +1,7 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+use ahash::HashMap;
 use anyhow::Result;
 use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
@@ -479,15 +480,20 @@ where
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, usize, NeuralBeam>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
-    pub fn new(lexicon: &'a NeuralLexicon<B>, config: &'a ParsingConfig) -> NeuralGenerator<'a, B> {
+    pub fn new(
+        lexicon: &'a NeuralLexicon<B>,
+        targets: &'a [Vec<usize>],
+        lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
+        config: &'a ParsingConfig,
+    ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.extend(NeuralBeam::new(lexicon, 0, false).unwrap());
+        parse_heap.extend(NeuralBeam::new(lexicon, 0, targets, lemma_lookups, false).unwrap());
         NeuralGenerator {
             lexicon,
             move_log_prob: NeuralProbability((

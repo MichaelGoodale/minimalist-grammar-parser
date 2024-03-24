@@ -2,7 +2,6 @@ use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::{bail, Context};
-use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
 use burn::tensor::{Data, Shape};
 use itertools::Itertools;
@@ -55,7 +54,6 @@ pub struct NeuralLexicon<B: Backend> {
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     graph: NeuralGraph,
-    root: NodeIndex,
     device: B::Device,
 }
 
@@ -67,6 +65,7 @@ pub struct GrammarParameterization<B: Backend> {
     categories: Tensor<B, 2>,          //(lexeme, categories)
     weights: Tensor<B, 1>,             //(lexeme, lexeme_weight)
     included_features: Tensor<B, 3>,   //(lexeme, n_licensee + n_features, true/false)
+    lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     n_lexemes: usize,
     n_features: usize,
     n_licensees: usize,
@@ -168,6 +167,19 @@ impl<B: Backend> GrammarParameterization<B> {
             lemmas.clone().slice([0..n_lexemes, 2..3]).squeeze(1);
         let non_silent_probability: Tensor<B, 1> = (-silent_probability.clone().exp()).log1p();
 
+        let mut lemma_lookups = HashMap::default();
+        for lexeme_i in 0..n_lexemes {
+            let v = lemmas
+                .clone()
+                .slice([lexeme_i..lexeme_i + 1, 0..n_lemmas])
+                .to_data()
+                .convert::<f64>()
+                .value;
+            for (lemma_i, v) in v.into_iter().enumerate() {
+                lemma_lookups.insert((lexeme_i, lemma_i), LogProb::new(clamp_prob(v)?).unwrap());
+            }
+        }
+
         Ok(GrammarParameterization {
             types,
             type_categories,
@@ -175,6 +187,7 @@ impl<B: Backend> GrammarParameterization<B> {
             weights,
             licensee_categories,
             included_features,
+            lemma_lookups,
             n_lexemes,
             n_features,
             n_licensees,
@@ -199,6 +212,10 @@ impl<B: Backend> GrammarParameterization<B> {
 
     pub fn end_vector(&self) -> &Tensor<B, 1> {
         &self.end_vector
+    }
+
+    pub fn lemma_lookups(&self) -> &HashMap<(usize, usize), LogProb<f64>> {
+        &self.lemma_lookups
     }
 
     pub fn device(&self) -> Device<B> {
@@ -480,7 +497,6 @@ impl<B: Backend> NeuralLexicon<B> {
             licensees: licensees_map,
             categories: categories_map,
             weights: weights_map,
-            root,
             device: grammar_params.device(),
         }
     }

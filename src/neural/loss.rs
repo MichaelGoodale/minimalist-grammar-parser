@@ -4,9 +4,11 @@ use super::neural_lexicon::{
 };
 use super::utils::log_sum_exp_dim;
 use crate::{NeuralGenerator, ParsingConfig};
+use ahash::HashMap;
 use anyhow::bail;
 use burn::tensor::Int;
 use burn::tensor::{backend::Backend, Tensor};
+use logprob::LogProb;
 use moka::sync::Cache;
 
 pub struct NeuralConfig {
@@ -21,14 +23,21 @@ pub struct NeuralConfig {
 
 fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
+    targets: &Vec<Vec<usize>>,
+    lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
     neural_config: &NeuralConfig,
 ) -> (Vec<StringPath>, Vec<Option<StringProbHistory>>) {
     let mut grammar_strings: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
 
-    for (s, h) in NeuralGenerator::new(lexicon, &neural_config.parsing_config)
-        .filter(|(s, _h)| s.len() < neural_config.padding_length)
-        .take(neural_config.n_strings_per_grammar)
+    for (s, h) in NeuralGenerator::new(
+        lexicon,
+        targets,
+        lemma_lookups,
+        &neural_config.parsing_config,
+    )
+    .filter(|(s, _h)| s.len() < neural_config.padding_length)
+    .take(neural_config.n_strings_per_grammar)
     {
         string_paths.push(Some(h));
         grammar_strings.push(s);
@@ -135,7 +144,8 @@ pub fn get_grammar<B: Backend>(
     neural_config: &NeuralConfig,
 ) -> (Tensor<B, 3>, Tensor<B, 1>) {
     let lexicon = NeuralLexicon::new_superimposed(g);
-    let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
+    let (strings, string_probs) =
+        retrieve_strings(&lexicon, &vec![], g.lemma_lookups(), neural_config);
 
     //(1, n_grammar_strings)
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
@@ -153,10 +163,13 @@ pub fn get_neural_outputs<B: Backend>(
     neural_config: &NeuralConfig,
 ) -> anyhow::Result<Tensor<B, 1>> {
     let n_targets = targets.shape().dims[0];
+    dbg!(targets.clone().to_data());
 
     let lexicon = NeuralLexicon::new_superimposed(g);
+    let target_vec = vec![];
 
-    let (strings, string_probs) = retrieve_strings(&lexicon, neural_config);
+    let (strings, string_probs) =
+        retrieve_strings(&lexicon, &target_vec, g.lemma_lookups(), neural_config);
     let n_strings = strings.len();
 
     if n_strings == 0 {

@@ -1,4 +1,5 @@
 use burn::tensor::backend::Backend;
+use logprob::LogProb;
 
 use std::{
     cmp::Reverse,
@@ -60,10 +61,12 @@ impl StringProbHistory {
 }
 
 #[derive(Debug, Clone)]
-pub struct NeuralBeam {
+pub struct NeuralBeam<'a> {
     log_probability: NeuralProbability,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
+    sentence_guides: Vec<(&'a [usize], usize, LogProb<f64>)>,
+    lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
     top_id: usize,
@@ -71,12 +74,17 @@ pub struct NeuralBeam {
     record_rules: bool,
 }
 
-impl NeuralBeam {
-    pub fn new<B: Backend>(
-        lexicon: &NeuralLexicon<B>,
+impl<'a> NeuralBeam<'a> {
+    pub fn new<B: Backend, T>(
+        lexicon: &'a NeuralLexicon<B>,
         initial_category: usize,
+        sentences: &'a [T],
+        lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         record_rules: bool,
-    ) -> Result<impl Iterator<Item = NeuralBeam> + '_> {
+    ) -> Result<impl Iterator<Item = NeuralBeam<'a>> + 'a>
+    where
+        T: AsRef<[usize]>,
+    {
         let category_indexes = lexicon.find_category(&initial_category)?;
 
         Ok(category_indexes.iter().map(move |(log_probability, node)| {
@@ -93,11 +101,14 @@ impl NeuralBeam {
             let record = log_probability.0 .0;
             let mut history = StringProbHistory::default();
             history.0.insert(record, 1);
+            let log_one = LogProb::new(0.0).unwrap();
 
             NeuralBeam {
                 log_probability: *log_probability,
                 queue,
                 generated_sentence: StringPath(vec![]),
+                sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0, log_one)).collect(),
+                lemma_lookups,
                 rules: if record_rules {
                     thin_vec![Rule::Start(*node)]
                 } else {
@@ -120,7 +131,7 @@ impl NeuralBeam {
     }
 }
 
-impl PartialEq for NeuralBeam {
+impl PartialEq for NeuralBeam<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.steps == other.steps
             && self.top_id == other.top_id
@@ -129,23 +140,35 @@ impl PartialEq for NeuralBeam {
     }
 }
 
-impl PartialOrd for NeuralBeam {
+impl PartialOrd for NeuralBeam<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Eq for NeuralBeam {}
+impl Eq for NeuralBeam<'_> {}
 
-impl Ord for NeuralBeam {
+impl Ord for NeuralBeam<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a = self.log_probability.0 .1;
-        let b = other.log_probability.0 .1;
+        let a: LogProb<f64> = self.log_probability.0 .1
+            + self
+                .sentence_guides
+                .iter()
+                .map(|(_, _, p)| *p)
+                .max()
+                .unwrap_or_else(|| LogProb::new(0.0).unwrap());
+        let b = other.log_probability.0 .1
+            + other
+                .sentence_guides
+                .iter()
+                .map(|(_, _, p)| *p)
+                .max()
+                .unwrap_or_else(|| LogProb::new(0.0).unwrap());
         a.cmp(&b)
     }
 }
 
-impl Beam<usize> for NeuralBeam {
+impl Beam<usize> for NeuralBeam<'_> {
     type Probability = NeuralProbability;
 
     fn log_probability(&self) -> &Self::Probability {
@@ -189,6 +212,12 @@ impl Beam<usize> for NeuralBeam {
         beam.queue.shrink_to_fit();
         if let Some(x) = s {
             beam.generated_sentence.0.push(*x);
+            beam.sentence_guides
+                .iter_mut()
+                .for_each(|(sentence, position, mut prob)| {
+                    let lemma: usize = *sentence.get(*position).unwrap_or(&0);
+                    prob += beam.lemma_lookups.get(&(*x, lemma)).unwrap();
+                });
         }
 
         let NeuralProbability((record, log_prob)) = child_prob;
@@ -221,6 +250,6 @@ impl Beam<usize> for NeuralBeam {
         &mut self.top_id
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.n_steps() < config.max_steps
+        self.log_probability.0 .1 > config.min_log_prob && self.n_steps() < config.max_steps
     }
 }

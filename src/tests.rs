@@ -1,6 +1,6 @@
 use crate::{
     lexicon::Feature,
-    neural::loss::{get_grammar, get_neural_outputs, NeuralConfig},
+    neural::loss::{get_neural_outputs, NeuralConfig},
 };
 use anyhow::Result;
 use rand::SeedableRng;
@@ -13,7 +13,7 @@ use crate::{
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
 use lazy_static::lazy_static;
-use std::{collections::HashSet, default, f64::consts::LN_2};
+use std::{collections::HashSet, f64::consts::LN_2};
 
 lazy_static! {
     static ref CONFIG: ParsingConfig = ParsingConfig::new(
@@ -480,7 +480,6 @@ use burn::{
     backend::Autodiff,
     backend::{ndarray::NdArrayDevice, NdArray},
 };
-use moka::sync::Cache;
 use neural::N_TYPES;
 
 #[test]

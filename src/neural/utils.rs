@@ -8,12 +8,12 @@ pub const LICENSOR_POS: usize = 0;
 pub const LEFT_SELECTOR_POS: usize = 1;
 pub const RIGHT_SELECTOR_POS: usize = 2;
 
-pub fn log_sum_exp_dim<B: Backend, const D: usize, const D2: usize>(
+pub fn log_sum_exp_dim<B: Backend, const D: usize>(
     tensor: Tensor<B, D>,
     dim: usize,
-) -> Tensor<B, D2> {
+) -> Tensor<B, D> {
     let max = tensor.clone().max_dim(dim);
-    ((tensor - max.clone()).exp().sum_dim(dim).log() + max).squeeze(dim)
+    (tensor - max.clone()).exp().sum_dim(dim).log() + max
 }
 
 pub fn to_feature(pos: usize, category: usize) -> NeuralFeature {

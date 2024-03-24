@@ -18,16 +18,6 @@ pub struct NeuralConfig {
     pub parsing_config: ParsingConfig,
 }
 
-///Not technically correct as it treats the number of categories as independent from the expected
-///depth.
-//fn expected_mdl_score<B: Backend>(
-//    types: Tensor<B, 3>,
-//    categories: Tensor<B, 3>,
-//    lemma_inclusion: Tensor<B, 3>,
-//) -> B::FloatElem {
-//    todo!();
-//}
-
 fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     neural_config: &NeuralConfig,
@@ -178,7 +168,8 @@ pub fn get_neural_outputs<B: Backend>(
         .squeeze(2)
         + string_probs.unsqueeze_dim(0);
 
+    dbg!(loss.shape());
     //Probability of generating each of the targets
-    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1);
+    let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).squeeze(1);
     -loss.sum()
 }

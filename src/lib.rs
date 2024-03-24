@@ -533,6 +533,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
 
 pub mod grammars;
 pub mod lexicon;
+#[allow(clippy::single_range_in_vec_init)]
 pub mod neural;
 mod parsing;
 pub mod tree_building;

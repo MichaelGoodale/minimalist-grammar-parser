@@ -250,7 +250,14 @@ impl Beam<usize> for NeuralBeam<'_> {
         &mut self.top_id
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.log_probability.0 .1 > config.min_log_prob
+        self.log_probability.0 .1
+            + self
+                .sentence_guides
+                .iter()
+                .map(|(_, _, p)| *p)
+                .max()
+                .unwrap_or_else(|| LogProb::new(0.0).unwrap())
+            > config.min_log_prob
             && self.n_steps() < config.max_steps
             && if let Some(max_length) = config.max_length {
                 self.generated_sentence.len() <= max_length

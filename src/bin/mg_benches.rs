@@ -1,11 +1,21 @@
 use anyhow::Result;
+use burn::{
+    backend::{ndarray::NdArrayDevice, NdArray},
+    tensor::Tensor,
+};
 use itertools::Itertools;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
+    neural::{
+        loss::{get_neural_outputs, NeuralConfig},
+        neural_lexicon::GrammarParameterization,
+        N_TYPES,
+    },
     Generator, Parser, ParsingConfig,
 };
+use rand::SeedableRng;
 
 fn main() {
     let config: ParsingConfig = ParsingConfig::new(
@@ -14,12 +24,13 @@ fn main() {
         100,
         1000,
     );
-    for _ in 0..10000 {
-        parse_long_sentence(&config, false);
-        parse_copy_language(&config, false);
-        generate_sentence(&config, false);
-        generate_copy_language(&config, false);
-        parse_copy_language_together(&config, false);
+    for _ in 0..10 {
+        random_neural_generation().unwrap();
+        //parse_long_sentence(&config, false);
+        //parse_copy_language(&config, false);
+        //generate_sentence(&config, false);
+        //generate_copy_language(&config, false);
+        //parse_copy_language_together(&config, false);
     }
     println!("DONE");
 }
@@ -145,4 +156,76 @@ fn generate_copy_language(config: &ParsingConfig, record_rules: bool) {
     .unwrap()
     .take(100)
     .count();
+}
+
+fn random_neural_generation() -> Result<()> {
+    let n_lexemes = 5;
+    let n_pos = 3;
+    let n_licensee = 2;
+    let n_categories = 4;
+    let n_lemmas = 5;
+    let lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, n_lemmas], &NdArrayDevice::default());
+
+    let types = Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, N_TYPES], &NdArrayDevice::default());
+
+    let type_categories =
+        Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, n_categories], &NdArrayDevice::default());
+
+    let licensee_categories = Tensor::<NdArray, 3>::zeros(
+        [n_lexemes, n_licensee, n_categories],
+        &NdArrayDevice::default(),
+    );
+    let included_features =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + n_pos], &NdArrayDevice::default());
+
+    let categories =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
+    let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+
+    let silent_lemmas = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+
+    let pad_vector = Tensor::<NdArray, 1>::from_floats(
+        [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        &NdArrayDevice::default(),
+    );
+    let end_vector = Tensor::<NdArray, 1>::from_floats(
+        [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        &NdArrayDevice::default(),
+    );
+    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+
+    for temperature in [0.1, 0.5, 1.0] {
+        let g = GrammarParameterization::new(
+            types.clone(),
+            type_categories.clone(),
+            licensee_categories.clone(),
+            included_features.clone(),
+            lemmas.clone(),
+            silent_lemmas.clone(),
+            categories.clone(),
+            weights.clone(),
+            pad_vector.clone(),
+            end_vector.clone(),
+            temperature,
+            &mut rng,
+        )?;
+        let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
+        let config = NeuralConfig {
+            n_grammars: 1,
+            n_strings_per_grammar: 20,
+            padding_length: 10,
+            temperature: 1.0,
+            n_strings_to_sample: 5,
+            negative_weight: None,
+            parsing_config: ParsingConfig::new_with_global_steps(
+                LogProb::new(-256.0).unwrap(),
+                LogProb::from_raw_prob(0.5).unwrap(),
+                500,
+                20,
+                5000,
+            ),
+        };
+        get_neural_outputs(&g, targets, &config, &mut rng)?;
+    }
+    Ok(())
 }

@@ -1,3 +1,4 @@
+use allocator_api2::alloc::Allocator;
 use burn::tensor::backend::Backend;
 use logprob::LogProb;
 
@@ -201,8 +202,8 @@ impl Beam<usize> for NeuralBeam<'_> {
         self.record_rules
     }
 
-    fn scan(
-        v: &mut ParseHeap<usize, Self>,
+    fn scan<A: Allocator>(
+        v: &mut ParseHeap<usize, Self, A>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<usize>,

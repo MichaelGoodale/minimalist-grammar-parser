@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bumpalo::Bump;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use logprob::LogProb;
@@ -58,8 +59,17 @@ fn generate_sentence(record_rules: bool) {
         Generator::new_skip_rules
     })(&g, 'C', &CONFIG)
     .unwrap()
-    .take(100)
+    .take(2000)
     .count();
+}
+#[divan::bench]
+fn generate_sentence_arena() {
+    let g = divan::black_box(get_grammar());
+    let bump = Bump::new();
+    Generator::new_skip_rules_bump(&g, 'C', &CONFIG, &bump)
+        .unwrap()
+        .take(2000)
+        .count();
 }
 
 #[divan::bench(args = [true, false])]
@@ -155,4 +165,22 @@ fn generate_copy_language(record_rules: bool) {
     .unwrap()
     .take(100)
     .count();
+}
+
+#[divan::bench]
+fn generate_copy_language_arena() {
+    let lex = divan::black_box({
+        let v: Vec<_> = COPY_LANGUAGE
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        Lexicon::new(v)
+    });
+
+    let bump = Bump::new();
+    Generator::new_skip_rules_bump(&lex, 'T', &CONFIG, &bump)
+        .unwrap()
+        .take(100)
+        .count();
 }

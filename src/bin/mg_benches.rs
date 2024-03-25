@@ -163,7 +163,7 @@ fn random_neural_generation() -> Result<()> {
     let n_pos = 3;
     let n_licensee = 2;
     let n_categories = 4;
-    let n_lemmas = 5;
+    let n_lemmas = 10;
     let lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, n_lemmas], &NdArrayDevice::default());
 
     let types = Tensor::<NdArray, 3>::zeros([n_lexemes, n_pos, N_TYPES], &NdArrayDevice::default());
@@ -189,7 +189,7 @@ fn random_neural_generation() -> Result<()> {
         &NdArrayDevice::default(),
     );
     let end_vector = Tensor::<NdArray, 1>::from_floats(
-        [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+        [0., 10., 0., 0., 0., 0., 0., 0., 0., 0.],
         &NdArrayDevice::default(),
     );
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
@@ -212,17 +212,16 @@ fn random_neural_generation() -> Result<()> {
         let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
         let config = NeuralConfig {
             n_grammars: 1,
-            n_strings_per_grammar: 20,
+            n_strings_per_grammar: 10_000,
             padding_length: 10,
             temperature: 1.0,
             n_strings_to_sample: 5,
             negative_weight: None,
-            parsing_config: ParsingConfig::new_with_global_steps(
+            parsing_config: ParsingConfig::new(
                 LogProb::new(-256.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
-                500,
                 20,
-                5000,
+                1000,
             ),
         };
         get_neural_outputs(&g, targets, &config, &mut rng)?;

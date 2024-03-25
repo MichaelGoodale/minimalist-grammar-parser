@@ -2,6 +2,7 @@ use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::Rule;
 use crate::lexicon::{Lexicon, Lexiconable};
 use crate::{ParseHeap, ParsingConfig};
+use allocator_api2::alloc::Allocator;
 use anyhow::{bail, Result};
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -26,8 +27,8 @@ pub trait Beam<T>: Sized + Ord {
 
     fn record_rules(&self) -> bool;
 
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
+    fn scan<A: Allocator>(
+        v: &mut ParseHeap<T, Self, A>,
         moment: &ParseMoment,
         beam: Self,
         s: &Option<T>,
@@ -115,8 +116,8 @@ where
         self.record_rules
     }
 
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
+    fn scan<A: Allocator>(
+        v: &mut ParseHeap<T, Self, A>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -402,8 +403,8 @@ where
         self.record_rules
     }
 
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
+    fn scan<A: Allocator>(
+        v: &mut ParseHeap<T, Self, A>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -527,8 +528,8 @@ where
         self.record_rules
     }
 
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
+    fn scan<A: Allocator>(
+        v: &mut ParseHeap<T, Self, A>,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,

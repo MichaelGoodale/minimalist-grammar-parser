@@ -1,5 +1,6 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use crate::{Direction, ParseHeap};
+use allocator_api2::alloc::Allocator;
 use anyhow::Result;
 use beam::Beam;
 use itertools::repeat_n;
@@ -55,8 +56,9 @@ fn unmerge_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
+    A: Allocator,
 >(
-    v: &mut ParseHeap<T, B>,
+    v: &mut ParseHeap<T, B, A>,
     lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
@@ -126,8 +128,9 @@ fn unmerge<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
+    A: Allocator,
 >(
-    v: &mut ParseHeap<T, B>,
+    v: &mut ParseHeap<T, B, A>,
     lexicon: &L,
     moment: &ParseMoment,
     beam: B,
@@ -189,8 +192,9 @@ fn unmove_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
+    A: Allocator,
 >(
-    v: &mut ParseHeap<T, B>,
+    v: &mut ParseHeap<T, B, A>,
     lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
@@ -256,8 +260,9 @@ fn unmove<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
+    A: Allocator,
 >(
-    v: &mut ParseHeap<T, B>,
+    v: &mut ParseHeap<T, B, A>,
     lexicon: &L,
     moment: &ParseMoment,
     beam: B,
@@ -308,8 +313,9 @@ pub fn expand<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone + 'a,
+    A: Allocator,
 >(
-    extender: &mut ParseHeap<'a, T, B>,
+    extender: &mut ParseHeap<'a, T, B, A>,
     moment: ParseMoment,
     beam: B,
     lexicon: &'a L,

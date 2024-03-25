@@ -3,9 +3,11 @@ use std::marker::PhantomData;
 
 use ahash::HashMap;
 use anyhow::Result;
+use bumpalo::Bump;
 use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
 
+use allocator_api2::alloc::{Allocator, Global};
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
@@ -113,20 +115,27 @@ impl ParsingConfig {
 }
 
 #[derive(Debug, Clone)]
-struct ParseHeap<'a, T, B: Beam<T>> {
-    parse_heap: MinMaxHeap<B>,
+struct ParseHeap<'a, T, B: Beam<T>, A: Allocator = Global> {
+    parse_heap: MinMaxHeap<B, A>,
     phantom: PhantomData<T>,
     global_steps: usize,
     done: bool,
     config: &'a ParsingConfig,
 }
 
-impl<'a, T, B: Beam<T>> ParseHeap<'a, T, B>
+impl<'a, T, B: Beam<T>, A: Allocator> ParseHeap<'a, T, B, A>
 where
     B: Ord,
 {
     fn pop(&mut self) -> Option<B> {
         self.parse_heap.pop_max()
+    }
+
+    fn pop_n(&mut self, n: usize) -> impl Iterator<Item = B> + '_ {
+        (0..n)
+            .map(|_| self.parse_heap.pop_max())
+            .take_while(|x| x.is_some())
+            .map(|x| x.unwrap())
     }
 
     fn push(&mut self, v: B) {
@@ -417,9 +426,10 @@ pub struct Generator<
     'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Hash + Eq + Clone + std::fmt::Debug,
+    A: Allocator = Global,
 > {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, GeneratorBeam<T>>,
+    parse_heap: ParseHeap<'a, T, GeneratorBeam<T>, A>,
     move_log_prob: LogProb<f64>,
     merge_log_prob: LogProb<f64>,
 }
@@ -470,9 +480,31 @@ where
             },
         })
     }
+
+    pub fn new_skip_rules_bump<'b>(
+        lexicon: &'a Lexicon<T, Category>,
+        initial_category: Category,
+        config: &'a ParsingConfig,
+        bumpalo: &'b Bump,
+    ) -> Result<Generator<'a, T, Category, &'b Bump>> {
+        let mut parse_heap = MinMaxHeap::new_in(bumpalo);
+        parse_heap.push(GeneratorBeam::new(lexicon, initial_category, false)?);
+        Ok(Generator {
+            lexicon,
+            move_log_prob: config.move_prob,
+            merge_log_prob: config.move_prob.opposite_prob(),
+            parse_heap: ParseHeap {
+                global_steps: 0,
+                done: false,
+                parse_heap,
+                config,
+                phantom: PhantomData,
+            },
+        })
+    }
 }
 
-impl<T, Category> Iterator for Generator<'_, T, Category>
+impl<T, Category, A: Allocator> Iterator for Generator<'_, T, Category, A>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Hash + Eq + Clone + std::fmt::Debug,

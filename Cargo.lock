@@ -56,6 +56,9 @@ name = "allocator-api2"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "android_system_properties"
@@ -104,13 +107,13 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.78"
+version = "0.1.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "461abc97219de0eaaf81fe3ef974a540158f3d079c2ab200f891f1a2ef201e85"
+checksum = "a507401cad91ec6a857ed5513a2073c82a9b9048762b885bb98655b306964681"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -121,9 +124,9 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "backtrace"
-version = "0.3.70"
+version = "0.3.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95d8e92cac0961e91dbd517496b00f7e9b92363dbe6d42c3198268323798860c"
+checksum = "26b05800d2e817c8b3b4b54abd461726265fa9789ae34330622f2db9ee696f9d"
 dependencies = [
  "addr2line",
  "cc",
@@ -220,11 +223,14 @@ name = "bumpalo"
 version = "3.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ff69b9dd49fd426c69a0db9fc04dd934cdb6645ff000864d98f7e2af8830eaa"
+dependencies = [
+ "allocator-api2",
+]
 
 [[package]]
 name = "burn"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-core",
  "burn-train",
@@ -233,7 +239,7 @@ dependencies = [
 [[package]]
 name = "burn-autodiff"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -244,7 +250,7 @@ dependencies = [
 [[package]]
 name = "burn-candle"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-tensor",
  "candle-core",
@@ -255,7 +261,7 @@ dependencies = [
 [[package]]
 name = "burn-common"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -270,7 +276,7 @@ dependencies = [
 [[package]]
 name = "burn-compute"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -287,7 +293,7 @@ dependencies = [
 [[package]]
 name = "burn-core"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "bincode",
  "burn-autodiff",
@@ -315,7 +321,7 @@ dependencies = [
 [[package]]
 name = "burn-dataset"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "csv",
  "derive-new",
@@ -340,18 +346,18 @@ dependencies = [
 [[package]]
 name = "burn-derive"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "derive-new",
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
 name = "burn-fusion"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -365,7 +371,7 @@ dependencies = [
 [[package]]
 name = "burn-jit"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -385,7 +391,7 @@ dependencies = [
 [[package]]
 name = "burn-ndarray"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-autodiff",
  "burn-common",
@@ -403,7 +409,7 @@ dependencies = [
 [[package]]
 name = "burn-tch"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-tensor",
  "half",
@@ -415,7 +421,7 @@ dependencies = [
 [[package]]
 name = "burn-tensor"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -431,7 +437,7 @@ dependencies = [
 [[package]]
 name = "burn-train"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-core",
  "crossterm",
@@ -450,7 +456,7 @@ dependencies = [
 [[package]]
 name = "burn-wgpu"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#dc45cf1700c4264c358decc684c5d6246da0db35"
+source = "git+https://github.com/tracel-ai/burn.git#4542ceddca5e77e8775a977f86d4335636fc2532"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -489,7 +495,7 @@ checksum = "4da9a32f3fed317401fa3c862968128267c3106685286e15d5aaa3d7389c2f60"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -862,7 +868,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -873,7 +879,7 @@ checksum = "a668eda54683121533a393014d8692171709ff57a7d61f187b6e782719f8933f"
 dependencies = [
  "darling_core",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -906,7 +912,7 @@ checksum = "d150dea618e920167e5973d70ae6ece4385b7164e0d799fe7c122dd0a5d912ad"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -963,7 +969,7 @@ checksum = "27540baf49be0d484d8f0130d7d8da3011c32a44d4fc873368154f1510e574a2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -991,7 +997,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -1058,9 +1064,9 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
-version = "2.0.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
+checksum = "658bd65b1cf4c852a3cc96f18a8ce7b5640f6b703f905c7d74532294c2a63984"
 
 [[package]]
 name = "fdeflate"
@@ -1123,7 +1129,7 @@ checksum = "1a5c6c585bc94aaf2c7b51dd4c2ba22680844aba4c687be581871a6f518c5742"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -1447,7 +1453,7 @@ dependencies = [
  "presser",
  "thiserror",
  "winapi",
- "windows",
+ "windows 0.51.1",
 ]
 
 [[package]]
@@ -1592,9 +1598,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.5"
+version = "2.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b0b929d511467233429c45a44ac1dcaa21ba0f5ba11e4879e6ed28ddb4f9df4"
+checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -1602,9 +1608,9 @@ dependencies = [
 
 [[package]]
 name = "indoc"
-version = "2.0.4"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e186cfbae8084e513daff4240b4797e342f988cecda4fb6c939150f96315fd8"
+checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
 
 [[package]]
 name = "inout"
@@ -1841,9 +1847,11 @@ dependencies = [
 
 [[package]]
 name = "min-max-heap"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2687e6cf9c00f48e9284cf9fd15f2ef341d03cc7743abf9df4c5f07fdee50b18"
+version = "1.3.1-alpha.0"
+source = "git+https://github.com/michaelgoodale/min-max-heap-rs.git#e75f52997061d62b31500bb1f5c3bd32f0352fe4"
+dependencies = [
+ "allocator-api2",
+]
 
 [[package]]
 name = "minimal-lexical"
@@ -1856,9 +1864,11 @@ name = "minimalist-grammar-parser"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "allocator-api2",
  "anyhow",
  "approx",
  "bitvec",
+ "bumpalo",
  "burn",
  "divan",
  "itertools",
@@ -2419,9 +2429,9 @@ checksum = "60a357793950651c4ed0f3f52338f53b2f809f32d83a07f72909fa13e4c6c1e3"
 
 [[package]]
 name = "rayon"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4963ed1bc86e4f3ee217022bd855b297cef07fb9eac5dfa1f788b220b49b3bd"
+checksum = "b418a60154510ca1a002a752ca9714984e21e4241e804d32555251faf8b78ffa"
 dependencies = [
  "either",
  "rayon-core",
@@ -2465,9 +2475,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.3"
+version = "1.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62dbe01f0b06f9d8dc7d49e05a0785f153b00b2c227856282f671e0318c9b15"
+checksum = "c117dbdfde9c8308975b6a18d71f3f385c89461f7b3fb054288ecf2a2058ba4c"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -2591,9 +2601,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e87c9956bd9807afa1f77e0f7594af32566e830e088a5576d27c5b6f30f49d41"
+checksum = "99008d7ad0bbbea527ec27bddbc0e432c5b87d8175178cee68d2eec9c4a1813c"
 dependencies = [
  "log",
  "ring",
@@ -2605,9 +2615,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.3.1"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ede67b28608b4c60685c7d54122d4400d90f62b40caee7700e700380a390fa8"
+checksum = "868e20fada228fefaf6b652e00cc73623d54f8171e7352c18bb281571f2d92da"
 
 [[package]]
 name = "rustls-webpki"
@@ -2718,7 +2728,7 @@ checksum = "7eb0b34b42edc17f6b7cac84a52a1c5f0e1bb2227e997ca9011ea3dd34e8610b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -2905,7 +2915,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -2927,9 +2937,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.53"
+version = "2.0.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7383cd0e49fff4b6b90ca5670bfd3e9d6a733b3f90c686605aa7eec8c4996032"
+checksum = "002a1b3dbf967edfafc32655d0f377ab0bb7b994aa1d32c8cc7e9b8bf3ebb8f0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2944,7 +2954,7 @@ checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -2963,9 +2973,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.29.11"
+version = "0.30.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd727fc423c2060f6c92d9534cef765c65a6ed3f428a03d7def74a8c4348e666"
+checksum = "0c385888ef380a852a16209afc8cfad22795dd8873d69c9a14d2e2088f118d18"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",
@@ -2973,7 +2983,7 @@ dependencies = [
  "ntapi",
  "once_cell",
  "rayon",
- "winapi",
+ "windows 0.52.0",
 ]
 
 [[package]]
@@ -3084,7 +3094,7 @@ checksum = "c61f3ba182994efc43764a46c018c347bc492c79f024e705f46567b418f6d4f7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -3397,7 +3407,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
  "wasm-bindgen-shared",
 ]
 
@@ -3431,7 +3441,7 @@ checksum = "e94f17b526d0a461a191c78ea52bbce64071ed5c04c9ffe424dcb38f74171bb7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -3622,8 +3632,18 @@ version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca229916c5ee38c2f2bc1e9d8f04df975b4bd93f9955dc69fabb5d91270045c9"
 dependencies = [
- "windows-core",
+ "windows-core 0.51.1",
  "windows-targets 0.48.5",
+]
+
+[[package]]
+name = "windows"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be"
+dependencies = [
+ "windows-core 0.52.0",
+ "windows-targets 0.52.4",
 ]
 
 [[package]]
@@ -3633,6 +3653,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets 0.48.5",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
+dependencies = [
+ "windows-targets 0.52.4",
 ]
 
 [[package]]
@@ -3776,7 +3805,7 @@ dependencies = [
  "darling",
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -3814,7 +3843,7 @@ checksum = "9e6936f0cce458098a201c245a11bef556c6a0181129c7034d10d76d1ec3a2b8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
  "synstructure",
 ]
 
@@ -3835,7 +3864,7 @@ checksum = "9ce1b18ccd8e73a9321186f97e46f9f04b778851177567b1975109d26a08d2a6"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
 ]
 
 [[package]]
@@ -3855,7 +3884,7 @@ checksum = "e6a647510471d372f2e6c2e6b7219e44d8c574d24fdc11c610a61455782f18c3"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.53",
+ "syn 2.0.55",
  "synstructure",
 ]
 

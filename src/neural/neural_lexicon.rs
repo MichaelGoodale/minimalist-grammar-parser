@@ -63,7 +63,6 @@ pub struct GrammarParameterization<B: Backend> {
     licensee_categories: Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
     lemmas: Tensor<B, 2>,              //(lexeme, lemma_distribution)
     categories: Tensor<B, 2>,          //(lexeme, categories)
-    weights: Tensor<B, 1>,             //(lexeme, lexeme_weight)
     included_features: Tensor<B, 3>,   //(lexeme, n_licensee + n_features, true/false)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     n_lexemes: usize,
@@ -156,13 +155,18 @@ impl<B: Backend> GrammarParameterization<B> {
             rng,
         );
 
-        let weights = log_softmax(weights, 0);
         let types = gumbel_activation(types, 2, inverse_temperature, rng);
         let type_categories = gumbel_activation(type_categories, 2, inverse_temperature, rng);
         let lemmas = gumbel_activation(lemmas, 1, inverse_temperature, rng);
+        let weights = log_softmax(weights, 0).unsqueeze_dim(1);
         let licensee_categories =
             gumbel_activation(licensee_categories, 2, inverse_temperature, rng);
-        let categories = gumbel_activation(categories, 1, inverse_temperature, rng);
+        let licensee_categories = licensee_categories.clone().slice_assign(
+            [0..n_lexemes, 0..1, 0..n_categories],
+            licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories])
+                + weights.clone().unsqueeze_dim(1),
+        );
+        let categories = gumbel_activation(categories, 1, inverse_temperature, rng) + weights;
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
 
@@ -193,7 +197,6 @@ impl<B: Backend> GrammarParameterization<B> {
             types,
             type_categories,
             lemmas,
-            weights,
             licensee_categories,
             included_features,
             lemma_lookups,
@@ -328,11 +331,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             .categories
                             .clone()
                             .slice([lexeme_idx..lexeme_idx + 1, c..c + 1])
-                            .reshape([1])
-                            + grammar_params //all parses go through categories
-                                .weights
-                                .clone()
-                                .slice([lexeme_idx..lexeme_idx + 1]),
+                            .reshape([1]),
                     )
                 }));
 

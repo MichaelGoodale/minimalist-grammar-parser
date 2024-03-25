@@ -120,28 +120,16 @@ fn gumbel_activation<B: Backend, const D: usize>(
     )
 }
 
-fn log_1m<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    let mask = tensor.clone().log().greater_elem(-(2_f64.ln()));
-    let a = (-tensor.clone().exp() + 1).log();
-    (-tensor.exp()).log1p().mask_where(mask, a)
-
-    //mask = -math.log(2) < x  # x < 0
-    //return torch.where(
-    //    mask,
-    //    (-x.expm1()).log(),
-    //    (-x.exp()).log1p(),
-    //)
-}
-
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
-        types: Tensor<B, 3>,               // (lexeme, n_features, types)
-        type_categories: Tensor<B, 3>,     // (lexeme, n_features, N_TYPES)
-        licensee_categories: Tensor<B, 3>, // (lexeme, n_licensee, categories)
-        included_features: Tensor<B, 2>,   // (lexeme, n_licensee + n_features)
-        lemmas: Tensor<B, 2>,              // (lexeme, n_lemmas)
-        categories: Tensor<B, 2>,          // (lexeme, n_categories)
-        weights: Tensor<B, 1>,             // (lexeme)
+        types: Tensor<B, 3>,                // (lexeme, n_features, types)
+        type_categories: Tensor<B, 3>,      // (lexeme, n_features, N_TYPES)
+        licensee_categories: Tensor<B, 3>,  // (lexeme, n_licensee, categories)
+        included_features: Tensor<B, 2>,    // (lexeme, n_licensee + n_features)
+        lemmas: Tensor<B, 2>,               // (lexeme, n_lemmas)
+        silent_probabilities: Tensor<B, 1>, //(lexeme)
+        categories: Tensor<B, 2>,           // (lexeme, n_categories)
+        weights: Tensor<B, 1>,              // (lexeme)
         pad_vector: Tensor<B, 1>,
         end_vector: Tensor<B, 1>,
         temperature: f64,
@@ -178,9 +166,15 @@ impl<B: Backend> GrammarParameterization<B> {
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
 
-        let silent_probability: Tensor<B, 1> =
-            lemmas.clone().slice([0..n_lexemes, 2..3]).squeeze(1);
-        let non_silent_probability: Tensor<B, 1> = log_1m(silent_probability.clone());
+        let silent_probabilities = gumbel_activation(
+            Tensor::stack::<2>(
+                [silent_probabilities.clone(), -silent_probabilities].to_vec(),
+                1,
+            ),
+            1,
+            inverse_temperature,
+            rng,
+        );
 
         let mut lemma_lookups = HashMap::default();
         for lexeme_i in 0..n_lexemes {
@@ -211,13 +205,7 @@ impl<B: Backend> GrammarParameterization<B> {
             categories,
             pad_vector,
             end_vector,
-            silent_probabilities: Tensor::cat(
-                vec![
-                    silent_probability.unsqueeze_dim(1),
-                    non_silent_probability.unsqueeze_dim(1),
-                ],
-                1,
-            ),
+            silent_probabilities,
         })
     }
 
@@ -679,6 +667,11 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
+        let silent_probabilities = Tensor::<NdArray, 1>::random(
+            [n_lexemes],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
         let pad_vector = Tensor::<NdArray, 1>::from_floats(
             [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
             &NdArrayDevice::default(),
@@ -695,6 +688,7 @@ mod test {
             licensee_categories,
             included_features,
             lemmas,
+            silent_probabilities,
             categories,
             weights,
             pad_vector,

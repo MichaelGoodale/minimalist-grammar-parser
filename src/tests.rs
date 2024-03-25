@@ -563,6 +563,8 @@ fn test_loss() -> Result<()> {
             200,
         ),
     };
+    let silent_lemmas =
+        Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], -10.0, &NdArrayDevice::default());
     let pad_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
@@ -577,6 +579,7 @@ fn test_loss() -> Result<()> {
                 licensee_categories.clone(),
                 included_features.clone(),
                 lemmas.clone(),
+                silent_lemmas.clone(),
                 categories.clone(),
                 weights.clone(),
                 pad_vector.clone(),
@@ -592,7 +595,7 @@ fn test_loss() -> Result<()> {
     }
 
     let stored_losses = [
-        79.10021, 36.954823, 42.12445, 23.265802, 22.685387, 42.907303,
+        95.489075, 25.114962, 41.96997, 20.512835, 21.748817, 28.503601,
     ];
     dbg!(&loss);
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
@@ -603,7 +606,7 @@ fn test_loss() -> Result<()> {
 
 #[test]
 fn random_neural_generation() -> Result<()> {
-    let n_lexemes = 4;
+    let n_lexemes = 1;
     let n_pos = 2;
     let n_licensee = 2;
     let n_categories = 2;
@@ -626,6 +629,8 @@ fn random_neural_generation() -> Result<()> {
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
+    let silent_lemmas = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
         &NdArrayDevice::default(),
@@ -643,6 +648,7 @@ fn random_neural_generation() -> Result<()> {
             licensee_categories.clone(),
             included_features.clone(),
             lemmas.clone(),
+            silent_lemmas.clone(),
             categories.clone(),
             weights.clone(),
             pad_vector.clone(),

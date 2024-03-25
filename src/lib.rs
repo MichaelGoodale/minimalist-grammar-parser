@@ -54,6 +54,7 @@ pub struct ParsingConfig {
     move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
+    max_length: Option<usize>,
     global_steps: Option<usize>,
 }
 
@@ -70,9 +71,28 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
+            max_length: None,
             global_steps: None,
         }
     }
+    pub fn new_with_max_length(
+        min_log_prob: LogProb<f64>,
+        move_prob: LogProb<f64>,
+        max_steps: usize,
+        max_beams: usize,
+        max_length: usize,
+    ) -> ParsingConfig {
+        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob,
+            move_prob,
+            max_steps,
+            max_beams,
+            max_length: Some(max_length),
+            global_steps: None,
+        }
+    }
+
     pub fn new_with_global_steps(
         min_log_prob: LogProb<f64>,
         move_prob: LogProb<f64>,
@@ -86,6 +106,7 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
+            max_length: None,
             global_steps: Some(global_steps),
         }
     }

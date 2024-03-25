@@ -146,7 +146,8 @@ mod tests {
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 10000,
             max_beams: 100,
-            global_steps: None
+            global_steps: None,
+            max_length: None,
         };
     }
 

@@ -167,6 +167,7 @@ fn generation() -> Result<()> {
             max_steps: 100,
             max_beams: 1000,
             global_steps: None,
+            max_length: None,
         },
     )?
     .collect();

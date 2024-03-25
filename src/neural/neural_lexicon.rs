@@ -11,6 +11,7 @@ use petgraph::{
     graph::DiGraph,
     graph::{EdgeIndex, NodeIndex},
 };
+use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_distr::{Distribution, Gumbel};
 
@@ -302,7 +303,10 @@ impl<B: Backend> NeuralLexicon<B> {
 
     //TODO: look into if weights should be done only over categories
 
-    pub fn new_superimposed(grammar_params: &GrammarParameterization<B>) -> anyhow::Result<Self> {
+    pub fn new_superimposed(
+        grammar_params: &GrammarParameterization<B>,
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<Self> {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -311,7 +315,7 @@ impl<B: Backend> NeuralLexicon<B> {
         let root = graph.add_node((None, FeatureOrLemma::Root));
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
-            let first_features = (0..grammar_params.n_categories)
+            let mut first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
                         1,
@@ -333,7 +337,9 @@ impl<B: Backend> NeuralLexicon<B> {
                             .slice([lexeme_idx..lexeme_idx + 1, c..c + 1])
                             .reshape([1]),
                     )
-                }));
+                }))
+                .collect();
+            first_features.shuffle(rng);
 
             let mut all_categories = vec![];
             let mut parent_licensees = vec![];
@@ -392,17 +398,20 @@ impl<B: Backend> NeuralLexicon<B> {
 
             for i in 1..grammar_params.n_licensees {
                 let mut new_parent_licensees = vec![];
-                let licensees = (0..grammar_params.n_categories).map(|c| {
-                    (
-                        FeatureOrLemma::Feature(Feature::Licensee(c)),
-                        grammar_params
-                            .licensee_categories
-                            .clone()
-                            .slice([lexeme_idx..lexeme_idx + 1, 0..1, c..c + 1])
-                            .reshape([1]),
-                    )
-                });
-                for (feature, prob) in licensees {
+                let mut licensees = (0..grammar_params.n_categories)
+                    .map(|c| {
+                        (
+                            FeatureOrLemma::Feature(Feature::Licensee(c)),
+                            grammar_params
+                                .licensee_categories
+                                .clone()
+                                .slice([lexeme_idx..lexeme_idx + 1, 0..1, c..c + 1])
+                                .reshape([1]),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                licensees.shuffle(rng);
+                for (feature, prob) in licensees.into_iter() {
                     let node = graph.add_node((
                         Some(tensor_to_log_prob(&prob).context("Licensee")?),
                         feature,
@@ -486,8 +495,13 @@ impl<B: Backend> NeuralLexicon<B> {
 
             let mut parents = all_categories;
             for i in 0..grammar_params.n_features {
-                let new_parents: Vec<_> = (0..grammar_params.n_categories)
+                let mut new_parents: Vec<_> = (0..grammar_params.n_categories)
                     .cartesian_product(0..N_TYPES)
+                    .collect();
+                new_parents.shuffle(rng);
+
+                let new_parents = new_parents
+                    .into_iter()
                     .map(|(c, t)| {
                         let feature = to_feature(t, c);
                         let p = (grammar_params.type_categories.clone().slice([

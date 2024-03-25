@@ -10,6 +10,7 @@ use burn::tensor::Int;
 use burn::tensor::{backend::Backend, Tensor};
 use logprob::LogProb;
 use moka::sync::Cache;
+use rand::Rng;
 
 pub struct NeuralConfig {
     pub n_grammars: usize,
@@ -142,8 +143,9 @@ pub type NeuralGrammarCache =
 pub fn get_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
 ) -> anyhow::Result<(Tensor<B, 3>, Tensor<B, 1>)> {
-    let lexicon = NeuralLexicon::new_superimposed(g)?;
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
     let (strings, string_probs) =
         retrieve_strings(&lexicon, &vec![], g.lemma_lookups(), neural_config);
 
@@ -161,10 +163,11 @@ pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
 ) -> anyhow::Result<Tensor<B, 1>> {
     let n_targets = targets.shape().dims[0];
 
-    let lexicon = NeuralLexicon::new_superimposed(g)?;
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
     let target_vec = (0..n_targets)
         .map(|i| {
             let v: Vec<usize> = targets

@@ -57,7 +57,6 @@ pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
-    //lexeme_weights: HashMap<usize, LogProb<f64>>,
     graph: NeuralGraph,
     device: B::Device,
 }

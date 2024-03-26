@@ -204,20 +204,16 @@ pub fn get_neural_outputs<B: Backend>(
         neural_config,
     );
     let n_strings = strings.len();
-    let n_strings = 9;
 
     if n_strings == 0 {
         bail!("Zero outputted strings!");
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    let grammar = string_path_to_tensor(&strings, g, neural_config).slice([0..9]);
-    dbg!(grammar.clone().argmax(2).squeeze::<2>(2));
+    let grammar = string_path_to_tensor(&strings, g, neural_config);
 
     //(n_strings_per_grammar);
-    let string_probs =
-        get_string_prob(&string_probs, &lexicon, neural_config, &targets.device()).slice([0..9]);
-    dbg!(string_probs.clone().detach());
+    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
@@ -233,7 +229,6 @@ pub fn get_neural_outputs<B: Backend>(
         .sum_dim(2)
         .squeeze(2)
         + string_probs.unsqueeze_dim(0);
-    dbg!(loss.clone().detach());
 
     //Probability of generating each of the targets
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).squeeze(1);

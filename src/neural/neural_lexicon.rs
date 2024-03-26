@@ -17,6 +17,7 @@ use rand_distr::{Distribution, Gumbel};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NeuralProbabilityRecord {
+    Lexeme(NodeIndex, usize),
     Feature(NodeIndex),
     Edge(EdgeIndex),
     EdgeAndFeature((NodeIndex, EdgeIndex)),
@@ -28,7 +29,7 @@ pub enum NeuralProbabilityRecord {
 //TODO: Refactor so that we don't go through siblings and that there is no reptition
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct NeuralProbability(pub (NeuralProbabilityRecord, LogProb<f64>, bool));
+pub struct NeuralProbability(pub (NeuralProbabilityRecord, LogProb<f64>));
 
 impl NeuralProbability {
     fn mul_by_edge(
@@ -36,12 +37,11 @@ impl NeuralProbability {
         edge: EdgeIndex,
         edge_p: LogProb<f64>,
     ) -> anyhow::Result<NeuralProbability> {
-        let NeuralProbability((record, p, repeatable)) = &self;
+        let NeuralProbability((record, p)) = &self;
         match record {
             NeuralProbabilityRecord::Feature(node) => Ok(NeuralProbability((
                 NeuralProbabilityRecord::EdgeAndFeature((*node, edge)),
                 edge_p + p,
-                *repeatable,
             ))),
             NeuralProbabilityRecord::OneProb => Ok(*self),
             _ => bail!("Invalid edge multiplication!"),
@@ -57,6 +57,7 @@ pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
+    //lexeme_weights: HashMap<usize, LogProb<f64>>,
     graph: NeuralGraph,
     device: B::Device,
 }
@@ -68,7 +69,9 @@ pub struct GrammarParameterization<B: Backend> {
     lemmas: Tensor<B, 2>,              //(lexeme, lemma_distribution)
     categories: Tensor<B, 2>,          //(lexeme, categories)
     included_features: Tensor<B, 3>,   //(lexeme, n_licensee + n_features, true/false)
+    weights: Tensor<B, 1>,             //(lexeme)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
+    lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
     n_features: usize,
     n_licensees: usize,
@@ -162,15 +165,16 @@ impl<B: Backend> GrammarParameterization<B> {
         let types = gumbel_activation(types, 2, inverse_temperature, rng);
         let type_categories = gumbel_activation(type_categories, 2, inverse_temperature, rng);
         let lemmas = gumbel_activation(lemmas, 1, inverse_temperature, rng);
-        let weights = log_softmax(weights, 0).unsqueeze_dim(1);
+        let weights = log_softmax(weights, 0);
         let licensee_categories =
             gumbel_activation(licensee_categories, 2, inverse_temperature, rng);
         let licensee_categories = licensee_categories.clone().slice_assign(
             [0..n_lexemes, 0..1, 0..n_categories],
-            licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories])
-                + weights.clone().unsqueeze_dim(1),
+            licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories]),
         );
-        let categories = gumbel_activation(categories, 1, inverse_temperature, rng) + weights;
+        let categories = gumbel_activation(categories, 1, inverse_temperature, rng);
+        dbg!(categories.clone().detach());
+
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
 
@@ -185,6 +189,7 @@ impl<B: Backend> GrammarParameterization<B> {
         );
 
         let mut lemma_lookups = HashMap::default();
+        let mut lexeme_weights = HashMap::default();
         for lexeme_i in 0..n_lexemes {
             let v = lemmas
                 .clone()
@@ -195,6 +200,17 @@ impl<B: Backend> GrammarParameterization<B> {
             for (lemma_i, v) in v.into_iter().enumerate() {
                 lemma_lookups.insert((lexeme_i, lemma_i), LogProb::new(clamp_prob(v)?).unwrap());
             }
+            lexeme_weights.insert(
+                lexeme_i,
+                LogProb::new(clamp_prob(
+                    weights
+                        .clone()
+                        .slice([lexeme_i..lexeme_i + 1])
+                        .into_scalar()
+                        .elem(),
+                )?)
+                .unwrap(),
+            );
         }
 
         Ok(GrammarParameterization {
@@ -203,9 +219,11 @@ impl<B: Backend> GrammarParameterization<B> {
             lemmas,
             licensee_categories,
             included_features,
+            weights,
             lemma_lookups,
             n_lexemes,
             n_features,
+            lexeme_weights,
             n_licensees,
             n_lemmas,
             n_categories,
@@ -226,6 +244,10 @@ impl<B: Backend> GrammarParameterization<B> {
 
     pub fn lemma_lookups(&self) -> &HashMap<(usize, usize), LogProb<f64>> {
         &self.lemma_lookups
+    }
+
+    pub fn lexeme_weights(&self) -> &HashMap<usize, LogProb<f64>> {
+        &self.lexeme_weights
     }
 
     pub fn device(&self) -> Device<B> {
@@ -315,7 +337,6 @@ impl<B: Backend> NeuralLexicon<B> {
         let mut weights_map = HashMap::default();
 
         let mut graph: NeuralGraph = DiGraph::new();
-        let root = graph.add_node((None, FeatureOrLemma::Root));
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
             let mut first_features: Vec<_> = (0..grammar_params.n_categories)
@@ -351,18 +372,21 @@ impl<B: Backend> NeuralLexicon<B> {
                 let node = graph.add_node((Some(p), feature));
                 let prob_of_n_licensees =
                     grammar_params.prob_of_n_licensees(lexeme_idx, n_licensees);
-                let e = graph.add_edge(
-                    root,
-                    node,
-                    tensor_to_log_prob(&prob_of_n_licensees).context("First n_licensees")?,
-                );
+
+                let lexeme_p = prob + prob_of_n_licensees;
                 let p = NeuralProbability((
-                    NeuralProbabilityRecord::EdgeAndFeature((node, e)),
-                    p + tensor_to_log_prob(&prob_of_n_licensees).context("First n_licensees")?,
-                    true,
+                    NeuralProbabilityRecord::Lexeme(node, lexeme_idx),
+                    tensor_to_log_prob(&lexeme_p).context("First n_licensees")?,
                 ));
-                weights_map.insert(NeuralProbabilityRecord::Edge(e), prob_of_n_licensees);
-                weights_map.insert(NeuralProbabilityRecord::Feature(node), prob);
+                let lexeme_weight = grammar_params
+                    .weights
+                    .clone()
+                    .slice([lexeme_idx..lexeme_idx + 1]);
+                weights_map.insert(
+                    NeuralProbabilityRecord::Lexeme(node, lexeme_idx),
+                    lexeme_weight,
+                );
+                weights_map.insert(NeuralProbabilityRecord::Feature(node), lexeme_p);
 
                 let feature = &graph[node].1;
                 match feature {
@@ -580,11 +604,7 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
     type Probability = NeuralProbability;
 
     fn probability_of_one(&self) -> Self::Probability {
-        NeuralProbability((
-            NeuralProbabilityRecord::OneProb,
-            LogProb::new(0.0).unwrap(),
-            false,
-        ))
+        NeuralProbability((NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()))
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
@@ -604,7 +624,6 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
                 let p = NeuralProbability((
                     NeuralProbabilityRecord::Feature(target),
                     self.graph[target].0.unwrap(),
-                    false,
                 ))
                 .mul_by_edge(e.id(), *e.weight())
                 .unwrap();

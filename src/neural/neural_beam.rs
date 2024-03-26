@@ -29,8 +29,8 @@ impl StringPath {
         self.0.len()
     }
 
-    pub fn into_iter(self) -> std::vec::IntoIter<usize> {
-        self.0.into_iter()
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, usize> {
@@ -38,35 +38,31 @@ impl StringPath {
     }
 }
 
+impl IntoIterator for StringPath {
+    type Item = usize;
+
+    type IntoIter = std::vec::IntoIter<usize>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>);
 
 impl StringProbHistory {
-    fn add_step(
-        &mut self,
-        x: NeuralProbabilityRecord,
-        repeatable: bool,
-        new_prob: LogProb<f64>,
-        prob: &mut LogProb<f64>,
-    ) {
-        match self.0.entry(x) {
-            Entry::Occupied(entry) if repeatable => {
-                *entry.into_mut() += 1;
-                *prob += new_prob;
-            }
-            Entry::Occupied(entry) => (),
-            Entry::Vacant(entry) => {
-                entry.insert(1);
-                *prob += new_prob;
-            }
-        }
-    }
-
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
         self.0.iter()
     }
+}
 
-    pub fn into_iter(self) -> std::collections::hash_map::IntoIter<NeuralProbabilityRecord, u32> {
+impl IntoIterator for StringProbHistory {
+    type Item = (NeuralProbabilityRecord, u32);
+
+    type IntoIter = std::collections::hash_map::IntoIter<NeuralProbabilityRecord, u32>;
+
+    fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
@@ -78,6 +74,7 @@ pub struct NeuralBeam<'a> {
     generated_sentence: StringPath,
     sentence_guides: Vec<(&'a [usize], usize, LogProb<f64>)>,
     lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
+    weight_lookups: &'a HashMap<usize, LogProb<f64>>,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
     top_id: usize,
@@ -91,6 +88,7 @@ impl<'a> NeuralBeam<'a> {
         initial_category: usize,
         sentences: &'a [T],
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
+        weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         record_rules: bool,
     ) -> Result<impl Iterator<Item = NeuralBeam<'a>> + 'a>
     where
@@ -120,6 +118,7 @@ impl<'a> NeuralBeam<'a> {
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0, log_one)).collect(),
                 lemma_lookups,
+                weight_lookups,
                 rules: if record_rules {
                     thin_vec![Rule::Start(*node)]
                 } else {
@@ -187,13 +186,20 @@ impl Beam<usize> for NeuralBeam<'_> {
     }
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
-        let NeuralProbability((record, log_prob, repeatable)) = x;
-        let occupied = self.probability_path.add_step(
-            record,
-            repeatable,
-            log_prob,
-            &mut self.log_probability.0 .1,
-        );
+        let NeuralProbability((record, new_prob)) = x;
+        match self.probability_path.0.entry(record) {
+            Entry::Occupied(entry) => {
+                *entry.into_mut() += 1;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(1);
+                self.log_probability.0 .1 += new_prob;
+            }
+        }
+
+        if let NeuralProbabilityRecord::Lexeme(_, lexeme_idx) = record {
+            self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
+        }
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {

@@ -26,6 +26,7 @@ fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     targets: &Vec<Vec<usize>>,
     lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
+    lexeme_weights: &HashMap<usize, LogProb<f64>>,
     neural_config: &NeuralConfig,
 ) -> (Vec<StringPath>, Vec<Option<StringProbHistory>>) {
     let mut grammar_strings: Vec<_> = vec![];
@@ -35,6 +36,7 @@ fn retrieve_strings<B: Backend>(
         lexicon,
         targets,
         lemma_lookups,
+        lexeme_weights,
         &neural_config.parsing_config,
     )
     .filter(|(s, _h)| s.len() < neural_config.padding_length)
@@ -109,19 +111,24 @@ fn get_string_prob<B: Backend>(
                     }
                     NeuralProbabilityRecord::Feature(lexeme) => {
                         let feature = NeuralProbabilityRecord::Feature(*lexeme);
-                        p = p + lexicon
-                            .get_weight(&feature)
-                            .unwrap()
-                            .clone()
-                            .mul_scalar(*count);
+                        p = p + lexicon.get_weight(&feature).unwrap().clone();
                     }
                     NeuralProbabilityRecord::EdgeAndFeature((n, e)) => {
                         let e = NeuralProbabilityRecord::Edge(*e);
                         let n = NeuralProbabilityRecord::Feature(*n);
                         p = p
                             + (lexicon.get_weight(&n).unwrap().clone()
-                                + lexicon.get_weight(&e).unwrap().clone())
+                                + lexicon.get_weight(&e).unwrap().clone());
+                    }
+                    NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
+                        let feature = NeuralProbabilityRecord::Lexeme(*lexeme, *lexeme_idx);
+                        p = p + lexicon
+                            .get_weight(&feature)
+                            .unwrap()
+                            .clone()
                             .mul_scalar(*count);
+                        let feature = NeuralProbabilityRecord::Feature(*lexeme);
+                        p = p + lexicon.get_weight(&feature).unwrap().clone();
                     }
                     NeuralProbabilityRecord::Edge(_) => {
                         panic!("This should never be in a parse path")
@@ -146,8 +153,13 @@ pub fn get_grammar<B: Backend>(
     rng: &mut impl Rng,
 ) -> anyhow::Result<(Tensor<B, 3>, Tensor<B, 1>)> {
     let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (strings, string_probs) =
-        retrieve_strings(&lexicon, &vec![], g.lemma_lookups(), neural_config);
+    let (strings, string_probs) = retrieve_strings(
+        &lexicon,
+        &vec![],
+        g.lemma_lookups(),
+        g.lexeme_weights(),
+        neural_config,
+    );
 
     //(1, n_grammar_strings)
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
@@ -184,24 +196,28 @@ pub fn get_neural_outputs<B: Backend>(
         })
         .collect();
 
-    let (strings, string_probs) =
-        retrieve_strings(&lexicon, &target_vec, g.lemma_lookups(), neural_config);
-    dbg!(string_probs.iter().take(10).collect::<Vec<_>>());
+    let (strings, string_probs) = retrieve_strings(
+        &lexicon,
+        &target_vec,
+        g.lemma_lookups(),
+        g.lexeme_weights(),
+        neural_config,
+    );
     let n_strings = strings.len();
+    let n_strings = 9;
 
     if n_strings == 0 {
         bail!("Zero outputted strings!");
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    let grammar = string_path_to_tensor(&strings, g, neural_config);
+    let grammar = string_path_to_tensor(&strings, g, neural_config).slice([0..9]);
+    dbg!(grammar.clone().argmax(2).squeeze::<2>(2));
 
     //(n_strings_per_grammar);
-    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
-    dbg!(
-        grammar.clone().argmax(2).squeeze::<2>(2),
-        string_probs.clone().detach()
-    );
+    let string_probs =
+        get_string_prob(&string_probs, &lexicon, neural_config, &targets.device()).slice([0..9]);
+    dbg!(string_probs.clone().detach());
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
@@ -217,6 +233,7 @@ pub fn get_neural_outputs<B: Backend>(
         .sum_dim(2)
         .squeeze(2)
         + string_probs.unsqueeze_dim(0);
+    dbg!(loss.clone().detach());
 
     //Probability of generating each of the targets
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss, 1).squeeze(1);

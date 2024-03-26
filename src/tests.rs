@@ -491,7 +491,11 @@ fn test_loss() -> Result<()> {
     let n_licensees = 1;
 
     let categories =
-        Tensor::<Autodiff<NdArray>, 2>::ones([n_lexemes, n_categories], &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default())
+            .slice_assign(
+                [0..n_lexemes, 0..1],
+                Tensor::full([n_lexemes, 1], 5.0, &NdArrayDevice::default()),
+            );
 
     let mut types = Tensor::<Autodiff<NdArray>, 3>::zeros(
         [n_lexemes, n_pos, N_TYPES],
@@ -557,7 +561,7 @@ fn test_loss() -> Result<()> {
 
     let config = NeuralConfig {
         n_grammars: 1,
-        n_strings_per_grammar: 100,
+        n_strings_per_grammar: 50,
         padding_length: 10,
         n_strings_to_sample: 5,
         temperature: 1.0,
@@ -577,34 +581,28 @@ fn test_loss() -> Result<()> {
     let end_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 50., 0., 0.], &NdArrayDevice::default());
     let mut loss: Vec<f32> = vec![];
-    for t in [0.1] {
-        //, 0.25, 0.5, 1.0] {
-        let mut avg = 0.0;
-        for _ in 0..1 {
-            let g = GrammarParameterization::new(
-                types.clone(),
-                type_categories.clone(),
-                licensee_categories.clone(),
-                included_features.clone(),
-                lemmas.clone(),
-                silent_lemmas.clone(),
-                categories.clone(),
-                weights.clone(),
-                pad_vector.clone(),
-                end_vector.clone(),
-                t,
-                &mut rng,
-            )?;
-            avg += get_neural_outputs(&g, targets.clone(), &config, &mut rng)?
-                .into_scalar()
-                .elem::<f32>();
-        }
-        loss.push(avg / 1.0);
+    for t in [0.1, 0.25, 0.5, 1.0, 5.0] {
+        let g = GrammarParameterization::new(
+            types.clone(),
+            type_categories.clone(),
+            licensee_categories.clone(),
+            included_features.clone(),
+            lemmas.clone(),
+            silent_lemmas.clone(),
+            categories.clone(),
+            weights.clone(),
+            pad_vector.clone(),
+            end_vector.clone(),
+            t,
+            &mut rng,
+        )?;
+        let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)?
+            .into_scalar()
+            .elem::<f32>();
+        loss.push(val);
     }
 
-    let stored_losses = [
-        95.489075, 25.114962, 41.96997, 20.512835, 21.748817, 28.503601,
-    ];
+    let stored_losses = [24.953299, 24.953299, 24.955051, 25.038876, 293.96155];
     dbg!(&loss);
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
         approx::assert_relative_eq!(loss, stored_loss, epsilon = 1e-5);

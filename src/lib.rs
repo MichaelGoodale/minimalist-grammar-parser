@@ -543,21 +543,22 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         lexicon: &'a NeuralLexicon<B>,
         targets: &'a [Vec<usize>],
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
+        weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.extend(NeuralBeam::new(lexicon, 0, targets, lemma_lookups, false).unwrap());
+        parse_heap.extend(
+            NeuralBeam::new(lexicon, 0, targets, lemma_lookups, weight_lookups, false).unwrap(),
+        );
         NeuralGenerator {
             lexicon,
             move_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MoveRuleProb,
                 config.move_prob,
-                true,
             )),
             merge_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MergeRuleProb,
                 config.move_prob.opposite_prob(),
-                true,
             )),
             parse_heap: ParseHeap {
                 global_steps: 0,

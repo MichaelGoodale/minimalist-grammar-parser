@@ -223,7 +223,7 @@ impl<
         let n_categories: u16 =
             n_categories.unwrap_or_else(|| category_symbols.len().try_into().unwrap());
 
-        let bits_per_feature: f64 = (MG_TYPES + n_categories).into();
+        let bits_per_feature: f64 = (MG_TYPES * n_categories).into();
         let bits_per_feature = bits_per_feature.log2();
         let bits_per_phoneme: f64 = (Into::<f64>::into(n_phonemes)).log2();
 
@@ -771,7 +771,7 @@ ed::=v +k t";
                 .collect::<Result<Vec<_>>>()?;
             let lex = Lexicon::new(v);
             for alphabet_size in [26, 32, 37] {
-                let bits_per_symbol: f64 = (MG_TYPES + n_categories).into();
+                let bits_per_symbol: f64 = (MG_TYPES * n_categories).into();
                 let bits_per_phoneme: f64 = alphabet_size.into();
                 assert_relative_eq!(
                     lex.mdl_score(alphabet_size)?,

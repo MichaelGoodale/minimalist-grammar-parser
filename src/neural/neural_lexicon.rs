@@ -173,7 +173,6 @@ impl<B: Backend> GrammarParameterization<B> {
             licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories]),
         );
         let categories = gumbel_activation(categories, 1, inverse_temperature, rng);
-        dbg!(categories.clone().detach());
 
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);

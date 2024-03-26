@@ -207,6 +207,7 @@ fn random_neural_generation() -> Result<()> {
             pad_vector.clone(),
             end_vector.clone(),
             temperature,
+            false,
             &mut rng,
         )?;
         let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);

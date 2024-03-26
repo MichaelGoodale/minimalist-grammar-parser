@@ -126,6 +126,20 @@ fn gumbel_activation<B: Backend, const D: usize>(
     )
 }
 
+fn activation_function<B: Backend, const D: usize>(
+    tensor: Tensor<B, D>,
+    dim: usize,
+    inverse_temperature: f64,
+    gumbel: bool,
+    rng: &mut impl Rng,
+) -> Tensor<B, D> {
+    if gumbel {
+        gumbel_activation(tensor, dim, inverse_temperature, rng)
+    } else {
+        log_softmax(tensor, dim)
+    }
+}
+
 impl<B: Backend> GrammarParameterization<B> {
     pub fn new(
         types: Tensor<B, 3>,                // (lexeme, n_features, types)
@@ -139,6 +153,7 @@ impl<B: Backend> GrammarParameterization<B> {
         pad_vector: Tensor<B, 1>,
         end_vector: Tensor<B, 1>,
         temperature: f64,
+        gumbel: bool,
         rng: &mut impl Rng,
     ) -> anyhow::Result<GrammarParameterization<B>> {
         let [n_lexemes, n_features, n_categories] = type_categories.shape().dims;
@@ -155,24 +170,27 @@ impl<B: Backend> GrammarParameterization<B> {
         }
 
         let inverse_temperature = 1.0 / temperature;
-        let included_features = gumbel_activation(
+
+        let included_features = activation_function(
             Tensor::stack::<3>([included_features.clone(), -included_features].to_vec(), 2),
             2,
             inverse_temperature,
+            gumbel,
             rng,
         );
 
-        let types = gumbel_activation(types, 2, inverse_temperature, rng);
-        let type_categories = gumbel_activation(type_categories, 2, inverse_temperature, rng);
-        let lemmas = gumbel_activation(lemmas, 1, inverse_temperature, rng);
+        let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
+        let type_categories =
+            activation_function(type_categories, 2, inverse_temperature, gumbel, rng);
+        let lemmas = activation_function(lemmas, 1, inverse_temperature, gumbel, rng);
         let weights = log_softmax(weights, 0);
         let licensee_categories =
-            gumbel_activation(licensee_categories, 2, inverse_temperature, rng);
+            activation_function(licensee_categories, 2, inverse_temperature, gumbel, rng);
         let licensee_categories = licensee_categories.clone().slice_assign(
             [0..n_lexemes, 0..1, 0..n_categories],
             licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories]),
         );
-        let categories = gumbel_activation(categories, 1, inverse_temperature, rng);
+        let categories = activation_function(categories, 1, inverse_temperature, gumbel, rng);
 
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
@@ -734,6 +752,7 @@ mod test {
             pad_vector,
             end_vector,
             1.0,
+            true,
             &mut rng,
         );
         Ok(())

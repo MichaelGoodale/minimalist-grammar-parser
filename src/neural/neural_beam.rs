@@ -42,16 +42,26 @@ impl StringPath {
 pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>);
 
 impl StringProbHistory {
-    fn add_step(&mut self, x: NeuralProbabilityRecord) {
+    fn add_step(
+        &mut self,
+        x: NeuralProbabilityRecord,
+        repeatable: bool,
+        new_prob: LogProb<f64>,
+        prob: &mut LogProb<f64>,
+    ) {
         match self.0.entry(x) {
-            Entry::Occupied(entry) => {
+            Entry::Occupied(entry) if repeatable => {
                 *entry.into_mut() += 1;
+                *prob += new_prob;
             }
+            Entry::Occupied(entry) => (),
             Entry::Vacant(entry) => {
                 entry.insert(1);
+                *prob += new_prob;
             }
-        };
+        }
     }
+
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
         self.0.iter()
     }
@@ -177,9 +187,13 @@ impl Beam<usize> for NeuralBeam<'_> {
     }
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
-        let NeuralProbability((record, log_prob)) = x;
-        self.probability_path.add_step(record);
-        self.log_probability.0 .1 += log_prob;
+        let NeuralProbability((record, log_prob, repeatable)) = x;
+        let occupied = self.probability_path.add_step(
+            record,
+            repeatable,
+            log_prob,
+            &mut self.log_probability.0 .1,
+        );
     }
 
     fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -217,13 +231,14 @@ impl Beam<usize> for NeuralBeam<'_> {
                 .iter_mut()
                 .for_each(|(sentence, position, mut prob)| {
                     let lemma: usize = *sentence.get(*position).unwrap_or(&0);
-                    prob += beam.lemma_lookups.get(&(*x, lemma)).unwrap();
+                    prob += match lemma {
+                        0 => LogProb::new(-1000.0).unwrap(),
+                        _ => *beam.lemma_lookups.get(&(*x, lemma)).unwrap(),
+                    }
                 });
         }
 
-        let NeuralProbability((record, log_prob)) = child_prob;
-        beam.probability_path.add_step(record);
-        beam.log_probability.0 .1 += log_prob;
+        beam.add_to_log_prob(child_prob);
 
         if beam.record_rules() {
             beam.rules.push(Rule::Scan {

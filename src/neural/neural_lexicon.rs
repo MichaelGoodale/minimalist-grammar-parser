@@ -25,8 +25,10 @@ pub enum NeuralProbabilityRecord {
     OneProb,
 }
 
+//TODO: Refactor so that we don't go through siblings and that there is no reptition
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct NeuralProbability(pub (NeuralProbabilityRecord, LogProb<f64>));
+pub struct NeuralProbability(pub (NeuralProbabilityRecord, LogProb<f64>, bool));
 
 impl NeuralProbability {
     fn mul_by_edge(
@@ -34,11 +36,12 @@ impl NeuralProbability {
         edge: EdgeIndex,
         edge_p: LogProb<f64>,
     ) -> anyhow::Result<NeuralProbability> {
-        let NeuralProbability((record, p)) = &self;
+        let NeuralProbability((record, p, repeatable)) = &self;
         match record {
             NeuralProbabilityRecord::Feature(node) => Ok(NeuralProbability((
                 NeuralProbabilityRecord::EdgeAndFeature((*node, edge)),
                 edge_p + p,
+                *repeatable,
             ))),
             NeuralProbabilityRecord::OneProb => Ok(*self),
             _ => bail!("Invalid edge multiplication!"),
@@ -356,6 +359,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 let p = NeuralProbability((
                     NeuralProbabilityRecord::EdgeAndFeature((node, e)),
                     p + tensor_to_log_prob(&prob_of_n_licensees).context("First n_licensees")?,
+                    true,
                 ));
                 weights_map.insert(NeuralProbabilityRecord::Edge(e), prob_of_n_licensees);
                 weights_map.insert(NeuralProbabilityRecord::Feature(node), prob);
@@ -405,7 +409,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             grammar_params
                                 .licensee_categories
                                 .clone()
-                                .slice([lexeme_idx..lexeme_idx + 1, 0..1, c..c + 1])
+                                .slice([lexeme_idx..lexeme_idx + 1, i..i + 1, c..c + 1])
                                 .reshape([1]),
                         )
                     })
@@ -576,7 +580,11 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
     type Probability = NeuralProbability;
 
     fn probability_of_one(&self) -> Self::Probability {
-        NeuralProbability((NeuralProbabilityRecord::OneProb, LogProb::new(0.0).unwrap()))
+        NeuralProbability((
+            NeuralProbabilityRecord::OneProb,
+            LogProb::new(0.0).unwrap(),
+            false,
+        ))
     }
 
     fn n_children(&self, nx: petgraph::prelude::NodeIndex) -> usize {
@@ -596,6 +604,7 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
                 let p = NeuralProbability((
                     NeuralProbabilityRecord::Feature(target),
                     self.graph[target].0.unwrap(),
+                    false,
                 ))
                 .mul_by_edge(e.id(), *e.weight())
                 .unwrap();

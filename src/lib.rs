@@ -552,10 +552,12 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
             move_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MoveRuleProb,
                 config.move_prob,
+                true,
             )),
             merge_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MergeRuleProb,
                 config.move_prob.opposite_prob(),
+                true,
             )),
             parse_heap: ParseHeap {
                 global_steps: 0,

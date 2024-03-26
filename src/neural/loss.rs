@@ -186,6 +186,7 @@ pub fn get_neural_outputs<B: Backend>(
 
     let (strings, string_probs) =
         retrieve_strings(&lexicon, &target_vec, g.lemma_lookups(), neural_config);
+    dbg!(string_probs.iter().take(10).collect::<Vec<_>>());
     let n_strings = strings.len();
 
     if n_strings == 0 {
@@ -197,6 +198,10 @@ pub fn get_neural_outputs<B: Backend>(
 
     //(n_strings_per_grammar);
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
+    dbg!(
+        grammar.clone().argmax(2).squeeze::<2>(2),
+        string_probs.clone().detach()
+    );
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);

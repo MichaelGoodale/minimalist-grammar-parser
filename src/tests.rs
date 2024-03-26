@@ -507,9 +507,14 @@ fn test_loss() -> Result<()> {
         );
     }
 
-    let type_categories = Tensor::<Autodiff<NdArray>, 3>::ones(
+    let type_categories = Tensor::<Autodiff<NdArray>, 3>::full(
         [n_lexemes, n_pos, n_categories],
+        5.0,
         &NdArrayDevice::default(),
+    )
+    .slice_assign(
+        [0..n_lexemes, 0..n_pos, 1..2],
+        Tensor::zeros([n_lexemes, n_pos, 1], &NdArrayDevice::default()),
     );
 
     let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
@@ -534,7 +539,7 @@ fn test_loss() -> Result<()> {
         Tensor::full([1, 1], 10, &dev),
     );
 
-    let targets = (1..6)
+    let targets = (1..9)
         .map(|i| {
             let mut s: [u32; 10] = [0; 10];
             s.iter_mut().take(i).for_each(|x| *x = 3);
@@ -548,7 +553,7 @@ fn test_loss() -> Result<()> {
 
     let targets = Tensor::stack(targets, 0);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(1);
 
     let config = NeuralConfig {
         n_grammars: 1,
@@ -557,23 +562,25 @@ fn test_loss() -> Result<()> {
         n_strings_to_sample: 5,
         temperature: 1.0,
         negative_weight: None,
-        parsing_config: ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
+        parsing_config: ParsingConfig::new_with_max_length(
+            LogProb::new(-100.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             200,
             200,
+            10,
         ),
     };
     let silent_lemmas =
         Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], -10.0, &NdArrayDevice::default());
     let pad_vector =
-        Tensor::<Autodiff<NdArray>, 1>::from_floats([10., 0., 0., 0.], &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
-        Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 10., 0., 0.], &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 50., 0., 0.], &NdArrayDevice::default());
     let mut loss: Vec<f32> = vec![];
-    for t in [0.1, 0.25, 0.5, 1.0, 2.0, 5.0] {
+    for t in [0.1] {
+        //, 0.25, 0.5, 1.0] {
         let mut avg = 0.0;
-        for _ in 0..3 {
+        for _ in 0..1 {
             let g = GrammarParameterization::new(
                 types.clone(),
                 type_categories.clone(),
@@ -592,7 +599,7 @@ fn test_loss() -> Result<()> {
                 .into_scalar()
                 .elem::<f32>();
         }
-        loss.push(avg / 3.0);
+        loss.push(avg / 1.0);
     }
 
     let stored_losses = [

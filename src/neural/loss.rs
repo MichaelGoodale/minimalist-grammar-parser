@@ -87,12 +87,6 @@ fn string_path_to_tensor<B: Backend>(
     s_tensor
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum AttestedNode {
-    NodeIndex(NodeIndex),
-    EdgeIndex(EdgeIndex),
-}
-
 fn get_grammar_probs<B: Backend>(
     string_paths: &[Option<StringProbHistory>],
     lexicon: &NeuralLexicon<B>,
@@ -100,49 +94,22 @@ fn get_grammar_probs<B: Backend>(
 ) -> (Tensor<B, 1>, Vec<Tensor<B, 1, Int>>) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
-        let mut attested_nodes = BTreeSet::default();
-        let p = if let Some(string_path) = string_path {
-            let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
-            for (prob_type, _count) in string_path.iter() {
-                match prob_type {
-                    NeuralProbabilityRecord::Feature(lexeme) => {
-                        attested_nodes.insert(AttestedNode::NodeIndex(*lexeme));
-                        let feature = NeuralProbabilityRecord::Feature(*lexeme);
-                        p = p + lexicon.get_weight(&feature).unwrap().clone();
-                    }
-                    NeuralProbabilityRecord::EdgeAndFeature((n, e)) => {
-                        attested_nodes.insert(AttestedNode::NodeIndex(*n));
-                        attested_nodes.insert(AttestedNode::EdgeIndex(*e));
-                        let e = NeuralProbabilityRecord::Edge(*e);
-                        let n = NeuralProbabilityRecord::Feature(*n);
-                        p = p
-                            + (lexicon.get_weight(&n).unwrap().clone()
-                                + lexicon.get_weight(&e).unwrap().clone());
-                    }
-                    NeuralProbabilityRecord::Lexeme(lexeme, _) => {
-                        attested_nodes.insert(AttestedNode::NodeIndex(*lexeme));
-                        let feature = NeuralProbabilityRecord::Feature(*lexeme);
-                        p = p + lexicon.get_weight(&feature).unwrap().clone();
-                    }
-                    _ => (),
-                }
-            }
-            p
+        let attested_nodes = if let Some(string_path) = string_path {
+            string_path.attested_nodes().clone()
         } else {
-            Tensor::full([1], -200.0, device)
+            BTreeSet::default()
         };
         grammar_sets
             .entry(attested_nodes)
-            .or_insert((vec![], p))
-            .0
+            .or_insert(vec![])
             .push(i as u32);
     }
 
     let mut output = vec![];
     let mut grammar_probs = Tensor::<B, 1>::full([grammar_sets.len()], 0.0, device);
-    for (i, (key, (ids, p))) in grammar_sets.iter().enumerate() {
+    for (i, (key, ids)) in grammar_sets.iter().enumerate() {
         let mut all_valid_strings = ids.clone();
-        for (key2, (ids, _p)) in grammar_sets
+        for (key2, ids) in grammar_sets
             .iter()
             .enumerate()
             .filter(|(j, _)| *j != i)
@@ -156,7 +123,19 @@ fn get_grammar_probs<B: Backend>(
             Data::from(all_valid_strings.as_slice()).convert(),
             device,
         );
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p.clone());
+        let p: Tensor<B, 1> = Tensor::cat(
+            key.iter()
+                .map(|e| {
+                    lexicon
+                        .get_weight(&NeuralProbabilityRecord::Edge(*e))
+                        .unwrap()
+                        .clone()
+                })
+                .collect::<Vec<_>>(),
+            0,
+        )
+        .sum();
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
         output.push(all_valid_strings);
     }
     (grammar_probs, output)

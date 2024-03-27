@@ -49,11 +49,14 @@ impl IntoIterator for StringPath {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>);
+pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>, BTreeSet<EdgeIndex>);
 
 impl StringProbHistory {
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
         self.0.iter()
+    }
+    pub fn attested_nodes(&self) -> &BTreeSet<EdgeIndex> {
+        &self.1
     }
 }
 
@@ -77,7 +80,6 @@ pub struct NeuralBeam<'a> {
     weight_lookups: &'a HashMap<usize, LogProb<f64>>,
     alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
     burnt: bool,
-    grammar: BTreeSet<EdgeIndex>,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
     top_id: usize,
@@ -119,7 +121,6 @@ impl<'a> NeuralBeam<'a> {
             NeuralBeam {
                 log_probability: *log_probability,
                 queue,
-                grammar: BTreeSet::new(),
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0, log_one)).collect(),
@@ -194,30 +195,46 @@ impl Beam<usize> for NeuralBeam<'_> {
 
     fn add_to_log_prob(&mut self, x: Self::Probability) {
         let NeuralProbability((record, new_prob)) = x;
-        match self.probability_path.0.entry(record) {
-            Entry::Occupied(entry) => {
-                *entry.into_mut() += 1;
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(1);
-                self.log_probability.0 .1 += new_prob;
-            }
-        }
-
         match record {
-            NeuralProbabilityRecord::Lexeme(_, lexeme_idx) => {
-                self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
-            }
-            NeuralProbabilityRecord::EdgeAndFeature((_, e)) => {
+            NeuralProbabilityRecord::Edge(e) | NeuralProbabilityRecord::Lexeme(e, _) => {
+                if !self.probability_path.1.contains(&e) {
+                    self.log_probability.0 .1 += new_prob;
+                }
                 self.burnt = self
                     .alternatives
                     .get(&e)
                     .unwrap()
                     .iter()
-                    .any(|x| self.grammar.contains(x));
-                self.grammar.insert(e);
+                    .any(|x| self.probability_path.1.contains(x));
+                self.probability_path.1.insert(e);
             }
             _ => (),
+        }
+        match record {
+            NeuralProbabilityRecord::Lexeme(_, _)
+            | NeuralProbabilityRecord::OneProb
+            | NeuralProbabilityRecord::MoveRuleProb
+            | NeuralProbabilityRecord::MergeRuleProb => match self.probability_path.0.entry(record)
+            {
+                Entry::Occupied(entry) => {
+                    match entry.key() {
+                        NeuralProbabilityRecord::MergeRuleProb
+                        | NeuralProbabilityRecord::MoveRuleProb => {
+                            self.log_probability.0 .1 += new_prob;
+                        }
+                        NeuralProbabilityRecord::Lexeme(_, lexeme_idx) => {
+                            self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
+                        }
+                        _ => (),
+                    }
+                    *entry.into_mut() += 1;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(1);
+                    self.log_probability.0 .1 += new_prob;
+                }
+            },
+            NeuralProbabilityRecord::Edge(_) => (),
         }
     }
 

@@ -215,7 +215,7 @@ pub fn get_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<(Tensor<B, 3>, Tensor<B, 1>)> {
+) -> anyhow::Result<(Vec<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
@@ -225,15 +225,21 @@ pub fn get_grammar<B: Backend>(
         &alternatives,
         neural_config,
     );
+    let strings = string_path_to_tensor(&strings, g, neural_config);
 
+    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, &lexicon, &g.device());
     //(1, n_grammar_strings)
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
+    let mut grammars = vec![];
+    for grammar_id in grammar_idx {
+        grammars.push((
+            strings.clone().select(0, grammar_id.clone()),
+            string_probs.clone().select(0, grammar_id),
+        ));
+    }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((
-        string_path_to_tensor(&strings, g, neural_config),
-        string_probs,
-    ))
+    Ok((grammars, grammar_probs))
 }
 
 pub fn get_neural_outputs<B: Backend>(

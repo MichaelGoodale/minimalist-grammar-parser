@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result;
 use rand::SeedableRng;
 
-use self::neural::neural_lexicon::GrammarParameterization;
+use self::neural::{loss::get_grammar, neural_lexicon::GrammarParameterization};
 
 use super::*;
 use crate::{
@@ -681,6 +681,7 @@ fn random_neural_generation() -> Result<()> {
             ),
         };
         get_neural_outputs(&g, targets, &config, &mut rng)?;
+        get_grammar(&g, &config, &mut rng)?;
     }
     Ok(())
 }

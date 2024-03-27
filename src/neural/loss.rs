@@ -289,10 +289,7 @@ pub fn get_grammar<B: Backend>(
             neural_config,
             &g.device(),
         );
-        grammars.push((
-            strings.clone().select(0, grammar_id.clone()),
-            string_probs.clone().select(0, grammar_id),
-        ));
+        grammars.push((strings.clone().select(0, grammar_id.clone()), string_probs));
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)

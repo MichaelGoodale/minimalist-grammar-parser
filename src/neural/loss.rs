@@ -32,7 +32,7 @@ fn retrieve_strings<B: Backend>(
     lexeme_weights: &HashMap<usize, LogProb<f64>>,
     alternatives: &HashMap<EdgeIndex, Vec<EdgeIndex>>,
     neural_config: &NeuralConfig,
-) -> (Vec<StringPath>, Vec<Option<StringProbHistory>>) {
+) -> (Vec<StringPath>, Vec<StringProbHistory>) {
     let mut grammar_strings: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
 
@@ -47,12 +47,8 @@ fn retrieve_strings<B: Backend>(
     .filter(|(s, _h)| s.len() < neural_config.padding_length)
     .take(neural_config.n_strings_per_grammar)
     {
-        string_paths.push(Some(h));
+        string_paths.push(h);
         grammar_strings.push(s);
-    }
-    if string_paths.is_empty() {
-        string_paths.push(None);
-        grammar_strings.push(StringPath::default());
     }
     (grammar_strings, string_paths)
 }
@@ -88,19 +84,14 @@ fn string_path_to_tensor<B: Backend>(
 }
 
 fn get_grammar_probs<B: Backend>(
-    string_paths: &[Option<StringProbHistory>],
+    string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
     device: &B::Device,
 ) -> (Tensor<B, 1>, Vec<Tensor<B, 1, Int>>) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
-        let attested_nodes = if let Some(string_path) = string_path {
-            string_path.attested_nodes().clone()
-        } else {
-            BTreeSet::default()
-        };
         grammar_sets
-            .entry(attested_nodes)
+            .entry(string_path.attested_nodes().clone())
             .or_insert(vec![])
             .push(i as u32);
     }
@@ -142,7 +133,7 @@ fn get_grammar_probs<B: Backend>(
 }
 
 fn get_string_prob<B: Backend>(
-    string_paths: &[Option<StringProbHistory>],
+    string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
     neural_config: &NeuralConfig,
     device: &B::Device,
@@ -157,31 +148,24 @@ fn get_string_prob<B: Backend>(
     let mut string_path_tensor = Tensor::<B, 1>::full([string_paths.len()], 0.0, device);
 
     for (i, string_path) in string_paths.iter().enumerate() {
-        let p = if let Some(string_path) = string_path {
-            let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
-            for (prob_type, count) in string_path.iter() {
-                match prob_type {
-                    NeuralProbabilityRecord::MoveRuleProb => {
-                        p = p.add_scalar(move_p * (*count as f64))
-                    }
-                    NeuralProbabilityRecord::MergeRuleProb => {
-                        p = p.add_scalar(merge_p * (*count as f64))
-                    }
-                    NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
-                        let feature = NeuralProbabilityRecord::Lexeme(*lexeme, *lexeme_idx);
-                        p = p + lexicon
-                            .get_weight(&feature)
-                            .unwrap()
-                            .clone()
-                            .mul_scalar(*count);
-                    }
-                    _ => (),
+        let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
+        for (prob_type, count) in string_path.iter() {
+            match prob_type {
+                NeuralProbabilityRecord::MoveRuleProb => p = p.add_scalar(move_p * (*count as f64)),
+                NeuralProbabilityRecord::MergeRuleProb => {
+                    p = p.add_scalar(merge_p * (*count as f64))
                 }
+                NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
+                    let feature = NeuralProbabilityRecord::Lexeme(*lexeme, *lexeme_idx);
+                    p = p + lexicon
+                        .get_weight(&feature)
+                        .unwrap()
+                        .clone()
+                        .mul_scalar(*count);
+                }
+                _ => (),
             }
-            p
-        } else {
-            Tensor::full([1], -200.0, device)
-        };
+        }
         string_path_tensor = string_path_tensor.slice_assign([i..i + 1], p);
     }
     string_path_tensor

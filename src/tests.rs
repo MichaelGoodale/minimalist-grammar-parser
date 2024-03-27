@@ -646,7 +646,7 @@ fn random_neural_generation() -> Result<()> {
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
         &NdArrayDevice::default(),
     );
-    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
     for temperature in [0.1, 0.5, 1.0] {
         let g = GrammarParameterization::new(

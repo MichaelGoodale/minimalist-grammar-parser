@@ -450,7 +450,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             let e = graph.add_edge(
                                 node,
                                 *category,
-                                tensor_to_log_prob(&cat_prob).context("Zero Licensee to cat")?,
+                                tensor_to_log_prob(cat_prob).context("Zero Licensee to cat")?,
                             );
                             weights_map.insert(NeuralProbabilityRecord::Edge(e), cat_prob.clone());
                         } else {
@@ -585,16 +585,6 @@ impl<B: Backend> NeuralLexicon<B> {
                 );
             }
         }
-
-        /*
-                let g = graph.clone();
-
-                let g = g.map(
-                    |_i, (p, f)| format!("{} {:2}", f, p.unwrap_or(LogProb::new(0.0).unwrap())),
-                    |e_i, e| e,
-                );
-                println!("{}", petgraph::dot::Dot::new(&g));
-        */
 
         Ok((
             NeuralLexicon {

@@ -1,6 +1,6 @@
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
-use ahash::{HashMap, HashSet};
+use ahash::HashMap;
 use anyhow::{bail, Context};
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
 use burn::tensor::{Data, Shape};
@@ -484,24 +484,23 @@ impl<B: Backend> NeuralLexicon<B> {
             let lemma = graph.add_node(NeuralFeature::Lemma(Some(lexeme_idx)));
             let silent_lemma = graph.add_node(NeuralFeature::Lemma(None));
 
+            let e_prob = grammar_params.prob_of_not_n_features(lexeme_idx, 0);
             for (category, _) in all_categories.iter() {
-                let e_prob = grammar_params.prob_of_not_n_features(lexeme_idx, 0);
-
                 let nonsilent_p = e_prob.clone() + nonsilent_p.clone();
                 let e = graph.add_edge(
                     *category,
                     lemma,
-                    tensor_to_log_prob(&e_prob).context("cat to lemma")?,
+                    tensor_to_log_prob(&nonsilent_p).context("cat to lemma")?,
                 );
-                weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob.clone());
+                weights_map.insert(NeuralProbabilityRecord::Edge(e), nonsilent_p);
 
                 let silent_p = e_prob.clone() + silent_p.clone();
                 let e = graph.add_edge(
                     *category,
                     silent_lemma,
-                    tensor_to_log_prob(&e_prob).context("cat to silent lemma")?,
+                    tensor_to_log_prob(&silent_p).context("cat to silent lemma")?,
                 );
-                weights_map.insert(NeuralProbabilityRecord::Edge(e), e_prob);
+                weights_map.insert(NeuralProbabilityRecord::Edge(e), silent_p);
             }
 
             let lemmas = [(lemma, nonsilent_p), (silent_lemma, silent_p)];

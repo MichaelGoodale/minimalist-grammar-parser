@@ -6,13 +6,13 @@ use super::neural_lexicon::{
 };
 use super::utils::log_sum_exp_dim;
 use crate::{NeuralGenerator, ParsingConfig};
-use ahash::{HashMap, HashSet};
+use ahash::HashMap;
 use anyhow::bail;
 use burn::tensor::{backend::Backend, Tensor};
 use burn::tensor::{Data, Int};
 use logprob::LogProb;
 use moka::sync::Cache;
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::graph::EdgeIndex;
 use rand::Rng;
 
 pub struct NeuralConfig {

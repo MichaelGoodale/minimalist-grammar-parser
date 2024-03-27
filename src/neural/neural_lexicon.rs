@@ -2,6 +2,7 @@ use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::{bail, Context};
+use burn::tensor::activation::relu;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
 use burn::tensor::{Data, Shape};
 use itertools::Itertools;
@@ -123,9 +124,9 @@ impl<B: Backend> GrammarParameterization<B> {
         types: Tensor<B, 3>,                // (lexeme, n_features, types)
         type_categories: Tensor<B, 3>,      // (lexeme, n_features, N_TYPES)
         licensee_categories: Tensor<B, 3>,  // (lexeme, n_licensee, categories)
-        included_features: Tensor<B, 2>,    // (lexeme, n_licensee + n_features)
+        included_features: Tensor<B, 3>,    // (lexeme, n_licensee + n_features, 2)
         lemmas: Tensor<B, 2>,               // (lexeme, n_lemmas)
-        silent_probabilities: Tensor<B, 1>, //(lexeme)
+        silent_probabilities: Tensor<B, 2>, //(lexeme, 2)
         categories: Tensor<B, 2>,           // (lexeme, n_categories)
         weights: Tensor<B, 1>,              // (lexeme)
         pad_vector: Tensor<B, 1>,
@@ -149,13 +150,8 @@ impl<B: Backend> GrammarParameterization<B> {
 
         let inverse_temperature = 1.0 / temperature;
 
-        let included_features = activation_function(
-            Tensor::stack::<3>([included_features.clone(), -included_features].to_vec(), 2),
-            2,
-            inverse_temperature,
-            gumbel,
-            rng,
-        );
+        let included_features =
+            activation_function(included_features, 2, inverse_temperature, gumbel, rng);
 
         let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
         let type_categories =
@@ -170,15 +166,8 @@ impl<B: Backend> GrammarParameterization<B> {
         let pad_vector = log_softmax(pad_vector, 0);
         let end_vector = log_softmax(end_vector, 0);
 
-        let silent_probabilities = gumbel_activation(
-            Tensor::stack::<2>(
-                [silent_probabilities.clone(), -silent_probabilities].to_vec(),
-                1,
-            ),
-            1,
-            inverse_temperature,
-            rng,
-        );
+        let silent_probabilities =
+            gumbel_activation(silent_probabilities, 1, inverse_temperature, rng);
 
         let mut lemma_lookups = HashMap::default();
         let mut lexeme_weights = HashMap::default();
@@ -700,8 +689,8 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
-        let included_features = Tensor::<NdArray, 2>::random(
-            [n_lexemes, n_licensee + n_pos],
+        let included_features = Tensor::<NdArray, 3>::random(
+            [n_lexemes, n_licensee + n_pos, 2],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
@@ -716,8 +705,8 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
-        let silent_probabilities = Tensor::<NdArray, 1>::random(
-            [n_lexemes],
+        let silent_probabilities = Tensor::<NdArray, 2>::random(
+            [n_lexemes, 2],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );

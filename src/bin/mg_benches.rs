@@ -177,14 +177,16 @@ fn random_neural_generation() -> Result<()> {
         [n_lexemes, n_licensee, n_categories],
         &NdArrayDevice::default(),
     );
-    let included_features =
-        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + n_pos], &NdArrayDevice::default());
+    let included_features = Tensor::<NdArray, 3>::zeros(
+        [n_lexemes, n_licensee + n_pos, 2],
+        &NdArrayDevice::default(),
+    );
 
     let categories =
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
-    let silent_lemmas = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+    let silent_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],

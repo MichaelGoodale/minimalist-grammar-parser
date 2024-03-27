@@ -524,7 +524,7 @@ fn test_loss() -> Result<()> {
     let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
         .slice_assign(
             [0..n_lexemes, 3..4],
-            Tensor::full([n_lexemes, 1], 10.0, &NdArrayDevice::default()),
+            Tensor::full([n_lexemes, 1], 30.0, &NdArrayDevice::default()),
         );
     let weights = Tensor::<Autodiff<NdArray>, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
@@ -533,14 +533,26 @@ fn test_loss() -> Result<()> {
         &NdArrayDevice::default(),
     );
 
-    let included_features = Tensor::<Autodiff<NdArray>, 2>::full(
-        [n_lexemes, n_licensees + n_pos],
+    let included_features = Tensor::<Autodiff<NdArray>, 3>::full(
+        [n_lexemes, n_licensees + n_pos, 2],
         -10,
         &NdArrayDevice::default(),
     )
     .slice_assign(
-        [1..2, n_licensees..n_licensees + 1],
-        Tensor::full([1, 1], 10, &dev),
+        [0..n_lexemes, 0..n_licensees + n_pos, 1..2],
+        Tensor::full(
+            [n_lexemes, n_licensees + n_pos, 1],
+            10.0,
+            &NdArrayDevice::default(),
+        ),
+    )
+    .slice_assign(
+        [1..2, n_licensees..n_licensees + 1, 0..1],
+        Tensor::full([1, 1, 1], 10, &dev),
+    )
+    .slice_assign(
+        [1..2, n_licensees..n_licensees + 1, 1..2],
+        Tensor::full([1, 1, 1], -10, &dev),
     );
 
     let targets = (1..9)
@@ -575,7 +587,11 @@ fn test_loss() -> Result<()> {
         ),
     };
     let silent_lemmas =
-        Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], -10.0, &NdArrayDevice::default());
+        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
+            .slice_assign(
+                [0..n_lexemes, 1..2],
+                Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
+            );
     let pad_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
@@ -629,14 +645,16 @@ fn random_neural_generation() -> Result<()> {
         [n_lexemes, n_licensee, n_categories],
         &NdArrayDevice::default(),
     );
-    let included_features =
-        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + n_pos], &NdArrayDevice::default());
+    let included_features = Tensor::<NdArray, 3>::zeros(
+        [n_lexemes, n_licensee + n_pos, 2],
+        &NdArrayDevice::default(),
+    );
 
     let categories =
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
-    let silent_lemmas = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+    let silent_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],

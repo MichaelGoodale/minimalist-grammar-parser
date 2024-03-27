@@ -185,10 +185,6 @@ impl<B: Backend> GrammarParameterization<B> {
         let weights = log_softmax(weights, 0);
         let licensee_categories =
             activation_function(licensee_categories, 2, inverse_temperature, gumbel, rng);
-        let licensee_categories = licensee_categories.clone().slice_assign(
-            [0..n_lexemes, 0..1, 0..n_categories],
-            licensee_categories.slice([0..n_lexemes, 0..1, 0..n_categories]),
-        );
         let categories = activation_function(categories, 1, inverse_temperature, gumbel, rng);
 
         let pad_vector = log_softmax(pad_vector, 0);

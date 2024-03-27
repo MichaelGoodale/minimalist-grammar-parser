@@ -5,11 +5,12 @@ use super::neural_lexicon::{
     GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
 };
 use super::utils::log_sum_exp_dim;
+use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::HashMap;
 use anyhow::bail;
-use burn::tensor::{backend::Backend, Tensor};
-use burn::tensor::{Data, Int};
+use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
+use burn::tensor::{Bool, Data, Int};
 use logprob::LogProb;
 use moka::sync::Cache;
 use petgraph::graph::EdgeIndex;
@@ -87,7 +88,14 @@ fn get_grammar_probs<B: Backend>(
     string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
     device: &B::Device,
-) -> (Tensor<B, 1>, Vec<Tensor<B, 1, Int>>) {
+) -> (
+    Tensor<B, 1>,
+    Vec<(
+        Tensor<B, 1, Int>,
+        BTreeSet<usize>,
+        Vec<(usize, NeuralFeature)>,
+    )>,
+) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
         grammar_sets
@@ -110,7 +118,7 @@ fn get_grammar_probs<B: Backend>(
                 all_valid_strings.extend(ids);
             }
         }
-        let all_valid_strings = Tensor::<B, 1, Int>::from_data(
+        let string_idx = Tensor::<B, 1, Int>::from_data(
             Data::from(all_valid_strings.as_slice()).convert(),
             device,
         );
@@ -127,7 +135,26 @@ fn get_grammar_probs<B: Backend>(
         )
         .sum();
         grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
-        output.push(all_valid_strings);
+
+        let lexemes = string_paths[ids[0] as usize]
+            .keys()
+            .filter_map(|x| {
+                if let NeuralProbabilityRecord::Lexeme(e, lexeme_idx) = x {
+                    Some((*lexeme_idx, lexicon.get_feature(*e).clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        output.push((
+            string_idx,
+            all_valid_strings
+                .iter()
+                .map(|x| (*x).try_into().unwrap())
+                .collect(),
+            lexemes,
+        ));
     }
     (grammar_probs, output)
 }
@@ -135,6 +162,9 @@ fn get_grammar_probs<B: Backend>(
 fn get_string_prob<B: Backend>(
     string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
+    g: &GrammarParameterization<B>,
+    include: Option<&BTreeSet<usize>>,
+    grammar_cats: &Vec<(usize, NeuralFeature)>,
     neural_config: &NeuralConfig,
     device: &B::Device,
 ) -> Tensor<B, 1> {
@@ -145,9 +175,61 @@ fn get_string_prob<B: Backend>(
         .opposite_prob()
         .into_inner();
 
-    let mut string_path_tensor = Tensor::<B, 1>::full([string_paths.len()], 0.0, device);
+    let mut string_path_tensor = Tensor::<B, 1>::full(
+        [include.map(|s| s.len()).unwrap_or(string_paths.len())],
+        0.0,
+        device,
+    );
+    let cats = std::iter::repeat(true)
+        .take(g.n_lexemes() * g.n_categories() * 2)
+        .collect::<Vec<_>>();
+    let mut cats: Tensor<B, 3, Bool> = Tensor::from_data(
+        Data::new(
+            cats,
+            burn::tensor::Shape {
+                dims: [g.n_lexemes(), g.n_categories(), 2],
+            },
+        ),
+        &g.device(),
+    );
+    let false_tensor = Tensor::from_data(
+        Data::new(vec![false], burn::tensor::Shape { dims: [1, 1, 1] }),
+        &g.device(),
+    );
+    for (lexeme_idx, feature) in grammar_cats {
+        let (cat, t) = match feature {
+            FeatureOrLemma::Feature(Feature::Category(c)) => (*c, 0),
+            FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
+            _ => panic!("Should be impossible!"),
+        };
+        cats = cats.slice_assign(
+            [*lexeme_idx..lexeme_idx + 1, cat..cat + 1, t..t + 1],
+            false_tensor.clone(),
+        );
+    }
 
-    for (i, string_path) in string_paths.iter().enumerate() {
+    let weights: Tensor<B, 3> = log_softmax(
+        g.unnormalized_weights()
+            .clone()
+            .unsqueeze_dims(&[1, 2])
+            .repeat(1, g.n_categories())
+            .repeat(2, 2)
+            .mask_fill(cats, -100.0),
+        0,
+    );
+
+    for (i, string_path) in string_paths
+        .iter()
+        .enumerate()
+        .filter_map(|(i, x)| {
+            if include.map(|s| s.contains(&i)).unwrap_or(true) {
+                Some(x)
+            } else {
+                None
+            }
+        })
+        .enumerate()
+    {
         let mut p: Tensor<B, 1> = Tensor::zeros([1], device);
         for (prob_type, count) in string_path.iter() {
             match prob_type {
@@ -156,12 +238,16 @@ fn get_string_prob<B: Backend>(
                     p = p.add_scalar(merge_p * (*count as f64))
                 }
                 NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
-                    let feature = NeuralProbabilityRecord::Lexeme(*lexeme, *lexeme_idx);
-                    p = p + lexicon
-                        .get_weight(&feature)
-                        .unwrap()
+                    let (c, t) = match lexicon.get_feature(*lexeme) {
+                        FeatureOrLemma::Feature(Feature::Category(c)) => (*c, 0),
+                        FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
+                        _ => panic!("Should be impossible!"),
+                    };
+                    p = p + weights
                         .clone()
-                        .mul_scalar(*count);
+                        .slice([*lexeme_idx..lexeme_idx + 1, c..c + 1, t..t + 1])
+                        .mul_scalar(*count)
+                        .reshape([1]);
                 }
                 _ => (),
             }
@@ -191,10 +277,18 @@ pub fn get_grammar<B: Backend>(
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
     let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, &lexicon, &g.device());
-    //(1, n_grammar_strings)
-    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &g.device());
     let mut grammars = vec![];
-    for grammar_id in grammar_idx {
+    for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
+        //(1, n_grammar_strings)
+        let string_probs = get_string_prob(
+            &string_probs,
+            &lexicon,
+            g,
+            Some(&grammar_set),
+            &grammar_cats,
+            neural_config,
+            &g.device(),
+        );
         grammars.push((
             strings.clone().select(0, grammar_id.clone()),
             string_probs.clone().select(0, grammar_id),
@@ -249,8 +343,6 @@ pub fn get_neural_outputs<B: Backend>(
 
     let (grammar_probs, grammar_idx) =
         get_grammar_probs(&string_probs, &lexicon, &targets.device());
-    //(n_strings_per_grammar);
-    let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
@@ -264,16 +356,29 @@ pub fn get_neural_outputs<B: Backend>(
         .gather(3, targets)
         .squeeze::<3>(3)
         .sum_dim(2)
-        .squeeze(2)
-        + string_probs.unsqueeze_dim(0);
+        .squeeze(2);
 
     let mut loss_per_grammar = vec![];
-    for grammar_id in grammar_idx {
-        loss_per_grammar.push(log_sum_exp_dim(loss.clone().select(1, grammar_id), 1));
+    for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
+        let string_probs = get_string_prob(
+            &string_probs,
+            &lexicon,
+            g,
+            Some(&grammar_set),
+            &grammar_cats,
+            neural_config,
+            &loss.device(),
+        );
+        //Probability of generating each of the targets
+        loss_per_grammar.push(log_sum_exp_dim(
+            loss.clone().select(1, grammar_id) + string_probs.unsqueeze_dim(0),
+            1,
+        ));
+        //(n_strings_per_grammar);
     }
     let loss_per_grammar = Tensor::cat(loss_per_grammar, 1) + grammar_probs.unsqueeze_dim(0);
 
-    //Probability of generating each of the targets
+    //Probability of generating each of the grammars
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss_per_grammar, 1).squeeze(1);
     Ok(-loss.sum())
 }

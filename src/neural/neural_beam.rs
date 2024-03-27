@@ -55,6 +55,11 @@ impl StringProbHistory {
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
         self.0.iter()
     }
+
+    pub fn keys(&self) -> std::collections::hash_map::Keys<'_, NeuralProbabilityRecord, u32> {
+        self.0.keys()
+    }
+
     pub fn attested_nodes(&self) -> &BTreeSet<EdgeIndex> {
         &self.1
     }

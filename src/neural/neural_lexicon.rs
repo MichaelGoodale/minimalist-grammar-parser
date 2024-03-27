@@ -40,13 +40,14 @@ pub struct NeuralLexicon<B: Backend> {
 }
 
 pub struct GrammarParameterization<B: Backend> {
-    types: Tensor<B, 3>,               //(lexeme, lexeme_pos, type_distribution)
-    type_categories: Tensor<B, 3>,     //(lexeme, lexeme_pos, categories_position)
-    licensee_categories: Tensor<B, 3>, //(lexeme, lexeme_pos, categories_position)
-    lemmas: Tensor<B, 2>,              //(lexeme, lemma_distribution)
-    categories: Tensor<B, 2>,          //(lexeme, categories)
-    included_features: Tensor<B, 3>,   //(lexeme, n_licensee + n_features, true/false)
-    weights: Tensor<B, 1>,             //(lexeme)
+    types: Tensor<B, 3>,                //(lexeme, lexeme_pos, type_distribution)
+    type_categories: Tensor<B, 3>,      //(lexeme, lexeme_pos, categories_position)
+    licensee_categories: Tensor<B, 3>,  //(lexeme, lexeme_pos, categories_position)
+    lemmas: Tensor<B, 2>,               //(lexeme, lemma_distribution)
+    categories: Tensor<B, 2>,           //(lexeme, categories)
+    included_features: Tensor<B, 3>,    //(lexeme, n_licensee + n_features, true/false)
+    weights: Tensor<B, 1>,              //(lexeme)
+    unnormalized_weights: Tensor<B, 1>, //(lexeme)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
@@ -160,6 +161,7 @@ impl<B: Backend> GrammarParameterization<B> {
         let type_categories =
             activation_function(type_categories, 2, inverse_temperature, gumbel, rng);
         let lemmas = activation_function(lemmas, 1, inverse_temperature, gumbel, rng);
+        let unnormalized_weights = weights.clone();
         let weights = log_softmax(weights, 0);
         let licensee_categories =
             activation_function(licensee_categories, 2, inverse_temperature, gumbel, rng);
@@ -210,6 +212,7 @@ impl<B: Backend> GrammarParameterization<B> {
             licensee_categories,
             included_features,
             weights,
+            unnormalized_weights,
             lemma_lookups,
             n_lexemes,
             n_features,
@@ -240,6 +243,10 @@ impl<B: Backend> GrammarParameterization<B> {
         &self.lexeme_weights
     }
 
+    pub fn unnormalized_weights(&self) -> &Tensor<B, 1> {
+        &self.unnormalized_weights
+    }
+
     pub fn device(&self) -> Device<B> {
         self.types.device()
     }
@@ -247,6 +254,15 @@ impl<B: Backend> GrammarParameterization<B> {
     pub fn n_lemmas(&self) -> usize {
         self.n_lemmas
     }
+
+    pub fn n_lexemes(&self) -> usize {
+        self.n_lexemes
+    }
+
+    pub fn n_categories(&self) -> usize {
+        self.n_categories
+    }
+
     pub fn lemmas(&self) -> &Tensor<B, 2> {
         &self.lemmas
     }
@@ -310,6 +326,10 @@ impl<B: Backend> GrammarParameterization<B> {
 impl<B: Backend> NeuralLexicon<B> {
     pub fn get_weight(&self, n: &NeuralProbabilityRecord) -> Option<&Tensor<B, 1>> {
         self.weights.get(n)
+    }
+
+    pub fn get_feature(&self, e: EdgeIndex) -> &NeuralFeature {
+        &self.graph[self.graph.edge_endpoints(e).unwrap().1]
     }
 
     pub fn device(&self) -> &B::Device {
@@ -379,7 +399,6 @@ impl<B: Backend> NeuralLexicon<B> {
                     lexeme_weight,
                 );
                 weights_map.insert(NeuralProbabilityRecord::Edge(e), lexeme_p);
-
                 let feature = &graph[node];
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {

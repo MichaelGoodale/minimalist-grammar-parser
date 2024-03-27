@@ -4,20 +4,20 @@ use logprob::LogProb;
 
 use std::{
     cmp::Reverse,
-    collections::{binary_heap::BinaryHeap, hash_map::Entry},
+    collections::{binary_heap::BinaryHeap, hash_map::Entry, BTreeSet},
 };
 
 use crate::lexicon::Lexiconable;
 use crate::parsing::{beam::Beam, FutureTree, GornIndex, ParseMoment, Rule};
 use crate::{ParseHeap, ParsingConfig};
 use anyhow::Result;
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{EdgeIndex, NodeIndex};
 
 use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use thin_vec::{thin_vec, ThinVec};
 
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 
 use super::neural_lexicon::NeuralProbability;
 
@@ -75,6 +75,9 @@ pub struct NeuralBeam<'a> {
     sentence_guides: Vec<(&'a [usize], usize, LogProb<f64>)>,
     lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
     weight_lookups: &'a HashMap<usize, LogProb<f64>>,
+    alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
+    burnt: bool,
+    grammar: BTreeSet<EdgeIndex>,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
     top_id: usize,
@@ -89,6 +92,7 @@ impl<'a> NeuralBeam<'a> {
         sentences: &'a [T],
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
+        alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
         record_rules: bool,
     ) -> Result<impl Iterator<Item = NeuralBeam<'a>> + 'a>
     where
@@ -115,9 +119,12 @@ impl<'a> NeuralBeam<'a> {
             NeuralBeam {
                 log_probability: *log_probability,
                 queue,
+                grammar: BTreeSet::new(),
+                burnt: false,
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0, log_one)).collect(),
                 lemma_lookups,
+                alternatives,
                 weight_lookups,
                 rules: if record_rules {
                     thin_vec![Rule::Start(*node)]
@@ -197,8 +204,20 @@ impl Beam<usize> for NeuralBeam<'_> {
             }
         }
 
-        if let NeuralProbabilityRecord::Lexeme(_, lexeme_idx) = record {
-            self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
+        match record {
+            NeuralProbabilityRecord::Lexeme(_, lexeme_idx) => {
+                self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
+            }
+            NeuralProbabilityRecord::EdgeAndFeature((_, e)) => {
+                self.burnt = self
+                    .alternatives
+                    .get(&e)
+                    .unwrap()
+                    .iter()
+                    .any(|x| self.grammar.contains(x));
+                self.grammar.insert(e);
+            }
+            _ => (),
         }
     }
 
@@ -272,14 +291,15 @@ impl Beam<usize> for NeuralBeam<'_> {
         &mut self.top_id
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.log_probability.0 .1
-            + self
-                .sentence_guides
-                .iter()
-                .map(|(_, _, p)| *p)
-                .max()
-                .unwrap_or_else(|| LogProb::new(0.0).unwrap())
-            > config.min_log_prob
+        !self.burnt
+            && self.log_probability.0 .1
+                + self
+                    .sentence_guides
+                    .iter()
+                    .map(|(_, _, p)| *p)
+                    .max()
+                    .unwrap_or_else(|| LogProb::new(0.0).unwrap())
+                > config.min_log_prob
             && self.n_steps() < config.max_steps
             && if let Some(max_length) = config.max_length {
                 self.generated_sentence.len() <= max_length

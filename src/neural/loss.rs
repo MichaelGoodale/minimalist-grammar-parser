@@ -30,6 +30,7 @@ fn retrieve_strings<B: Backend>(
     targets: &Vec<Vec<usize>>,
     lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: &HashMap<usize, LogProb<f64>>,
+    alternatives: &HashMap<EdgeIndex, Vec<EdgeIndex>>,
     neural_config: &NeuralConfig,
 ) -> (Vec<StringPath>, Vec<Option<StringProbHistory>>) {
     let mut grammar_strings: Vec<_> = vec![];
@@ -40,6 +41,7 @@ fn retrieve_strings<B: Backend>(
         targets,
         lemma_lookups,
         lexeme_weights,
+        alternatives,
         &neural_config.parsing_config,
     )
     .filter(|(s, _h)| s.len() < neural_config.padding_length)
@@ -94,7 +96,6 @@ enum AttestedNode {
 fn get_grammar_probs<B: Backend>(
     string_paths: &[Option<StringProbHistory>],
     lexicon: &NeuralLexicon<B>,
-    neural_config: &NeuralConfig,
     device: &B::Device,
 ) -> (Tensor<B, 1>, Vec<Tensor<B, 1, Int>>) {
     let mut grammar_sets = HashMap::default();
@@ -215,12 +216,13 @@ pub fn get_grammar<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
 ) -> anyhow::Result<(Tensor<B, 3>, Tensor<B, 1>)> {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
+    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
         &vec![],
         g.lemma_lookups(),
         g.lexeme_weights(),
+        &alternatives,
         neural_config,
     );
 
@@ -242,7 +244,7 @@ pub fn get_neural_outputs<B: Backend>(
 ) -> anyhow::Result<Tensor<B, 1>> {
     let n_targets = targets.shape().dims[0];
 
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
+    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let target_vec = (0..n_targets)
         .map(|i| {
             let v: Vec<usize> = targets
@@ -264,6 +266,7 @@ pub fn get_neural_outputs<B: Backend>(
         &target_vec,
         g.lemma_lookups(),
         g.lexeme_weights(),
+        &alternatives,
         neural_config,
     );
     let n_strings = strings.len();
@@ -276,7 +279,7 @@ pub fn get_neural_outputs<B: Backend>(
     let grammar = string_path_to_tensor(&strings, g, neural_config);
 
     let (grammar_probs, grammar_idx) =
-        get_grammar_probs(&string_probs, &lexicon, neural_config, &targets.device());
+        get_grammar_probs(&string_probs, &lexicon, &targets.device());
     //(n_strings_per_grammar);
     let string_probs = get_string_prob(&string_probs, &lexicon, neural_config, &targets.device());
 

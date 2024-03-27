@@ -6,6 +6,7 @@ use anyhow::Result;
 use bumpalo::Bump;
 use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
+use petgraph::graph::EdgeIndex;
 
 use allocator_api2::alloc::{Allocator, Global};
 use logprob::LogProb;
@@ -544,11 +545,21 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         targets: &'a [Vec<usize>],
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
+        alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.extend(
-            NeuralBeam::new(lexicon, 0, targets, lemma_lookups, weight_lookups, false).unwrap(),
+            NeuralBeam::new(
+                lexicon,
+                0,
+                targets,
+                lemma_lookups,
+                weight_lookups,
+                alternatives,
+                false,
+            )
+            .unwrap(),
         );
         NeuralGenerator {
             lexicon,

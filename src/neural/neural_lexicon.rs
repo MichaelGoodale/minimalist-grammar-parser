@@ -1,6 +1,6 @@
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 use anyhow::{bail, Context};
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
 use burn::tensor::{Data, Shape};
@@ -347,7 +347,7 @@ impl<B: Backend> NeuralLexicon<B> {
     pub fn new_superimposed(
         grammar_params: &GrammarParameterization<B>,
         rng: &mut impl Rng,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<(Self, HashMap<EdgeIndex, Vec<EdgeIndex>>)> {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -379,6 +379,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     )
                 }))
                 .collect();
+
             first_features.shuffle(rng);
 
             let mut all_categories = vec![];
@@ -596,6 +597,24 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents = new_parents;
             }
         }
+
+        let mut alternative_map = HashMap::default();
+        for node in graph.node_indices() {
+            let alternatives: Vec<_> = graph
+                .edges_directed(node, petgraph::Direction::Outgoing)
+                .map(|e| e.id())
+                .collect();
+            for a in alternatives.iter() {
+                alternative_map.insert(
+                    *a,
+                    alternatives
+                        .iter()
+                        .filter_map(|x| if x == a { None } else { Some(*x) })
+                        .collect(),
+                );
+            }
+        }
+
         /*
                 let g = graph.clone();
 
@@ -606,13 +625,16 @@ impl<B: Backend> NeuralLexicon<B> {
                 println!("{}", petgraph::dot::Dot::new(&g));
         */
 
-        Ok(NeuralLexicon {
-            graph,
-            licensees: licensees_map,
-            categories: categories_map,
-            weights: weights_map,
-            device: grammar_params.device(),
-        })
+        Ok((
+            NeuralLexicon {
+                graph,
+                licensees: licensees_map,
+                categories: categories_map,
+                weights: weights_map,
+                device: grammar_params.device(),
+            },
+            alternative_map,
+        ))
     }
 }
 

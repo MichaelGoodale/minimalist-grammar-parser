@@ -321,8 +321,6 @@ pub fn get_neural_outputs<B: Backend>(
         })
         .collect();
 
-    dbg!(&target_vec);
-
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
         &target_vec,

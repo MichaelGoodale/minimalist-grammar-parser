@@ -49,7 +49,7 @@ impl IntoIterator for StringPath {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct StringProbHistory(BTreeMap<NeuralProbabilityRecord, u32>, HashSet<EdgeIndex>);
+pub struct StringProbHistory(BTreeMap<NeuralProbabilityRecord, u32>, BTreeSet<EdgeIndex>);
 
 impl StringProbHistory {
     pub fn iter(&self) -> std::collections::btree_map::Iter<'_, NeuralProbabilityRecord, u32> {
@@ -60,7 +60,7 @@ impl StringProbHistory {
         self.0.keys()
     }
 
-    pub fn attested_nodes(&self) -> &HashSet<EdgeIndex> {
+    pub fn attested_nodes(&self) -> &BTreeSet<EdgeIndex> {
         &self.1
     }
 }

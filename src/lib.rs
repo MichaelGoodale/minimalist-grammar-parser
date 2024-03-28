@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
@@ -535,6 +536,7 @@ where
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
+    target_lens: BTreeSet<usize>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
 }
@@ -549,6 +551,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let target_lens = targets.iter().map(|x| x.len()).collect();
         parse_heap.extend(
             NeuralBeam::new(
                 lexicon,
@@ -563,6 +566,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         );
         NeuralGenerator {
             lexicon,
+            target_lens,
             move_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MoveRuleProb,
                 config.move_prob,
@@ -597,7 +601,9 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
                     self.merge_log_prob,
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
-                return Some(sentence);
+                if self.target_lens.contains(&sentence.0.len()) {
+                    return Some(sentence);
+                }
             }
         }
         None

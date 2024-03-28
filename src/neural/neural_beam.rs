@@ -4,7 +4,7 @@ use logprob::LogProb;
 
 use std::{
     cmp::Reverse,
-    collections::{binary_heap::BinaryHeap, hash_map::Entry, BTreeSet},
+    collections::{binary_heap::BinaryHeap, btree_map::Entry, BTreeMap, BTreeSet},
 };
 
 use crate::lexicon::Lexiconable;
@@ -49,14 +49,14 @@ impl IntoIterator for StringPath {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>, HashSet<EdgeIndex>);
+pub struct StringProbHistory(BTreeMap<NeuralProbabilityRecord, u32>, HashSet<EdgeIndex>);
 
 impl StringProbHistory {
-    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
+    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, NeuralProbabilityRecord, u32> {
         self.0.iter()
     }
 
-    pub fn keys(&self) -> std::collections::hash_map::Keys<'_, NeuralProbabilityRecord, u32> {
+    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, NeuralProbabilityRecord, u32> {
         self.0.keys()
     }
 
@@ -68,7 +68,7 @@ impl StringProbHistory {
 impl IntoIterator for StringProbHistory {
     type Item = (NeuralProbabilityRecord, u32);
 
-    type IntoIter = std::collections::hash_map::IntoIter<NeuralProbabilityRecord, u32>;
+    type IntoIter = std::collections::btree_map::IntoIter<NeuralProbabilityRecord, u32>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

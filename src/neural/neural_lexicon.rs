@@ -16,7 +16,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_distr::{Distribution, Gumbel};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum NeuralProbabilityRecord {
     Lexeme(EdgeIndex, usize),
     Edge(EdgeIndex),

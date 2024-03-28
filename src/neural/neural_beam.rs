@@ -78,6 +78,7 @@ impl IntoIterator for StringProbHistory {
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a> {
     log_probability: NeuralProbability,
+    max_log_prob: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
     sentence_guides: Vec<(&'a [usize], usize, LogProb<f64>)>,
@@ -124,6 +125,7 @@ impl<'a> NeuralBeam<'a> {
             let log_one = LogProb::new(0.0).unwrap();
 
             NeuralBeam {
+                max_log_prob: log_probability.0 .1,
                 log_probability: *log_probability,
                 queue,
                 burnt: false,
@@ -173,21 +175,7 @@ impl Eq for NeuralBeam<'_> {}
 
 impl Ord for NeuralBeam<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a: LogProb<f64> = self.log_probability.0 .1
-            + self
-                .sentence_guides
-                .iter()
-                .map(|(_, _, p)| *p)
-                .max()
-                .unwrap_or_else(|| LogProb::new(0.0).unwrap());
-        let b = other.log_probability.0 .1
-            + other
-                .sentence_guides
-                .iter()
-                .map(|(_, _, p)| *p)
-                .max()
-                .unwrap_or_else(|| LogProb::new(0.0).unwrap());
-        a.cmp(&b)
+        self.max_log_prob.cmp(&other.max_log_prob)
     }
 }
 
@@ -204,6 +192,7 @@ impl Beam<usize> for NeuralBeam<'_> {
             NeuralProbabilityRecord::Edge(e) | NeuralProbabilityRecord::Lexeme(e, _) => {
                 if !self.probability_path.1.contains(&e) {
                     self.log_probability.0 .1 += new_prob;
+                    self.max_log_prob += new_prob;
                 }
                 self.burnt = self
                     .alternatives
@@ -226,9 +215,12 @@ impl Beam<usize> for NeuralBeam<'_> {
                         NeuralProbabilityRecord::MergeRuleProb
                         | NeuralProbabilityRecord::MoveRuleProb => {
                             self.log_probability.0 .1 += new_prob;
+                            self.max_log_prob += new_prob;
                         }
                         NeuralProbabilityRecord::Lexeme(_, lexeme_idx) => {
-                            self.log_probability.0 .1 += self.weight_lookups[&lexeme_idx];
+                            let w = self.weight_lookups[&lexeme_idx];
+                            self.log_probability.0 .1 += w;
+                            self.max_log_prob += w;
                         }
                         _ => (),
                     }
@@ -237,6 +229,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                 Entry::Vacant(entry) => {
                     entry.insert(1);
                     self.log_probability.0 .1 += new_prob;
+                    self.max_log_prob += new_prob;
                 }
             },
             NeuralProbabilityRecord::Edge(_) => (),
@@ -283,6 +276,14 @@ impl Beam<usize> for NeuralBeam<'_> {
                         _ => *beam.lemma_lookups.get(&(*x, lemma)).unwrap(),
                     }
                 });
+
+            beam.max_log_prob = beam.log_probability.0 .1
+                + beam
+                    .sentence_guides
+                    .iter()
+                    .map(|(_, _, p)| *p)
+                    .max()
+                    .unwrap_or_else(|| LogProb::new(0.0).unwrap());
         }
 
         beam.add_to_log_prob(child_prob);

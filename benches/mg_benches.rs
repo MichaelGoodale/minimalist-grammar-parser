@@ -1,13 +1,23 @@
 use anyhow::Result;
 use bumpalo::Bump;
+use burn::{
+    backend::{ndarray::NdArrayDevice, Autodiff, NdArray},
+    tensor::{Data, ElementConversion, Int, Tensor},
+};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
+    neural::{
+        loss::{get_neural_outputs, NeuralConfig},
+        neural_lexicon::GrammarParameterization,
+        N_TYPES,
+    },
     Generator, Parser, ParsingConfig,
 };
+use rand::SeedableRng;
 
 fn main() {
     // Run registered benchmarks.
@@ -59,7 +69,7 @@ fn generate_sentence(record_rules: bool) {
         Generator::new_skip_rules
     })(&g, 'C', &CONFIG)
     .unwrap()
-    .take(2000)
+    .take(100)
     .count();
 }
 #[divan::bench]
@@ -68,7 +78,7 @@ fn generate_sentence_arena() {
     let bump = Bump::new();
     Generator::new_skip_rules_bump(&g, 'C', &CONFIG, &bump)
         .unwrap()
-        .take(2000)
+        .take(100)
         .count();
 }
 
@@ -165,6 +175,184 @@ fn generate_copy_language(record_rules: bool) {
     .unwrap()
     .take(100)
     .count();
+}
+
+#[divan::bench]
+fn neural_loss() {
+    let (
+        types,
+        type_categories,
+        licensee_categories,
+        included_features,
+        lemmas,
+        silent_lemmas,
+        categories,
+        weights,
+        pad_vector,
+        end_vector,
+        targets,
+        mut rng,
+        config,
+    ) = divan::black_box({
+        let n_lexemes = 2;
+        let n_pos = 3;
+        let n_categories = 2;
+        let n_licensees = 1;
+
+        let categories = Tensor::<Autodiff<NdArray>, 2>::zeros(
+            [n_lexemes, n_categories],
+            &NdArrayDevice::default(),
+        )
+        .slice_assign(
+            [0..n_lexemes, 0..1],
+            Tensor::full([n_lexemes, 1], 5.0, &NdArrayDevice::default()),
+        );
+
+        let mut types = Tensor::<Autodiff<NdArray>, 3>::zeros(
+            [n_lexemes, n_pos, N_TYPES],
+            &NdArrayDevice::default(),
+        );
+        let slices = [[1..2, 0..1, 1..2]];
+
+        let dev = types.device();
+        for slice in slices {
+            types = types.slice_assign(
+                slice.clone(),
+                Tensor::full(slice.map(|x| x.len()), 10.0, &dev),
+            );
+        }
+
+        let type_categories = Tensor::<Autodiff<NdArray>, 3>::full(
+            [n_lexemes, n_pos, n_categories],
+            5.0,
+            &NdArrayDevice::default(),
+        )
+        .slice_assign(
+            [0..n_lexemes, 0..n_pos, 1..2],
+            Tensor::zeros([n_lexemes, n_pos, 1], &NdArrayDevice::default()),
+        );
+
+        let lemmas =
+            Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
+                .slice_assign(
+                    [0..n_lexemes, 3..4],
+                    Tensor::full([n_lexemes, 1], 30.0, &NdArrayDevice::default()),
+                );
+        let weights = Tensor::<Autodiff<NdArray>, 1>::zeros([n_lexemes], &NdArrayDevice::default());
+
+        let licensee_categories = Tensor::<Autodiff<NdArray>, 3>::zeros(
+            [n_lexemes, n_licensees, n_categories],
+            &NdArrayDevice::default(),
+        );
+
+        let included_features = Tensor::<Autodiff<NdArray>, 3>::full(
+            [n_lexemes, n_licensees + n_pos, 2],
+            -10,
+            &NdArrayDevice::default(),
+        )
+        .slice_assign(
+            [0..n_lexemes, 0..n_licensees + n_pos, 1..2],
+            Tensor::full(
+                [n_lexemes, n_licensees + n_pos, 1],
+                10.0,
+                &NdArrayDevice::default(),
+            ),
+        )
+        .slice_assign(
+            [1..2, n_licensees..n_licensees + 1, 0..1],
+            Tensor::full([1, 1, 1], 10, &dev),
+        )
+        .slice_assign(
+            [1..2, n_licensees..n_licensees + 1, 1..2],
+            Tensor::full([1, 1, 1], -10, &dev),
+        );
+
+        let targets = (1..9)
+            .map(|i| {
+                let mut s: [u32; 10] = [0; 10];
+                s.iter_mut().take(i).for_each(|x| *x = 3);
+                s[i] = 1;
+                Tensor::<Autodiff<NdArray>, 1, Int>::from_data(
+                    Data::from(s).convert(),
+                    &NdArrayDevice::default(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let targets = Tensor::stack(targets, 0);
+
+        let rng = rand::rngs::StdRng::seed_from_u64(1);
+
+        let config = NeuralConfig {
+            n_grammars: 1,
+            n_strings_per_grammar: 50,
+            padding_length: 10,
+            n_strings_to_sample: 5,
+            temperature: 1.0,
+            negative_weight: None,
+            parsing_config: ParsingConfig::new_with_max_length(
+                LogProb::new(-100.0).unwrap(),
+                LogProb::from_raw_prob(0.5).unwrap(),
+                200,
+                200,
+                10,
+            ),
+        };
+        let silent_lemmas =
+            Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
+                .slice_assign(
+                    [0..n_lexemes, 1..2],
+                    Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
+                );
+        let pad_vector = Tensor::<Autodiff<NdArray>, 1>::from_floats(
+            [50., 0., 0., 0.],
+            &NdArrayDevice::default(),
+        );
+        let end_vector = Tensor::<Autodiff<NdArray>, 1>::from_floats(
+            [0., 50., 0., 0.],
+            &NdArrayDevice::default(),
+        );
+        (
+            types,
+            type_categories,
+            licensee_categories,
+            included_features,
+            lemmas,
+            silent_lemmas,
+            categories,
+            weights,
+            pad_vector,
+            end_vector,
+            targets,
+            rng,
+            config,
+        )
+    });
+    let mut loss: Vec<f32> = vec![];
+
+    for t in [0.1, 0.25, 0.5, 1.0, 5.0] {
+        let g = GrammarParameterization::new(
+            types.clone(),
+            type_categories.clone(),
+            licensee_categories.clone(),
+            included_features.clone(),
+            lemmas.clone(),
+            silent_lemmas.clone(),
+            categories.clone(),
+            weights.clone(),
+            pad_vector.clone(),
+            end_vector.clone(),
+            t,
+            false,
+            &mut rng,
+        )
+        .unwrap();
+        let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)
+            .unwrap()
+            .into_scalar()
+            .elem::<f32>();
+        loss.push(val);
+    }
 }
 
 #[divan::bench]

@@ -17,7 +17,7 @@ use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use thin_vec::{thin_vec, ThinVec};
 
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 
 use super::neural_lexicon::NeuralProbability;
 
@@ -49,7 +49,7 @@ impl IntoIterator for StringPath {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>, BTreeSet<EdgeIndex>);
+pub struct StringProbHistory(HashMap<NeuralProbabilityRecord, u32>, HashSet<EdgeIndex>);
 
 impl StringProbHistory {
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, NeuralProbabilityRecord, u32> {
@@ -60,7 +60,7 @@ impl StringProbHistory {
         self.0.keys()
     }
 
-    pub fn attested_nodes(&self) -> &BTreeSet<EdgeIndex> {
+    pub fn attested_nodes(&self) -> &HashSet<EdgeIndex> {
         &self.1
     }
 }

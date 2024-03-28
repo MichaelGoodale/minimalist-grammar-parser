@@ -99,7 +99,13 @@ fn get_grammar_probs<B: Backend>(
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
         grammar_sets
-            .entry(string_path.attested_nodes().clone())
+            .entry(
+                string_path
+                    .attested_nodes()
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+            )
             .or_insert(vec![])
             .push(i as u32);
     }

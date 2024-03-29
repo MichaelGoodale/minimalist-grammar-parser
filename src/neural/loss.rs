@@ -134,7 +134,7 @@ fn get_grammar_probs<B: Backend>(
                 .collect::<Vec<_>>(),
             0,
         )
-        .sum();
+        .sum_dim(0);
         let mut unattested = std::iter::repeat(true)
             .take(g.n_lexemes())
             .collect::<Vec<_>>();

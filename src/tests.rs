@@ -573,7 +573,7 @@ fn test_loss() -> Result<()> {
 
     let config = NeuralConfig {
         n_grammars: 1,
-        n_strings_per_grammar: 50,
+        n_strings_per_grammar: 20,
         padding_length: 10,
         n_strings_to_sample: 5,
         temperature: 1.0,

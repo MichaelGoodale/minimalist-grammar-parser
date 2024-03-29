@@ -601,9 +601,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
                     self.merge_log_prob,
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
-                if self.target_lens.contains(&sentence.0.len()) {
-                    return Some(sentence);
-                }
+                return Some(sentence);
             }
         }
         None

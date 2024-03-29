@@ -536,7 +536,6 @@ where
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
-    target_lens: BTreeSet<usize>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
 }
@@ -551,7 +550,6 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        let target_lens = targets.iter().map(|x| x.len()).collect();
         parse_heap.extend(
             NeuralBeam::new(
                 lexicon,
@@ -566,7 +564,6 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         );
         NeuralGenerator {
             lexicon,
-            target_lens,
             move_log_prob: NeuralProbability((
                 NeuralProbabilityRecord::MoveRuleProb,
                 config.move_prob,

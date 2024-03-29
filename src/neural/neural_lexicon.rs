@@ -49,6 +49,7 @@ pub struct GrammarParameterization<B: Backend> {
     included_features: Tensor<B, 3>,    //(lexeme, n_licensee + n_features, true/false)
     weights: Tensor<B, 1>,              //(lexeme)
     unnormalized_weights: Tensor<B, 1>, //(lexeme)
+    include_lemma: Tensor<B, 2>,        // (lexeme, 2)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
@@ -129,6 +130,7 @@ impl<B: Backend> GrammarParameterization<B> {
         silent_probabilities: Tensor<B, 2>, //(lexeme, 2)
         categories: Tensor<B, 2>,           // (lexeme, n_categories)
         weights: Tensor<B, 1>,              // (lexeme)
+        include_lemma: Tensor<B, 2>,
         pad_vector: Tensor<B, 1>,
         end_vector: Tensor<B, 1>,
         temperature: f64,
@@ -152,6 +154,7 @@ impl<B: Backend> GrammarParameterization<B> {
 
         let included_features =
             activation_function(included_features, 2, inverse_temperature, gumbel, rng);
+        let include_lemma = activation_function(include_lemma, 1, inverse_temperature, gumbel, rng);
 
         let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
         let type_categories =
@@ -200,6 +203,7 @@ impl<B: Backend> GrammarParameterization<B> {
             lemmas,
             licensee_categories,
             included_features,
+            include_lemma,
             weights,
             unnormalized_weights,
             lemma_lookups,
@@ -230,6 +234,10 @@ impl<B: Backend> GrammarParameterization<B> {
 
     pub fn lexeme_weights(&self) -> &HashMap<usize, LogProb<f64>> {
         &self.lexeme_weights
+    }
+
+    pub fn include_lemma(&self) -> &Tensor<B, 2> {
+        &self.include_lemma
     }
 
     pub fn unnormalized_weights(&self) -> &Tensor<B, 1> {
@@ -710,6 +718,11 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
+        let include_lemma = Tensor::<NdArray, 2>::random(
+            [n_lexemes, 2],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
         let pad_vector = Tensor::<NdArray, 1>::from_floats(
             [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
             &NdArrayDevice::default(),
@@ -729,6 +742,7 @@ mod test {
             silent_probabilities,
             categories,
             weights,
+            include_lemma,
             pad_vector,
             end_vector,
             1.0,

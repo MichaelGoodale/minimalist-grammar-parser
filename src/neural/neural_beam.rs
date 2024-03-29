@@ -17,7 +17,7 @@ use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use thin_vec::{thin_vec, ThinVec};
 
-use ahash::{HashMap, HashSet};
+use ahash::HashMap;
 
 use super::neural_lexicon::NeuralProbability;
 

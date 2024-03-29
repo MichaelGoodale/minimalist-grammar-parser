@@ -86,6 +86,7 @@ fn string_path_to_tensor<B: Backend>(
 
 fn get_grammar_probs<B: Backend>(
     string_paths: &[StringProbHistory],
+    g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
     device: &B::Device,
 ) -> (
@@ -134,18 +135,48 @@ fn get_grammar_probs<B: Backend>(
             0,
         )
         .sum();
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
-
+        let mut unattested = std::iter::repeat(true)
+            .take(g.n_lexemes())
+            .collect::<Vec<_>>();
+        let mut attested = vec![];
         let lexemes = string_paths[ids[0] as usize]
             .keys()
             .filter_map(|x| {
                 if let NeuralProbabilityRecord::Lexeme(e, lexeme_idx) = x {
+                    unattested[*lexeme_idx] = false;
+                    attested.push(*lexeme_idx as u32);
                     Some((*lexeme_idx, lexicon.get_feature(*e).clone()))
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>();
+        let unattested = Tensor::<B, 1, Int>::from_data(
+            Data::from(
+                unattested
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )
+            .convert(),
+            &g.device(),
+        );
+        let attested =
+            Tensor::<B, 1, Int>::from_data(Data::from(attested.as_slice()).convert(), &g.device());
+        let included = g
+            .include_lemma()
+            .clone()
+            .slice([0..g.n_lexemes(), 0..1])
+            .select(0, unattested)
+            .sum()
+            + g.include_lemma()
+                .clone()
+                .slice([0..g.n_lexemes(), 1..2])
+                .select(0, attested)
+                .sum();
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + included);
 
         output.push((
             string_idx,
@@ -276,7 +307,7 @@ pub fn get_grammar<B: Backend>(
     );
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
-    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, &lexicon, &g.device());
+    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon, &g.device());
     let mut grammars = vec![];
     for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
         //(1, n_grammar_strings)
@@ -339,7 +370,7 @@ pub fn get_neural_outputs<B: Backend>(
     let grammar = string_path_to_tensor(&strings, g, neural_config);
 
     let (grammar_probs, grammar_idx) =
-        get_grammar_probs(&string_probs, &lexicon, &targets.device());
+        get_grammar_probs(&string_probs, g, &lexicon, &targets.device());
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);

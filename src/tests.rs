@@ -592,6 +592,12 @@ fn test_loss() -> Result<()> {
                 [0..n_lexemes, 1..2],
                 Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
             );
+    let include_lemmas =
+        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
+            .slice_assign(
+                [0..n_lexemes, 1..2],
+                Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
+            );
     let pad_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
@@ -607,6 +613,7 @@ fn test_loss() -> Result<()> {
             silent_lemmas.clone(),
             categories.clone(),
             weights.clone(),
+            include_lemmas.clone(),
             pad_vector.clone(),
             end_vector.clone(),
             t,
@@ -655,6 +662,7 @@ fn random_neural_generation() -> Result<()> {
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
     let silent_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
+    let include_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
@@ -676,6 +684,7 @@ fn random_neural_generation() -> Result<()> {
             silent_lemmas.clone(),
             categories.clone(),
             weights.clone(),
+            include_lemmas.clone(),
             pad_vector.clone(),
             end_vector.clone(),
             temperature,

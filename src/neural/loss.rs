@@ -170,13 +170,13 @@ fn get_grammar_probs<B: Backend>(
             .clone()
             .slice([0..g.n_lexemes(), 0..1])
             .select(0, unattested)
-            .sum()
+            .sum_dim(0)
             + g.include_lemma()
                 .clone()
                 .slice([0..g.n_lexemes(), 1..2])
                 .select(0, attested)
-                .sum();
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + included);
+                .sum_dim(0);
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + included.reshape([1]));
 
         output.push((
             string_idx,

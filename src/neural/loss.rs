@@ -373,6 +373,18 @@ pub fn get_neural_outputs<B: Backend>(
         &alternatives,
         neural_config,
     );
+    let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
+        target_vec
+            .iter()
+            .map(|t| {
+                let l = t.len();
+                let v = strings.iter().map(|x| x.len() != l).collect::<Vec<_>>();
+                let ids = Tensor::<B, 1, Bool>::from_data(Data::from(v.as_slice()), &g.device());
+                ids
+            })
+            .collect(),
+        0,
+    );
     let n_strings = strings.len();
 
     if n_strings == 0 {
@@ -397,7 +409,8 @@ pub fn get_neural_outputs<B: Backend>(
         .gather(3, targets)
         .squeeze::<3>(3)
         .sum_dim(2)
-        .squeeze(2);
+        .squeeze(2)
+        .mask_fill(target_s_ids, -250.0);
 
     let mut loss_per_grammar = vec![];
     for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -410,11 +423,11 @@ pub fn get_neural_outputs<B: Backend>(
             neural_config,
             &loss.device(),
         );
+
+        let loss = loss.clone().select(1, grammar_id) + string_probs.unsqueeze_dim(0);
+
         //Probability of generating each of the targets
-        loss_per_grammar.push(log_sum_exp_dim(
-            loss.clone().select(1, grammar_id) + string_probs.unsqueeze_dim(0),
-            1,
-        ));
+        loss_per_grammar.push(log_sum_exp_dim(loss, 1));
         //(n_strings_per_grammar);
     }
     let loss_per_grammar = Tensor::cat(loss_per_grammar, 1) + grammar_probs.unsqueeze_dim(0);

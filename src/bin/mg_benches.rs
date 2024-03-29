@@ -187,6 +187,7 @@ fn random_neural_generation() -> Result<()> {
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
     let silent_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
+    let include_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
@@ -208,6 +209,7 @@ fn random_neural_generation() -> Result<()> {
             silent_lemmas.clone(),
             categories.clone(),
             weights.clone(),
+            include_lemmas.clone(),
             pad_vector.clone(),
             end_vector.clone(),
             temperature,

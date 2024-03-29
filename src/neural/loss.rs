@@ -151,32 +151,45 @@ fn get_grammar_probs<B: Backend>(
                 }
             })
             .collect::<Vec<_>>();
-        let unattested = Tensor::<B, 1, Int>::from_data(
-            Data::from(
-                unattested
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .convert(),
-            &g.device(),
-        );
-        let attested =
-            Tensor::<B, 1, Int>::from_data(Data::from(attested.as_slice()).convert(), &g.device());
-        let included = g
-            .include_lemma()
-            .clone()
-            .slice([0..g.n_lexemes(), 0..1])
-            .select(0, unattested)
-            .sum_dim(0)
-            + g.include_lemma()
-                .clone()
-                .slice([0..g.n_lexemes(), 1..2])
-                .select(0, attested)
-                .sum_dim(0);
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + included.reshape([1]));
+
+        let unattested = {
+            let unattested = unattested
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+                .collect::<Vec<_>>();
+            if unattested.is_empty() {
+                Tensor::<B, 1>::zeros([1], &g.device())
+            } else {
+                let unattested = Tensor::<B, 1, Int>::from_data(
+                    Data::from(unattested.as_slice()).convert(),
+                    &g.device(),
+                );
+                g.include_lemma()
+                    .clone()
+                    .slice([0..g.n_lexemes(), 0..1])
+                    .select(0, unattested)
+                    .sum_dim(0)
+                    .reshape([1])
+            }
+        };
+        let attested = {
+            if attested.is_empty() {
+                Tensor::<B, 1>::zeros([1], &g.device())
+            } else {
+                let attested = Tensor::<B, 1, Int>::from_data(
+                    Data::from(attested.as_slice()).convert(),
+                    &g.device(),
+                );
+                g.include_lemma()
+                    .clone()
+                    .slice([0..g.n_lexemes(), 1..2])
+                    .select(0, attested)
+                    .sum_dim(0)
+                    .reshape([1])
+            }
+        };
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + attested + unattested);
 
         output.push((
             string_idx,

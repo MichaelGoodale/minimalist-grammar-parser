@@ -536,7 +536,7 @@ where
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
-    target_lens: BTreeSet<usize>,
+    target_lens: Option<BTreeSet<usize>>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
 }
@@ -544,14 +544,14 @@ pub struct NeuralGenerator<'a, B: Backend> {
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
     pub fn new(
         lexicon: &'a NeuralLexicon<B>,
-        targets: &'a [Vec<usize>],
+        targets: Option<&'a [Vec<usize>]>,
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        let target_lens = targets.iter().map(|x| x.len()).collect();
+        let target_lens = targets.map(|x| x.iter().map(|x| x.len()).collect());
         parse_heap.extend(
             NeuralBeam::new(
                 lexicon,
@@ -601,7 +601,11 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
                     self.merge_log_prob,
                 );
             } else if let Some(sentence) = beam.yield_good_parse() {
-                if self.target_lens.contains(&sentence.0.len()) {
+                if self
+                    .target_lens
+                    .as_ref()
+                    .map_or(true, |x| x.contains(&sentence.0.len()))
+                {
                     return Some(sentence);
                 }
             }

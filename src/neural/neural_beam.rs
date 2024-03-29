@@ -97,7 +97,7 @@ impl<'a> NeuralBeam<'a> {
     pub fn new<B: Backend, T>(
         lexicon: &'a NeuralLexicon<B>,
         initial_category: usize,
-        sentences: &'a [T],
+        sentences: Option<&'a [T]>,
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
@@ -130,7 +130,9 @@ impl<'a> NeuralBeam<'a> {
                 queue,
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
-                sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0, log_one)).collect(),
+                sentence_guides: sentences
+                    .map(|x| x.iter().map(|x| (x.as_ref(), 0, log_one)).collect())
+                    .unwrap_or(vec![]),
                 lemma_lookups,
                 alternatives,
                 weight_lookups,

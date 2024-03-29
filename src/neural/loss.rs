@@ -28,7 +28,7 @@ pub struct NeuralConfig {
 
 fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
-    targets: &Vec<Vec<usize>>,
+    targets: Option<&[Vec<usize>]>,
     lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: &HashMap<usize, LogProb<f64>>,
     alternatives: &HashMap<EdgeIndex, Vec<EdgeIndex>>,
@@ -312,7 +312,7 @@ pub fn get_grammar<B: Backend>(
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
-        &vec![],
+        None,
         g.lemma_lookups(),
         g.lexeme_weights(),
         &alternatives,
@@ -363,11 +363,11 @@ pub fn get_neural_outputs<B: Backend>(
                 .collect();
             v
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
-        &target_vec,
+        Some(&target_vec),
         g.lemma_lookups(),
         g.lexeme_weights(),
         &alternatives,

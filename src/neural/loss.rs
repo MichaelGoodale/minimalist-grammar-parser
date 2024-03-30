@@ -430,9 +430,10 @@ pub fn get_neural_outputs<B: Backend>(
         loss_per_grammar.push(log_sum_exp_dim(loss, 1));
         //(n_strings_per_grammar);
     }
-    let loss_per_grammar = Tensor::cat(loss_per_grammar, 1) + grammar_probs.unsqueeze_dim(0);
+    let loss_per_grammar =
+        Tensor::cat(loss_per_grammar, 1).detach() + grammar_probs.unsqueeze_dim(0);
 
     //Probability of generating each of the grammars
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss_per_grammar, 1).squeeze(1);
-    Ok(-loss.sum())
+    Ok(-loss.mean_dim(0))
 }

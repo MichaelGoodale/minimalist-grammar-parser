@@ -365,7 +365,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((grammars, losses.squeeze(0)))
+    Ok((grammars, losses.sum_dim(0)))
 }
 
 fn get_grammar_losses<B: Backend>(
@@ -484,7 +484,7 @@ pub fn get_neural_outputs<B: Backend>(
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, _, _, _) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
-    //Probability of generating each of the grammars
+    //Probability of generating each of the target strings
     let loss: Tensor<B, 1> = log_sum_exp_dim(loss_per_grammar, 1).squeeze(1);
     Ok(-loss.sum_dim(0))
 }

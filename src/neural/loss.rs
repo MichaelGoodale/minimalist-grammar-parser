@@ -365,7 +365,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((grammars, losses.sum_dim(0)))
+    Ok((grammars, losses.sum_dim(0).squeeze(0)))
 }
 
 fn get_grammar_losses<B: Backend>(

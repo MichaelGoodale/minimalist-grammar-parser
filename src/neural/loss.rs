@@ -344,9 +344,13 @@ pub fn get_grammar_with_targets<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<(Vec<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>)> {
+) -> anyhow::Result<(
+    Vec<(Tensor<B, 3>, Tensor<B, 1>)>,
+    Tensor<B, 1>,
+    Tensor<B, 1>,
+)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (losses, grammar_idx, strings, string_probs) =
+    let (losses, grammar_losses, grammar_idx, strings, string_probs) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     let strings = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
@@ -365,7 +369,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((grammars, losses.sum_dim(0).squeeze(0)))
+    Ok((grammars, losses.sum_dim(0).squeeze(0), grammar_losses))
 }
 
 fn get_grammar_losses<B: Backend>(
@@ -376,6 +380,7 @@ fn get_grammar_losses<B: Backend>(
     neural_config: &NeuralConfig,
 ) -> anyhow::Result<(
     Tensor<B, 2>,
+    Tensor<B, 1>,
     Vec<(
         Tensor<B, 1, Int>,
         BTreeSet<usize>,
@@ -468,7 +473,8 @@ fn get_grammar_losses<B: Backend>(
         //(n_strings_per_grammar);
     }
     Ok((
-        Tensor::cat(loss_per_grammar, 1) + grammar_probs.unsqueeze_dim(0),
+        Tensor::cat(loss_per_grammar, 1),
+        grammar_probs,
         grammar_idx,
         strings,
         string_probs,
@@ -482,9 +488,10 @@ pub fn get_neural_outputs<B: Backend>(
     rng: &mut impl Rng,
 ) -> anyhow::Result<Tensor<B, 1>> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (loss_per_grammar, _, _, _) =
+    let (loss_per_grammar, grammar_losses, _, _, _) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     //Probability of generating each of the target strings
-    let loss: Tensor<B, 1> = log_sum_exp_dim(loss_per_grammar, 1).squeeze(1);
+    let loss: Tensor<B, 1> =
+        log_sum_exp_dim(loss_per_grammar + grammar_losses.unsqueeze_dim(0), 1).squeeze(1);
     Ok(-loss.sum_dim(0))
 }

@@ -122,7 +122,7 @@ impl<'a> NeuralBeam<'a> {
             let record = log_probability.0 .0;
             let mut history = StringProbHistory::default();
             history.0.insert(record, 1);
-            let log_one = LogProb::new(0.0).unwrap();
+            let log_one = log_probability.0 .1;
 
             NeuralBeam {
                 max_log_prob: log_probability.0 .1,
@@ -132,7 +132,7 @@ impl<'a> NeuralBeam<'a> {
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences
                     .map(|x| x.iter().map(|x| (x.as_ref(), 0, log_one)).collect())
-                    .unwrap_or(vec![]),
+                    .unwrap_or_default(),
                 lemma_lookups,
                 alternatives,
                 weight_lookups,

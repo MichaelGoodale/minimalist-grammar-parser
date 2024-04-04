@@ -177,10 +177,11 @@ fn random_neural_generation() -> Result<()> {
         [n_lexemes, n_licensee, n_categories],
         &NdArrayDevice::default(),
     );
-    let included_features = Tensor::<NdArray, 3>::zeros(
-        [n_lexemes, n_licensee + n_pos, 2],
-        &NdArrayDevice::default(),
-    );
+    let included_licensees =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + 1], &NdArrayDevice::default());
+
+    let included_features =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_pos + 1], &NdArrayDevice::default());
 
     let categories =
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
@@ -205,6 +206,7 @@ fn random_neural_generation() -> Result<()> {
             type_categories.clone(),
             licensee_categories.clone(),
             included_features.clone(),
+            included_licensees.clone(),
             lemmas.clone(),
             silent_lemmas.clone(),
             categories.clone(),

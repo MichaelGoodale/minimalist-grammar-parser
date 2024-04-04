@@ -5,6 +5,7 @@ use super::neural_lexicon::{
     GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
 };
 use super::utils::log_sum_exp_dim;
+use crate::lexicon::Lexiconable;
 use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::HashMap;
@@ -13,7 +14,7 @@ use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
 use logprob::LogProb;
 use moka::sync::Cache;
-use petgraph::graph::EdgeIndex;
+use petgraph::graph::NodeIndex;
 use rand::Rng;
 
 pub struct NeuralConfig {
@@ -31,8 +32,9 @@ fn retrieve_strings<B: Backend>(
     targets: Option<&[Vec<usize>]>,
     lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: &HashMap<usize, LogProb<f64>>,
-    alternatives: &HashMap<EdgeIndex, Vec<EdgeIndex>>,
+    alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
 ) -> (Vec<StringPath>, Vec<StringProbHistory>) {
     let mut grammar_strings: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
@@ -125,9 +127,9 @@ fn get_grammar_probs<B: Backend>(
         );
         let p: Tensor<B, 1> = Tensor::cat(
             key.iter()
-                .map(|e| {
+                .map(|n| {
                     lexicon
-                        .get_weight(&NeuralProbabilityRecord::Edge(*e))
+                        .get_weight(&NeuralProbabilityRecord::Node(*n))
                         .unwrap()
                         .clone()
                 })
@@ -145,7 +147,7 @@ fn get_grammar_probs<B: Backend>(
                 if let NeuralProbabilityRecord::Lexeme(e, lexeme_idx) = x {
                     unattested[*lexeme_idx] = false;
                     attested.push(*lexeme_idx as u32);
-                    Some((*lexeme_idx, lexicon.get_feature(*e).clone()))
+                    Some((*lexeme_idx, lexicon.get(*e).unwrap().clone()))
                 } else {
                     None
                 }
@@ -282,7 +284,7 @@ fn get_string_prob<B: Backend>(
                     p = p.add_scalar(merge_p * (*count as f64))
                 }
                 NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
-                    let (c, t) = match lexicon.get_feature(*lexeme) {
+                    let (c, t) = match lexicon.get(*lexeme).unwrap() {
                         FeatureOrLemma::Feature(Feature::Category(c)) => (*c, 0),
                         FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
                         _ => panic!("Should be impossible!"),
@@ -317,6 +319,7 @@ pub fn get_grammar<B: Backend>(
         g.lexeme_weights(),
         &alternatives,
         neural_config,
+        rng,
     );
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
@@ -351,7 +354,7 @@ pub fn get_grammar_with_targets<B: Backend>(
 )> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (losses, grammar_losses, grammar_idx, strings, string_probs) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, rng)?;
     let strings = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
     for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -375,9 +378,10 @@ pub fn get_grammar_with_targets<B: Backend>(
 fn get_grammar_losses<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
-    alternatives: &HashMap<EdgeIndex, Vec<EdgeIndex>>,
+    alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
 ) -> anyhow::Result<(
     Tensor<B, 2>,
     Tensor<B, 1>,
@@ -414,6 +418,7 @@ fn get_grammar_losses<B: Backend>(
         g.lexeme_weights(),
         alternatives,
         neural_config,
+        rng,
     );
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -489,7 +494,7 @@ pub fn get_neural_outputs<B: Backend>(
 ) -> anyhow::Result<(Tensor<B, 2>, Tensor<B, 1>)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, grammar_losses, _, _, _) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, rng)?;
     //Probability of generating each of the target strings
     //let loss: Tensor<B, 1> =loss_per_grammar + grammar_losses.unsqueeze_dim(0), 1).squeeze(1);
     Ok((loss_per_grammar, grammar_losses))

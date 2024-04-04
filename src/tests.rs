@@ -533,27 +533,22 @@ fn test_loss() -> Result<()> {
         &NdArrayDevice::default(),
     );
 
-    let included_features = Tensor::<Autodiff<NdArray>, 3>::full(
-        [n_lexemes, n_licensees + n_pos, 2],
-        -10,
+    let included_licensees = Tensor::<Autodiff<NdArray>, 2>::full(
+        [n_lexemes, n_licensees + 1],
+        -10.0,
         &NdArrayDevice::default(),
     )
     .slice_assign(
-        [0..n_lexemes, 0..n_licensees + n_pos, 1..2],
-        Tensor::full(
-            [n_lexemes, n_licensees + n_pos, 1],
-            10.0,
-            &NdArrayDevice::default(),
-        ),
-    )
-    .slice_assign(
-        [1..2, n_licensees..n_licensees + 1, 0..1],
-        Tensor::full([1, 1, 1], 10, &dev),
-    )
-    .slice_assign(
-        [1..2, n_licensees..n_licensees + 1, 1..2],
-        Tensor::full([1, 1, 1], -10, &dev),
+        [0..n_lexemes, 0..1],
+        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 1], 10.0, &NdArrayDevice::default()),
     );
+
+    let included_features = Tensor::<Autodiff<NdArray>, 2>::full(
+        [n_lexemes, n_pos + 1],
+        -10,
+        &NdArrayDevice::default(),
+    )
+    .slice_assign([1..2, 1..2], Tensor::full([1, 1], 10, &dev));
 
     let targets = (1..9)
         .map(|i| {
@@ -609,6 +604,7 @@ fn test_loss() -> Result<()> {
             type_categories.clone(),
             licensee_categories.clone(),
             included_features.clone(),
+            included_licensees.clone(),
             lemmas.clone(),
             silent_lemmas.clone(),
             categories.clone(),
@@ -652,10 +648,10 @@ fn random_neural_generation() -> Result<()> {
         [n_lexemes, n_licensee, n_categories],
         &NdArrayDevice::default(),
     );
-    let included_features = Tensor::<NdArray, 3>::zeros(
-        [n_lexemes, n_licensee + n_pos, 2],
-        &NdArrayDevice::default(),
-    );
+    let included_licensees =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + 1], &NdArrayDevice::default());
+    let included_features =
+        Tensor::<NdArray, 2>::zeros([n_lexemes, n_pos + 1], &NdArrayDevice::default());
 
     let categories =
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_categories], &NdArrayDevice::default());
@@ -680,6 +676,7 @@ fn random_neural_generation() -> Result<()> {
             type_categories.clone(),
             licensee_categories.clone(),
             included_features.clone(),
+            included_licensees.clone(),
             lemmas.clone(),
             silent_lemmas.clone(),
             categories.clone(),

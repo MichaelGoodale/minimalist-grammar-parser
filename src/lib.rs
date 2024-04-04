@@ -7,7 +7,7 @@ use anyhow::Result;
 use bumpalo::Bump;
 use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
-use petgraph::graph::EdgeIndex;
+use petgraph::graph::NodeIndex;
 
 use allocator_api2::alloc::{Allocator, Global};
 use logprob::LogProb;
@@ -17,6 +17,7 @@ use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbability
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
+use rand::Rng;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -131,13 +132,6 @@ where
 {
     fn pop(&mut self) -> Option<B> {
         self.parse_heap.pop_max()
-    }
-
-    fn pop_n(&mut self, n: usize) -> impl Iterator<Item = B> + '_ {
-        (0..n)
-            .map(|_| self.parse_heap.pop_max())
-            .take_while(|x| x.is_some())
-            .map(|x| x.unwrap())
     }
 
     fn push(&mut self, v: B) {
@@ -535,7 +529,7 @@ where
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
     target_lens: Option<BTreeSet<usize>>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
@@ -547,7 +541,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         targets: Option<&'a [Vec<usize>]>,
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
-        alternatives: &'a HashMap<EdgeIndex, Vec<EdgeIndex>>,
+        alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
@@ -567,14 +561,16 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         NeuralGenerator {
             lexicon,
             target_lens,
-            move_log_prob: NeuralProbability((
+            move_log_prob: NeuralProbability(
                 NeuralProbabilityRecord::MoveRuleProb,
+                None,
                 config.move_prob,
-            )),
-            merge_log_prob: NeuralProbability((
+            ),
+            merge_log_prob: NeuralProbability(
                 NeuralProbabilityRecord::MergeRuleProb,
+                None,
                 config.move_prob.opposite_prob(),
-            )),
+            ),
             parse_heap: ParseHeap {
                 global_steps: 0,
                 done: false,

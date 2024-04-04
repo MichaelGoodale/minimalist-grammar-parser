@@ -50,8 +50,24 @@ impl IntoIterator for StringPath {
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub enum NodeFeature {
+    Node(NodeIndex),
+    NLicensees {
+        lexeme_idx: usize,
+        n_licensees: usize,
+    },
+    NFeatures {
+        lexeme_idx: usize,
+        n_features: usize,
+    },
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct StringProbHistory(BTreeMap<NeuralProbabilityRecord, u32>, BTreeSet<NodeIndex>);
+pub struct StringProbHistory(
+    BTreeMap<NeuralProbabilityRecord, u32>,
+    BTreeSet<NodeFeature>,
+);
 
 impl StringProbHistory {
     pub fn iter(&self) -> std::collections::btree_map::Iter<'_, NeuralProbabilityRecord, u32> {
@@ -62,7 +78,7 @@ impl StringProbHistory {
         self.0.keys()
     }
 
-    pub fn attested_nodes(&self) -> &BTreeSet<NodeIndex> {
+    pub fn attested_nodes(&self) -> &BTreeSet<NodeFeature> {
         &self.1
     }
 }
@@ -77,6 +93,13 @@ impl IntoIterator for StringProbHistory {
     }
 }
 
+#[derive(Debug, Copy, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+enum NFeatures {
+    UnInitialized,
+    Building(usize),
+    Done(usize),
+}
+
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
     log_probability: NeuralProbability,
@@ -88,8 +111,10 @@ pub struct NeuralBeam<'a, B: Backend> {
     lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
     weight_lookups: &'a HashMap<usize, LogProb<f64>>,
     alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
-    n_licensees: Vec<Option<usize>>,
-    n_features: Vec<Option<usize>>,
+    n_licensees: Vec<NFeatures>,
+    p_n_licensees: Vec<Option<LogProb<f64>>>,
+    n_features: Vec<NFeatures>,
+    p_n_features: Vec<Option<LogProb<f64>>>,
     burnt: bool,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
@@ -131,10 +156,33 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
             } else {
                 panic!()
             };
-            let n_licensees = (0..lexicon.n_lemmas())
-                .map(|i| if i == lex { Some(0) } else { None })
+            history.1.insert(NodeFeature::NLicensees {
+                lexeme_idx: lex,
+                n_licensees: 0,
+            });
+            history.1.insert(NodeFeature::Node(*node));
+            let n_licensees = (0..lexicon.n_lexemes())
+                .map(|i| {
+                    if i == lex {
+                        NFeatures::Done(0)
+                    } else {
+                        NFeatures::UnInitialized
+                    }
+                })
                 .collect();
-            let n_features = std::iter::repeat(None).take(lexicon.n_lemmas()).collect();
+            let p_n_licensees = (0..lexicon.n_lexemes())
+                .map(|i| {
+                    if i == lex {
+                        Some(lexicon.prob_of_n_licensees(i, 0))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let n_features = std::iter::repeat(NFeatures::UnInitialized)
+                .take(lexicon.n_lexemes())
+                .collect();
+            let p_n_features = std::iter::repeat(None).take(lexicon.n_lexemes()).collect();
 
             let log_one = log_probability.2;
 
@@ -142,7 +190,9 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 max_log_prob: log_probability.2,
                 log_probability: *log_probability,
                 n_licensees,
+                p_n_licensees,
                 n_features,
+                p_n_features,
                 queue,
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
@@ -194,7 +244,19 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.max_log_prob.cmp(&other.max_log_prob)
+        let feature_p: LogProb<f64> = self
+            .p_n_features
+            .iter()
+            .chain(self.p_n_licensees.iter())
+            .filter_map(|x| *x)
+            .fold(LogProb::new(0.0).unwrap(), |x, acc| x + acc);
+        let other_feature_p: LogProb<f64> = other
+            .p_n_features
+            .iter()
+            .chain(other.p_n_licensees.iter())
+            .filter_map(|x| *x)
+            .fold(LogProb::new(0.0).unwrap(), |x, acc| x + acc);
+        (self.max_log_prob + feature_p).cmp(&(other.max_log_prob + other_feature_p))
     }
 }
 
@@ -213,59 +275,126 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
                     lexeme_idx,
                     n_licensees,
                 } => {
-                    self.burnt &= if let Some(x) = self.n_licensees[lexeme_idx] {
-                        x >= n_licensees
-                    } else {
-                        false
+                    self.burnt |= match self.n_licensees[lexeme_idx] {
+                        NFeatures::UnInitialized | NFeatures::Building(_) => {
+                            let p = self
+                                .lexicon
+                                .prob_of_at_least_n_licensees(lexeme_idx, n_licensees);
+                            self.p_n_licensees[lexeme_idx] = Some(p);
+                            if let NFeatures::Building(x) = self.n_licensees[lexeme_idx] {
+                                if x < n_licensees {
+                                    self.n_licensees[lexeme_idx] = NFeatures::Building(n_licensees);
+                                }
+                            } else {
+                                self.n_licensees[lexeme_idx] = NFeatures::Building(n_licensees);
+                            }
+                            false
+                        }
+                        NFeatures::Done(x) => x <= n_licensees,
                     }
                 }
                 EdgeHistory::AtLeastNCategories {
                     lexeme_idx,
                     n_categories,
                 } => {
-                    self.burnt &= if let Some(x) = self.n_features[lexeme_idx] {
-                        x >= n_categories
-                    } else {
-                        false
+                    self.burnt |= match self.n_features[lexeme_idx] {
+                        NFeatures::UnInitialized | NFeatures::Building(_) => {
+                            let p = self
+                                .lexicon
+                                .prob_of_at_least_n_features(lexeme_idx, n_categories);
+                            self.p_n_features[lexeme_idx] = Some(p);
+                            if let NFeatures::Building(x) = self.n_features[lexeme_idx] {
+                                if x < n_categories {
+                                    self.n_features[lexeme_idx] = NFeatures::Building(n_categories);
+                                }
+                            } else {
+                                self.n_features[lexeme_idx] = NFeatures::Building(n_categories);
+                            }
+                            false
+                        }
+                        NFeatures::Done(x) => x <= n_categories,
                     }
                 }
                 EdgeHistory::AtMostNLicenseses {
                     lexeme_idx,
                     n_licensees,
                 } => {
-                    self.burnt &= if let Some(x) = self.n_licensees[lexeme_idx] {
-                        x == n_licensees
-                    } else {
-                        self.n_licensees[lexeme_idx] = Some(n_licensees);
-                        false
+                    self.burnt |= match self.n_licensees[lexeme_idx] {
+                        NFeatures::UnInitialized => {
+                            self.n_licensees[lexeme_idx] = NFeatures::Done(n_licensees);
+                            self.p_n_licensees[lexeme_idx] =
+                                Some(self.lexicon.prob_of_n_licensees(lexeme_idx, n_licensees));
+                            self.probability_path.1.insert(NodeFeature::NLicensees {
+                                lexeme_idx,
+                                n_licensees,
+                            });
+                            false
+                        }
+                        NFeatures::Building(x) => {
+                            if x > n_licensees {
+                                true
+                            } else {
+                                self.n_licensees[lexeme_idx] = NFeatures::Done(n_licensees);
+                                self.p_n_licensees[lexeme_idx] =
+                                    Some(self.lexicon.prob_of_n_licensees(lexeme_idx, n_licensees));
+                                self.probability_path.1.insert(NodeFeature::NLicensees {
+                                    lexeme_idx,
+                                    n_licensees,
+                                });
+                                false
+                            }
+                        }
+                        NFeatures::Done(x) => x != n_licensees,
                     }
                 }
                 EdgeHistory::AtMostNCategories {
                     lexeme_idx,
                     n_categories,
                 } => {
-                    self.burnt &= if let Some(x) = self.n_features[lexeme_idx] {
-                        x == n_categories
-                    } else {
-                        self.n_features[lexeme_idx] = Some(n_categories);
-                        false
+                    self.burnt |= match self.n_features[lexeme_idx] {
+                        NFeatures::UnInitialized => {
+                            self.n_features[lexeme_idx] = NFeatures::Done(n_categories);
+                            self.p_n_features[lexeme_idx] =
+                                Some(self.lexicon.prob_of_n_features(lexeme_idx, n_categories));
+                            self.probability_path.1.insert(NodeFeature::NFeatures {
+                                lexeme_idx,
+                                n_features: n_categories,
+                            });
+                            false
+                        }
+                        NFeatures::Building(x) => {
+                            if x > n_categories {
+                                true
+                            } else {
+                                self.n_features[lexeme_idx] = NFeatures::Done(n_categories);
+                                self.p_n_features[lexeme_idx] =
+                                    Some(self.lexicon.prob_of_n_features(lexeme_idx, n_categories));
+                                self.probability_path.1.insert(NodeFeature::NFeatures {
+                                    lexeme_idx,
+                                    n_features: n_categories,
+                                });
+                                false
+                            }
+                        }
+                        NFeatures::Done(x) => x != n_categories,
                     }
                 }
             }
-        }
+        };
         match record {
             NeuralProbabilityRecord::Node(n) | NeuralProbabilityRecord::Lexeme(n, _) => {
-                if !self.probability_path.1.contains(&n) {
+                let nf = NodeFeature::Node(n);
+                if !self.probability_path.1.contains(&nf) {
                     self.log_probability.2 += new_prob;
                     self.max_log_prob += new_prob;
                 }
-                self.burnt &= self
+                self.burnt |= self
                     .alternatives
                     .get(&n)
                     .unwrap()
                     .iter()
-                    .any(|x| self.probability_path.1.contains(x));
-                self.probability_path.1.insert(n);
+                    .any(|x| self.probability_path.1.contains(&NodeFeature::Node(*x)));
+                self.probability_path.1.insert(nf);
             }
             _ => (),
         }

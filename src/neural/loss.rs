@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::neural_beam::{StringPath, StringProbHistory};
+use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{
     GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
 };
@@ -101,10 +101,23 @@ fn get_grammar_probs<B: Backend>(
 ) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
-        grammar_sets
-            .entry(string_path.attested_nodes().clone())
-            .or_insert(vec![])
-            .push(i as u32);
+        let a = string_path.attested_nodes().clone();
+        /*
+        dbg!(a
+            .iter()
+            .map(|x| match x {
+                NodeFeature::Node(x) => format!("{x:?} {:?}", lexicon.get(*x).unwrap()),
+                NodeFeature::NLicensees {
+                    lexeme_idx,
+                    n_licensees,
+                } => format!("{:?} {:?}", lexeme_idx, n_licensees),
+                NodeFeature::NFeatures {
+                    lexeme_idx,
+                    n_features,
+                } => format!("{:?} {:?}", lexeme_idx, n_features),
+            })
+            .collect::<Vec<_>>());*/
+        grammar_sets.entry(a).or_insert(vec![]).push(i as u32);
     }
 
     let mut output = vec![];
@@ -127,11 +140,27 @@ fn get_grammar_probs<B: Backend>(
         );
         let p: Tensor<B, 1> = Tensor::cat(
             key.iter()
-                .map(|n| {
-                    lexicon
+                .map(|n| match n {
+                    NodeFeature::Node(n) => lexicon
                         .get_weight(&NeuralProbabilityRecord::Node(*n))
                         .unwrap()
+                        .clone(),
+                    NodeFeature::NFeatures {
+                        lexeme_idx,
+                        n_features,
+                    } => g
+                        .included_features()
                         .clone()
+                        .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
+                        .reshape([1]),
+                    NodeFeature::NLicensees {
+                        lexeme_idx,
+                        n_licensees,
+                    } => g
+                        .included_licensees()
+                        .clone()
+                        .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1])
+                        .reshape([1]),
                 })
                 .collect::<Vec<_>>(),
             0,
@@ -440,7 +469,7 @@ fn get_grammar_losses<B: Backend>(
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
-
+    dbg!(grammar.clone().argmax(2));
     let (grammar_probs, grammar_idx) =
         get_grammar_probs(&string_probs, g, lexicon, &targets.device());
 
@@ -491,11 +520,12 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<(Tensor<B, 2>, Tensor<B, 1>)> {
+) -> anyhow::Result<Tensor<B, 1>> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, grammar_losses, _, _, _) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, rng)?;
     //Probability of generating each of the target strings
-    //let loss: Tensor<B, 1> =loss_per_grammar + grammar_losses.unsqueeze_dim(0), 1).squeeze(1);
-    Ok((loss_per_grammar, grammar_losses))
+    let loss: Tensor<B, 1> =
+        log_sum_exp_dim(loss_per_grammar + grammar_losses.unsqueeze_dim(0), 1).squeeze(1);
+    Ok(-loss.sum_dim(0))
 }

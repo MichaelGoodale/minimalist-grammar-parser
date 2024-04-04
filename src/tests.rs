@@ -563,7 +563,6 @@ fn test_loss() -> Result<()> {
         .collect::<Vec<_>>();
 
     let targets = Tensor::stack(targets, 0);
-
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
 
     let config = NeuralConfig {
@@ -574,7 +573,7 @@ fn test_loss() -> Result<()> {
         temperature: 1.0,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_max_length(
-            LogProb::new(-100.0).unwrap(),
+            LogProb::new(-20.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             200,
             200,
@@ -632,7 +631,7 @@ fn test_loss() -> Result<()> {
 
 #[test]
 fn random_neural_generation() -> Result<()> {
-    let n_lexemes = 1;
+    let n_lexemes = 2;
     let n_pos = 2;
     let n_licensee = 2;
     let n_categories = 2;
@@ -648,8 +647,11 @@ fn random_neural_generation() -> Result<()> {
         [n_lexemes, n_licensee, n_categories],
         &NdArrayDevice::default(),
     );
-    let included_licensees =
-        Tensor::<NdArray, 2>::zeros([n_lexemes, n_licensee + 1], &NdArrayDevice::default());
+    let included_licensees = Tensor::<NdArray, 2>::random(
+        [n_lexemes, n_licensee + 1],
+        burn::tensor::Distribution::Default,
+        &NdArrayDevice::default(),
+    );
     let included_features =
         Tensor::<NdArray, 2>::zeros([n_lexemes, n_pos + 1], &NdArrayDevice::default());
 
@@ -707,12 +709,11 @@ fn random_neural_generation() -> Result<()> {
             temperature: 1.0,
             n_strings_to_sample: 5,
             negative_weight: None,
-            parsing_config: ParsingConfig::new_with_global_steps(
-                LogProb::new(-256.0).unwrap(),
+            parsing_config: ParsingConfig::new(
+                LogProb::new(-7.5).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
                 500,
                 20,
-                5000,
             ),
         };
         get_neural_outputs(&g, targets, &config, &mut rng)?;

@@ -34,7 +34,6 @@ fn retrieve_strings<B: Backend>(
     lexeme_weights: &HashMap<usize, LogProb<f64>>,
     alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
 ) -> (Vec<StringPath>, Vec<StringProbHistory>) {
     let mut grammar_strings: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
@@ -101,23 +100,10 @@ fn get_grammar_probs<B: Backend>(
 ) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
-        let a = string_path.attested_nodes().clone();
-        /*
-        dbg!(a
-            .iter()
-            .map(|x| match x {
-                NodeFeature::Node(x) => format!("{x:?} {:?}", lexicon.get(*x).unwrap()),
-                NodeFeature::NLicensees {
-                    lexeme_idx,
-                    n_licensees,
-                } => format!("{:?} {:?}", lexeme_idx, n_licensees),
-                NodeFeature::NFeatures {
-                    lexeme_idx,
-                    n_features,
-                } => format!("{:?} {:?}", lexeme_idx, n_features),
-            })
-            .collect::<Vec<_>>());*/
-        grammar_sets.entry(a).or_insert(vec![]).push(i as u32);
+        grammar_sets
+            .entry(string_path.attested_nodes().clone())
+            .or_insert(vec![])
+            .push(i as u32);
     }
 
     let mut output = vec![];
@@ -145,22 +131,18 @@ fn get_grammar_probs<B: Backend>(
                         .get_weight(&NeuralProbabilityRecord::Node(*n))
                         .unwrap()
                         .clone(),
-                    NodeFeature::NFeatures {
+                    NodeFeature::NFeats {
                         lexeme_idx,
                         n_features,
-                    } => g
+                        n_licensees,
+                    } => (g
                         .included_features()
                         .clone()
                         .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
-                        .reshape([1]),
-                    NodeFeature::NLicensees {
-                        lexeme_idx,
-                        n_licensees,
-                    } => g
-                        .included_licensees()
-                        .clone()
-                        .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1])
-                        .reshape([1]),
+                        + g.included_licensees()
+                            .clone()
+                            .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1]))
+                    .reshape([1]),
                 })
                 .collect::<Vec<_>>(),
             0,
@@ -173,10 +155,15 @@ fn get_grammar_probs<B: Backend>(
         let lexemes = string_paths[ids[0] as usize]
             .keys()
             .filter_map(|x| {
-                if let NeuralProbabilityRecord::Lexeme(e, lexeme_idx) = x {
+                if let NeuralProbabilityRecord::Lexeme {
+                    node,
+                    id: lexeme_idx,
+                    ..
+                } = x
+                {
                     unattested[*lexeme_idx] = false;
                     attested.push(*lexeme_idx as u32);
-                    Some((*lexeme_idx, lexicon.get(*e).unwrap().clone()))
+                    Some((*lexeme_idx, lexicon.get(*node).unwrap().clone()))
                 } else {
                     None
                 }
@@ -312,7 +299,11 @@ fn get_string_prob<B: Backend>(
                 NeuralProbabilityRecord::MergeRuleProb => {
                     p = p.add_scalar(merge_p * (*count as f64))
                 }
-                NeuralProbabilityRecord::Lexeme(lexeme, lexeme_idx) => {
+                NeuralProbabilityRecord::Lexeme {
+                    node: lexeme,
+                    id: lexeme_idx,
+                    ..
+                } => {
                     let (c, t) = match lexicon.get(*lexeme).unwrap() {
                         FeatureOrLemma::Feature(Feature::Category(c)) => (*c, 0),
                         FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
@@ -348,7 +339,6 @@ pub fn get_grammar<B: Backend>(
         g.lexeme_weights(),
         &alternatives,
         neural_config,
-        rng,
     );
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
@@ -383,7 +373,7 @@ pub fn get_grammar_with_targets<B: Backend>(
 )> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (losses, grammar_losses, grammar_idx, strings, string_probs) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, rng)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     let strings = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
     for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -410,7 +400,6 @@ fn get_grammar_losses<B: Backend>(
     alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
 ) -> anyhow::Result<(
     Tensor<B, 2>,
     Tensor<B, 1>,
@@ -447,7 +436,6 @@ fn get_grammar_losses<B: Backend>(
         g.lexeme_weights(),
         alternatives,
         neural_config,
-        rng,
     );
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -469,7 +457,6 @@ fn get_grammar_losses<B: Backend>(
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
-    dbg!(grammar.clone().argmax(2));
     let (grammar_probs, grammar_idx) =
         get_grammar_probs(&string_probs, g, lexicon, &targets.device());
 
@@ -523,9 +510,12 @@ pub fn get_neural_outputs<B: Backend>(
 ) -> anyhow::Result<Tensor<B, 1>> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, grammar_losses, _, _, _) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, rng)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     //Probability of generating each of the target strings
-    let loss: Tensor<B, 1> =
-        log_sum_exp_dim(loss_per_grammar + grammar_losses.unsqueeze_dim(0), 1).squeeze(1);
-    Ok(-loss.sum_dim(0))
+    let loss: Tensor<B, 1> = log_sum_exp_dim(
+        loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0),
+        1,
+    )
+    .squeeze(1);
+    Ok(-loss)
 }

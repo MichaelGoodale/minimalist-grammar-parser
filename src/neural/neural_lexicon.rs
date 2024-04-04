@@ -3,7 +3,7 @@ use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::{bail, Context};
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
-use burn::tensor::{Data, Int, Shape};
+use burn::tensor::{Data, Shape};
 use itertools::Itertools;
 use logprob::LogProb;
 use petgraph::visit::EdgeRef;
@@ -13,7 +13,7 @@ use petgraph::{
 };
 use rand::seq::SliceRandom;
 use rand::Rng;
-use rand_distr::{Distribution, Gumbel, WeightedIndex};
+use rand_distr::{Distribution, Gumbel};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum EdgeHistory {
@@ -60,7 +60,12 @@ impl EdgeHistory {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum NeuralProbabilityRecord {
-    Lexeme(NodeIndex, usize),
+    Lexeme {
+        node: NodeIndex,
+        id: usize,
+        n_features: usize,
+        n_licensees: usize,
+    },
     Node(NodeIndex),
     MergeRuleProb,
     MoveRuleProb,
@@ -82,16 +87,7 @@ pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
-    n_licensees_sampler: Vec<WeightedIndex<f32>>,
-    n_categories_sampler: Vec<WeightedIndex<f32>>,
-    at_least_n_features: Vec<LogProb<f64>>, // (lexeme, n_features)
-    at_least_n_licensees: Vec<LogProb<f64>>, // (lexeme, n_features)
-    at_most_n_features: Vec<LogProb<f64>>,  // (lexeme, n_features)
-    at_most_n_licensees: Vec<LogProb<f64>>, // (lexeme, n_features)
-    n_lemmas: usize,
     n_lexemes: usize,
-    n_features: usize,
-    n_licensees: usize,
     graph: NeuralGraph,
     device: B::Device,
 }
@@ -344,10 +340,6 @@ fn add_alternatives(map: &mut HashMap<NodeIndex, Vec<NodeIndex>>, nodes: &[NodeI
     }
 }
 
-fn log_1m<B: Backend, const D: usize>(tensor: Tensor<B, D>) -> Tensor<B, D> {
-    (-tensor.exp()).log1p()
-}
-
 impl<B: Backend> NeuralLexicon<B> {
     pub fn get_weight(&self, n: &NeuralProbabilityRecord) -> Option<&Tensor<B, 1>> {
         self.weights.get(n)
@@ -426,22 +418,63 @@ impl<B: Backend> NeuralLexicon<B> {
                     },
                 };
                 graph.add_edge(lexeme_root, node, edge_history);
-                let p = NeuralProbability(
-                    NeuralProbabilityRecord::Lexeme(node, lexeme_idx),
-                    Some(edge_history),
-                    log_prob,
-                );
+                let n_features = 0..=grammar_params.n_features;
+                let n_licensees = match n_licensees {
+                    0 => 0..1,
+                    _ => 1..grammar_params.n_licensees + 1,
+                };
+                let ps =
+                    n_features
+                        .cartesian_product(n_licensees)
+                        .map(|(n_features, n_licensees)| {
+                            let log_prob = log_prob
+                                + tensor_to_log_prob(
+                                    &grammar_params
+                                        .included_features
+                                        .clone()
+                                        .slice([
+                                            lexeme_idx..lexeme_idx + 1,
+                                            n_features..n_features + 1,
+                                        ])
+                                        .reshape([1]),
+                                )
+                                .unwrap()
+                                + tensor_to_log_prob(
+                                    &grammar_params
+                                        .included_licensees
+                                        .clone()
+                                        .slice([
+                                            lexeme_idx..lexeme_idx + 1,
+                                            n_licensees..n_licensees + 1,
+                                        ])
+                                        .reshape([1]),
+                                )
+                                .unwrap();
+                            (
+                                NeuralProbability(
+                                    NeuralProbabilityRecord::Lexeme {
+                                        node,
+                                        id: lexeme_idx,
+                                        n_features,
+                                        n_licensees,
+                                    },
+                                    Some(edge_history),
+                                    log_prob,
+                                ),
+                                node,
+                            )
+                        });
                 alts.push(node);
                 weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
                 let feature = &graph[node].0;
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {
                         all_categories.push(node);
-                        categories_map.entry(*c).or_insert(vec![]).push((p, node));
+                        categories_map.entry(*c).or_insert(vec![]).extend(ps);
                     }
                     FeatureOrLemma::Feature(Feature::Licensee(c)) => {
                         parent_licensees.push(node);
-                        licensees_map.entry(*c).or_insert(vec![]).push((p, node));
+                        licensees_map.entry(*c).or_insert(vec![]).extend(ps);
                     }
                     _ => {
                         panic!("Invalid first feature!")
@@ -606,120 +639,18 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents = new_parents;
             }
         }
-
-        let n_licensees_sampler = (0..grammar_params.n_lexemes)
-            .map(|lexeme_idx| {
-                let v = grammar_params
-                    .included_licensees
-                    .clone()
-                    .slice([
-                        lexeme_idx..lexeme_idx + 1,
-                        0..grammar_params.n_licensees + 1,
-                    ])
-                    .exp()
-                    .into_data()
-                    .convert::<f32>()
-                    .value;
-                WeightedIndex::new(v).unwrap()
-            })
-            .collect::<Vec<_>>();
-        let n_categories_sampler = (0..grammar_params.n_lexemes)
-            .map(|lexeme_idx| {
-                let v = grammar_params
-                    .included_features
-                    .clone()
-                    .slice([lexeme_idx..lexeme_idx + 1, 0..grammar_params.n_features + 1])
-                    .exp()
-                    .into_data()
-                    .convert::<f32>()
-                    .value;
-                WeightedIndex::new(v).unwrap()
-            })
-            .collect::<Vec<_>>();
-
-        let mut at_least_n_licensees = vec![];
-        for lexeme in grammar_params.included_licensees().clone().iter_dim(0) {
-            let mut p: Option<LogProb<f64>> = None;
-            let v = lexeme
-                .into_data()
-                .convert::<f64>()
-                .value
-                .into_iter()
-                .map(|x| {
-                    let v = match p {
-                        Some(p) => p.opposite_prob(),
-                        None => LogProb::new(0.0).unwrap(),
-                    };
-                    let x = LogProb::new(x).unwrap();
-                    p = match p {
-                        Some(p) => Some(x.add_log_prob_clamped(p)),
-                        None => Some(x),
-                    };
-                    v
-                })
-                .collect::<Vec<_>>();
-            at_least_n_licensees.extend(v);
-        }
-        let mut at_least_n_features = vec![];
-        for lexeme in grammar_params.included_features().clone().iter_dim(0) {
-            let mut p: Option<LogProb<f64>> = None;
-            let v = lexeme
-                .into_data()
-                .convert::<f64>()
-                .value
-                .into_iter()
-                .map(|x| {
-                    let v = match p {
-                        Some(p) => p.opposite_prob(),
-                        None => LogProb::new(0.0).unwrap(),
-                    };
-                    let x = LogProb::new(x).unwrap();
-                    p = match p {
-                        Some(p) => Some(x.add_log_prob_clamped(p)),
-                        None => Some(x),
-                    };
-                    v
-                })
-                .collect::<Vec<_>>();
-            dbg!(&v);
-
-            at_least_n_features.extend(v);
-        }
-
-        let at_most_n_licensees = grammar_params
-            .included_licensees
-            .clone()
-            .into_data()
-            .convert::<f64>()
-            .value
-            .into_iter()
-            .map(|x| LogProb::new(x).unwrap())
-            .collect();
-        let at_most_n_features = grammar_params
-            .included_features
-            .clone()
-            .into_data()
-            .convert::<f64>()
-            .value
-            .into_iter()
-            .map(|x| LogProb::new(x).unwrap())
-            .collect();
-
+        categories_map
+            .values_mut()
+            .for_each(|x| x.sort_by(|a, b| a.0 .2.cmp(&b.0 .2)));
+        licensees_map
+            .values_mut()
+            .for_each(|x| x.sort_by(|a, b| a.0 .2.cmp(&b.0 .2)));
         Ok((
             NeuralLexicon {
                 graph,
-                n_categories_sampler,
-                n_licensees_sampler,
                 licensees: licensees_map,
                 categories: categories_map,
                 weights: weights_map,
-                at_least_n_licensees,
-                at_least_n_features,
-                at_most_n_licensees,
-                at_most_n_features,
-                n_licensees: grammar_params.n_licensees,
-                n_features: grammar_params.n_features,
-                n_lemmas: grammar_params.n_lemmas,
                 n_lexemes: grammar_params.n_lexemes,
                 device: grammar_params.device(),
             },
@@ -727,30 +658,8 @@ impl<B: Backend> NeuralLexicon<B> {
         ))
     }
 
-    pub fn n_lemmas(&self) -> usize {
-        self.n_lemmas
-    }
-
     pub fn n_lexemes(&self) -> usize {
         self.n_lexemes
-    }
-
-    pub fn prob_of_at_least_n_licensees(&self, lex: usize, n: usize) -> LogProb<f64> {
-        let i = lex * (1 + self.n_licensees) + n;
-        self.at_least_n_licensees[i]
-    }
-
-    pub fn prob_of_n_licensees(&self, lex: usize, n: usize) -> LogProb<f64> {
-        let i = lex * (1 + self.n_licensees) + n;
-        self.at_most_n_licensees[i]
-    }
-    pub fn prob_of_n_features(&self, lex: usize, n: usize) -> LogProb<f64> {
-        let i = lex * (1 + self.n_features) + n;
-        self.at_most_n_features[i]
-    }
-    pub fn prob_of_at_least_n_features(&self, lex: usize, n: usize) -> LogProb<f64> {
-        let i = lex * (1 + self.n_features) + n;
-        self.at_least_n_features[i]
     }
 }
 

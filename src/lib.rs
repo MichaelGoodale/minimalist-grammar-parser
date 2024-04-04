@@ -17,7 +17,6 @@ use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbability
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
-use rand::Rng;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -529,7 +528,7 @@ where
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
     target_lens: Option<BTreeSet<usize>>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,

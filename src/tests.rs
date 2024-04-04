@@ -535,7 +535,7 @@ fn test_loss() -> Result<()> {
 
     let included_licensees = Tensor::<Autodiff<NdArray>, 2>::full(
         [n_lexemes, n_licensees + 1],
-        -10.0,
+        -20.0,
         &NdArrayDevice::default(),
     )
     .slice_assign(
@@ -548,7 +548,8 @@ fn test_loss() -> Result<()> {
         -10,
         &NdArrayDevice::default(),
     )
-    .slice_assign([1..2, 1..2], Tensor::full([1, 1], 10, &dev));
+    .slice_assign([1..2, 1..2], Tensor::full([1, 1], 10, &dev))
+    .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &dev));
 
     let targets = (1..9)
         .map(|i| {
@@ -573,7 +574,7 @@ fn test_loss() -> Result<()> {
         temperature: 1.0,
         negative_weight: None,
         parsing_config: ParsingConfig::new_with_max_length(
-            LogProb::new(-20.0).unwrap(),
+            LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             200,
             200,
@@ -621,7 +622,7 @@ fn test_loss() -> Result<()> {
         loss.push(val);
     }
 
-    let stored_losses = [15.15, 15.15, 15.15, 15.16, 15.41];
+    let stored_losses = [26.346354, 26.346354, 26.346354, 26.346354, 26.346355];
     dbg!(&loss);
     for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
         approx::assert_relative_eq!(loss, stored_loss, epsilon = 1e-1);

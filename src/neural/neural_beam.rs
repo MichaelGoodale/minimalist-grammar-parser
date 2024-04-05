@@ -292,7 +292,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                 self.burnt |= self
                     .alternatives
                     .get(&n)
-                    .unwrap()
+                    .unwrap_or(&vec![])
                     .iter()
                     .any(|x| self.probability_path.1.contains(&NodeFeature::Node(*x)));
                 self.probability_path.1.insert(nf);

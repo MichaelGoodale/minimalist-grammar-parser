@@ -232,7 +232,7 @@ impl Beam<usize> for NeuralBeam<'_> {
         let NeuralProbability(record, edge_history, new_prob) = x;
 
         if let NeuralProbabilityRecord::Lexeme {
-            node: _,
+            node,
             id,
             n_features,
             n_licensees,
@@ -247,6 +247,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                         n_licensees,
                         n_features,
                     });
+                    self.probability_path.1.insert(NodeFeature::Node(node));
                 }
                 (Some(x), Some(y)) => {
                     self.burnt |= (x != n_features) || (y != n_licensees);
@@ -254,23 +255,6 @@ impl Beam<usize> for NeuralBeam<'_> {
                 _ => panic!("should never happen!"),
             }
         };
-        match record {
-            NeuralProbabilityRecord::Node(n) | NeuralProbabilityRecord::Lexeme { node: n, .. } => {
-                let nf = NodeFeature::Node(n);
-                if !self.probability_path.1.contains(&nf) {
-                    self.log_probability.2 += new_prob;
-                    self.max_log_prob += new_prob;
-                }
-                self.burnt |= self
-                    .alternatives
-                    .get(&n)
-                    .unwrap()
-                    .iter()
-                    .any(|x| self.probability_path.1.contains(&NodeFeature::Node(*x)));
-                self.probability_path.1.insert(nf);
-            }
-            _ => (),
-        }
         match record {
             NeuralProbabilityRecord::Lexeme { .. }
             | NeuralProbabilityRecord::OneProb
@@ -299,7 +283,20 @@ impl Beam<usize> for NeuralBeam<'_> {
                     self.max_log_prob += new_prob;
                 }
             },
-            NeuralProbabilityRecord::Node(_) => (),
+            NeuralProbabilityRecord::Node(n) => {
+                let nf = NodeFeature::Node(n);
+                if !self.probability_path.1.contains(&nf) {
+                    self.log_probability.2 += new_prob;
+                    self.max_log_prob += new_prob;
+                }
+                self.burnt |= self
+                    .alternatives
+                    .get(&n)
+                    .unwrap()
+                    .iter()
+                    .any(|x| self.probability_path.1.contains(&NodeFeature::Node(*x)));
+                self.probability_path.1.insert(nf);
+            }
         }
 
         if let Some(edge_history) = edge_history {

@@ -584,7 +584,7 @@ impl<B: Backend> NeuralLexicon<B> {
             }
 
             let lemmas = [lemma, silent_lemma];
-            add_alternatives(&mut alternative_map, &lemmas);
+            //add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
             for n_categories in 0..grammar_params.n_features {

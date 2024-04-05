@@ -693,7 +693,7 @@ fn random_neural_generation() -> Result<()> {
         )?;
         let targets = (1..9)
             .map(|i| {
-                let mut s: [u32; 10] = [0; 10];
+                let mut s: [u32; 11] = [0; 11];
                 s.iter_mut().take(i).for_each(|x| *x = 3);
                 s[i] = 1;
                 Tensor::<NdArray, 1, Int>::from_data(
@@ -703,10 +703,11 @@ fn random_neural_generation() -> Result<()> {
             })
             .collect::<Vec<_>>();
         let targets = Tensor::stack(targets, 0);
+        dbg!(targets.shape());
         let config = NeuralConfig {
             n_grammars: 1,
             n_strings_per_grammar: 20,
-            padding_length: 10,
+            padding_length: 11,
             temperature: 1.0,
             n_strings_to_sample: 5,
             negative_weight: None,

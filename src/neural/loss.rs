@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::f64::NAN;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{
@@ -12,7 +13,7 @@ use ahash::HashMap;
 use anyhow::bail;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
-use logprob::LogProb;
+use logprob::{log_sum_exp, LogProb};
 use moka::sync::Cache;
 use petgraph::graph::NodeIndex;
 use rand::Rng;
@@ -463,7 +464,7 @@ fn get_grammar_losses<B: Backend>(
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 
-    //(n_targets, n_strings_per_grammar, padding_length, 1)
+    //(n_targets, n_grammar_strings, padding_length, 1)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dims(&[1, 3]).repeat(1, n_strings);
 
     //Probability of generating every target for each string.
@@ -473,7 +474,7 @@ fn get_grammar_losses<B: Backend>(
         .squeeze::<3>(3)
         .sum_dim(2)
         .squeeze(2)
-        .mask_fill(target_s_ids, -250.0);
+        .mask_fill(target_s_ids, -999.0);
 
     let mut loss_per_grammar = vec![];
     for (grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
@@ -487,8 +488,7 @@ fn get_grammar_losses<B: Backend>(
             &loss.device(),
         );
 
-        let loss = loss.clone().select(1, grammar_id.clone()); //+ string_probs.unsqueeze_dim(0);
-
+        let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
         loss_per_grammar.push(log_sum_exp_dim(loss, 1));
         //(n_strings_per_grammar);

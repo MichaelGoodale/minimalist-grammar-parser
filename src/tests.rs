@@ -712,7 +712,7 @@ fn random_neural_generation() -> Result<()> {
             n_strings_to_sample: 5,
             negative_weight: None,
             parsing_config: ParsingConfig::new(
-                LogProb::new(-7.5).unwrap(),
+                LogProb::new(-50.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
                 500,
                 20,

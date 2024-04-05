@@ -86,6 +86,12 @@ fn string_path_to_tensor<B: Backend>(
     s_tensor
 }
 
+struct LexemeTypes {
+    licensee: bool,
+    lexeme_idx: usize,
+    category: usize,
+}
+
 fn get_grammar_probs<B: Backend>(
     string_paths: &[StringProbHistory],
     g: &GrammarParameterization<B>,
@@ -93,11 +99,7 @@ fn get_grammar_probs<B: Backend>(
     device: &B::Device,
 ) -> (
     Tensor<B, 1>,
-    Vec<(
-        Tensor<B, 1, Int>,
-        BTreeSet<usize>,
-        Vec<(usize, NeuralFeature)>,
-    )>,
+    Vec<(Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
 ) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
@@ -125,6 +127,7 @@ fn get_grammar_probs<B: Backend>(
             Data::from(all_valid_strings.as_slice()).convert(),
             device,
         );
+        let mut g_types = vec![];
         let p: Tensor<B, 1> = Tensor::cat(
             key.iter()
                 .map(|n| match n {
@@ -133,16 +136,34 @@ fn get_grammar_probs<B: Backend>(
                         .unwrap()
                         .clone(),
                     NodeFeature::NFeats {
+                        node,
                         lexeme_idx,
                         n_features,
                         n_licensees,
-                    } => (g
-                        .included_features()
-                        .clone()
-                        .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
-                        + g.included_licensees()
+                    } => {
+                        let x = match lexicon.get(*node).unwrap() {
+                            FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
+                                licensee: false,
+                                lexeme_idx: *lexeme_idx,
+                                category: *category,
+                            },
+                            FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
+                                licensee: true,
+                                lexeme_idx: *lexeme_idx,
+                                category: *category,
+                            },
+
+                            _ => panic!("this should not happen!"),
+                        };
+                        g_types.push(x);
+
+                        g.included_features()
                             .clone()
-                            .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1]))
+                            .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
+                            + g.included_licensees()
+                                .clone()
+                                .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1])
+                    }
                     .reshape([1]),
                 })
                 .collect::<Vec<_>>(),
@@ -153,23 +174,17 @@ fn get_grammar_probs<B: Backend>(
             .take(g.n_lexemes())
             .collect::<Vec<_>>();
         let mut attested = vec![];
-        let lexemes = string_paths[ids[0] as usize]
-            .keys()
-            .filter_map(|x| {
-                if let NeuralProbabilityRecord::Lexeme {
-                    node,
-                    id: lexeme_idx,
-                    ..
-                } = x
-                {
-                    unattested[*lexeme_idx] = false;
-                    attested.push(*lexeme_idx as u32);
-                    Some((*lexeme_idx, lexicon.get(*node).unwrap().clone()))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        string_paths[ids[0] as usize].keys().for_each(|x| {
+            if let NeuralProbabilityRecord::Lexeme {
+                node,
+                id: lexeme_idx,
+                ..
+            } = x
+            {
+                unattested[*lexeme_idx] = false;
+                attested.push(*lexeme_idx as u32);
+            }
+        });
 
         let unattested = {
             let unattested = unattested
@@ -216,7 +231,7 @@ fn get_grammar_probs<B: Backend>(
                 .iter()
                 .map(|x| (*x).try_into().unwrap())
                 .collect(),
-            lexemes,
+            g_types,
         ));
     }
     (grammar_probs, output)
@@ -227,7 +242,7 @@ fn get_string_prob<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     g: &GrammarParameterization<B>,
     include: Option<&BTreeSet<usize>>,
-    grammar_cats: &Vec<(usize, NeuralFeature)>,
+    grammar_cats: &[LexemeTypes],
     neural_config: &NeuralConfig,
     device: &B::Device,
 ) -> Tensor<B, 1> {
@@ -259,14 +274,19 @@ fn get_string_prob<B: Backend>(
         Data::new(vec![false], burn::tensor::Shape { dims: [1, 1, 1] }),
         &g.device(),
     );
-    for (lexeme_idx, feature) in grammar_cats {
-        let (cat, t) = match feature {
-            FeatureOrLemma::Feature(Feature::Category(c)) => (*c, 0),
-            FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
-            _ => panic!("Should be impossible!"),
-        };
+    for LexemeTypes {
+        licensee,
+        lexeme_idx,
+        category,
+    } in grammar_cats
+    {
+        let t = if *licensee { 1 } else { 0 };
         cats = cats.slice_assign(
-            [*lexeme_idx..lexeme_idx + 1, cat..cat + 1, t..t + 1],
+            [
+                *lexeme_idx..lexeme_idx + 1,
+                *category..category + 1,
+                t..t + 1,
+            ],
             false_tensor.clone(),
         );
     }
@@ -404,11 +424,7 @@ fn get_grammar_losses<B: Backend>(
 ) -> anyhow::Result<(
     Tensor<B, 2>,
     Tensor<B, 1>,
-    Vec<(
-        Tensor<B, 1, Int>,
-        BTreeSet<usize>,
-        Vec<(usize, NeuralFeature)>,
-    )>,
+    Vec<(Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Vec<StringPath>,
     Vec<StringProbHistory>,
 )> {
@@ -483,7 +499,7 @@ fn get_grammar_losses<B: Backend>(
             lexicon,
             g,
             Some(grammar_set),
-            grammar_cats,
+            &grammar_cats,
             neural_config,
             &loss.device(),
         );

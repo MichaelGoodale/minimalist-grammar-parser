@@ -52,6 +52,7 @@ impl IntoIterator for StringPath {
 pub enum NodeFeature {
     Node(NodeIndex),
     NFeats {
+        node: NodeIndex,
         lexeme_idx: usize,
         n_licensees: usize,
         n_features: usize,
@@ -144,6 +145,7 @@ impl<'a> NeuralBeam<'a> {
             } = record
             {
                 history.1.insert(NodeFeature::NFeats {
+                    node: *node,
                     lexeme_idx: lex,
                     n_licensees,
                     n_features,
@@ -243,6 +245,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                     self.n_features[id] = Some(n_features);
                     self.n_licensees[id] = Some(n_licensees);
                     self.probability_path.1.insert(NodeFeature::NFeats {
+                        node,
                         lexeme_idx: id,
                         n_licensees,
                         n_features,

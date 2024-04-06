@@ -106,6 +106,7 @@ pub struct NeuralBeam<'a> {
     top_id: usize,
     steps: usize,
     record_rules: bool,
+    n_empties: usize,
     max_string_len: Option<usize>,
 }
 
@@ -189,6 +190,7 @@ impl<'a> NeuralBeam<'a> {
                 probability_path: history,
                 top_id: 0,
                 steps: 0,
+                n_empties: 0,
                 record_rules,
                 max_string_len,
             }
@@ -389,6 +391,8 @@ impl Beam<usize> for NeuralBeam<'_> {
                     .map(|(_, p)| *p)
                     .max()
                     .unwrap_or_else(|| LogProb::new(0.0).unwrap());
+        } else {
+            beam.n_empties += 1;
         }
 
         beam.add_to_log_prob(child_prob);
@@ -423,7 +427,7 @@ impl Beam<usize> for NeuralBeam<'_> {
             && self.max_log_prob >= config.min_log_prob
             && self.n_steps() < config.max_steps
             && if let Some(max_length) = self.max_string_len {
-                self.generated_sentence.len() <= max_length
+                self.generated_sentence.len() <= max_length && self.n_empties <= max_length * 2
             } else {
                 true
             }

@@ -95,7 +95,7 @@ pub struct NeuralBeam<'a> {
     max_log_prob: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
-    sentence_guides: Vec<(&'a [usize], usize, LogProb<f64>)>,
+    sentence_guides: Vec<(&'a [usize], LogProb<f64>)>,
     lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
     weight_lookups: &'a HashMap<usize, LogProb<f64>>,
     alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
@@ -174,7 +174,7 @@ impl<'a> NeuralBeam<'a> {
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences
-                    .map(|x| x.iter().map(|x| (x.as_ref(), 0, log_one)).collect())
+                    .map(|x| x.iter().map(|x| (x.as_ref(), log_one)).collect())
                     .unwrap_or_default(),
                 lemma_lookups,
                 alternatives,
@@ -367,22 +367,23 @@ impl Beam<usize> for NeuralBeam<'_> {
     ) {
         beam.queue.shrink_to_fit();
         if let Some(x) = s {
-            beam.generated_sentence.0.push(*x);
+            let position = beam.generated_sentence.0.len();
             beam.sentence_guides
                 .iter_mut()
-                .for_each(|(sentence, position, mut prob)| {
-                    let lemma: usize = *sentence.get(*position).unwrap_or(&0);
+                .for_each(|(sentence, mut prob)| {
+                    let lemma: usize = *sentence.get(position).unwrap_or(&0);
                     prob += match lemma {
                         0 => LogProb::new(-1000.0).unwrap(),
                         _ => *beam.lemma_lookups.get(&(*x, lemma)).unwrap(),
                     }
                 });
+            beam.generated_sentence.0.push(*x);
 
             beam.max_log_prob = beam.log_probability.2
                 + beam
                     .sentence_guides
                     .iter()
-                    .map(|(_, _, p)| *p)
+                    .map(|(_, p)| *p)
                     .max()
                     .unwrap_or_else(|| LogProb::new(0.0).unwrap());
         }

@@ -84,7 +84,8 @@ impl ParsingConfig {
         move_prob: LogProb<f64>,
         max_steps: usize,
         max_beams: usize,
-        max_length: usize,
+        max_length: Option<usize>,
+        global_steps: Option<usize>,
     ) -> ParsingConfig {
         let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
         ParsingConfig {
@@ -92,8 +93,8 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
-            max_length: Some(max_length),
-            global_steps: None,
+            max_length,
+            global_steps,
         }
     }
 

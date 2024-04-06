@@ -161,7 +161,6 @@ fn get_grammar_probs<B: Backend>(
 
                             _ => panic!("this should not happen!"),
                         };
-                        dbg!(x, lexicon.get(*node).unwrap());
                         unattested[*lexeme_idx] = false;
                         attested.push(*lexeme_idx as u32);
                         g_types.push(x);

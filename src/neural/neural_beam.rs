@@ -99,8 +99,7 @@ pub struct NeuralBeam<'a> {
     lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
     weight_lookups: &'a HashMap<usize, LogProb<f64>>,
     alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
-    n_licensees: Vec<Option<usize>>,
-    n_features: Vec<Option<usize>>,
+    n_features: Vec<Option<(usize, usize)>>,
     burnt: bool,
     rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
@@ -155,11 +154,14 @@ impl<'a> NeuralBeam<'a> {
                 panic!()
             };
             history.1.insert(NodeFeature::Node(*node));
-            let n_licensees = (0..lexicon.n_lexemes())
-                .map(|i| if i == lex { Some(0) } else { None })
-                .collect();
             let n_features = (0..lexicon.n_lexemes())
-                .map(|i| if i == lex { Some(n_features) } else { None })
+                .map(|i| {
+                    if i == lex {
+                        Some((n_features, 0))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
 
             let log_one = LogProb::new(0.0).unwrap();
@@ -167,7 +169,6 @@ impl<'a> NeuralBeam<'a> {
             NeuralBeam {
                 max_log_prob: log_probability.2,
                 log_probability: *log_probability,
-                n_licensees,
                 n_features,
                 queue,
                 burnt: false,
@@ -240,10 +241,9 @@ impl Beam<usize> for NeuralBeam<'_> {
             n_licensees,
         } = record
         {
-            match (self.n_features[id], self.n_licensees[id]) {
-                (None, None) => {
-                    self.n_features[id] = Some(n_features);
-                    self.n_licensees[id] = Some(n_licensees);
+            match self.n_features[id] {
+                None => {
+                    self.n_features[id] = Some((n_features, n_licensees));
                     self.probability_path.1.insert(NodeFeature::NFeats {
                         node,
                         lexeme_idx: id,
@@ -252,10 +252,9 @@ impl Beam<usize> for NeuralBeam<'_> {
                     });
                     self.probability_path.1.insert(NodeFeature::Node(node));
                 }
-                (Some(x), Some(y)) => {
+                Some((x, y)) => {
                     self.burnt |= (x != n_features) || (y != n_licensees);
                 }
-                _ => panic!("should never happen!"),
             }
         };
         match record {
@@ -308,28 +307,28 @@ impl Beam<usize> for NeuralBeam<'_> {
                     lexeme_idx,
                     n_licensees,
                 } => {
-                    let max_n_licensee = self.n_licensees[lexeme_idx].unwrap();
+                    let max_n_licensee = self.n_features[lexeme_idx].unwrap().1;
                     self.burnt |= max_n_licensee < n_licensees;
                 }
                 EdgeHistory::AtLeastNCategories {
                     lexeme_idx,
                     n_categories,
                 } => {
-                    let max_n_features = self.n_features[lexeme_idx].unwrap();
+                    let max_n_features = self.n_features[lexeme_idx].unwrap().0;
                     self.burnt |= max_n_features < n_categories;
                 }
                 EdgeHistory::AtMostNLicenseses {
                     lexeme_idx,
                     n_licensees,
                 } => {
-                    let max_n_licensees = self.n_licensees[lexeme_idx].unwrap();
+                    let max_n_licensees = self.n_features[lexeme_idx].unwrap().1;
                     self.burnt |= max_n_licensees != n_licensees;
                 }
                 EdgeHistory::AtMostNCategories {
                     lexeme_idx,
                     n_categories,
                 } => {
-                    let max_n_features = self.n_features[lexeme_idx].unwrap();
+                    let max_n_features = self.n_features[lexeme_idx].unwrap().0;
                     self.burnt |= max_n_features != n_categories;
                 }
             }

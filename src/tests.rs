@@ -167,7 +167,6 @@ fn generation() -> Result<()> {
             max_steps: 100,
             max_beams: 1000,
             global_steps: None,
-            max_length: None,
         },
     )?
     .collect();
@@ -573,12 +572,11 @@ fn test_loss() -> Result<()> {
         n_strings_to_sample: 5,
         temperature: 1.0,
         negative_weight: None,
-        parsing_config: ParsingConfig::new_with_max_length(
+        parsing_config: ParsingConfig::new(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             200,
             200,
-            10,
         ),
     };
     let silent_lemmas =

@@ -147,7 +147,6 @@ mod tests {
             max_steps: 10000,
             max_beams: 100,
             global_steps: None,
-            max_length: None,
         };
     }
 

@@ -58,7 +58,6 @@ pub struct ParsingConfig {
     move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
-    max_length: Option<usize>,
     global_steps: Option<usize>,
 }
 
@@ -75,26 +74,7 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
-            max_length: None,
             global_steps: None,
-        }
-    }
-    pub fn new_with_max_length(
-        min_log_prob: LogProb<f64>,
-        move_prob: LogProb<f64>,
-        max_steps: usize,
-        max_beams: usize,
-        max_length: Option<usize>,
-        global_steps: Option<usize>,
-    ) -> ParsingConfig {
-        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
-        ParsingConfig {
-            min_log_prob,
-            move_prob,
-            max_steps,
-            max_beams,
-            max_length,
-            global_steps,
         }
     }
 
@@ -111,7 +91,6 @@ impl ParsingConfig {
             move_prob,
             max_steps,
             max_beams,
-            max_length: None,
             global_steps: Some(global_steps),
         }
     }
@@ -542,6 +521,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
+        max_string_length: Option<usize>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
@@ -554,6 +534,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
                 lemma_lookups,
                 weight_lookups,
                 alternatives,
+                max_string_length,
                 false,
             )
             .unwrap(),

@@ -106,6 +106,7 @@ pub struct NeuralBeam<'a> {
     top_id: usize,
     steps: usize,
     record_rules: bool,
+    max_string_len: Option<usize>,
 }
 
 impl<'a> NeuralBeam<'a> {
@@ -116,6 +117,7 @@ impl<'a> NeuralBeam<'a> {
         lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
         weight_lookups: &'a HashMap<usize, LogProb<f64>>,
         alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
+        max_string_len: Option<usize>,
         record_rules: bool,
     ) -> Result<impl Iterator<Item = NeuralBeam<'a>> + 'a>
     where
@@ -188,6 +190,7 @@ impl<'a> NeuralBeam<'a> {
                 top_id: 0,
                 steps: 0,
                 record_rules,
+                max_string_len,
             }
         }))
     }
@@ -419,7 +422,7 @@ impl Beam<usize> for NeuralBeam<'_> {
         !self.burnt
             && self.max_log_prob >= config.min_log_prob
             && self.n_steps() < config.max_steps
-            && if let Some(max_length) = config.max_length {
+            && if let Some(max_length) = self.max_string_len {
                 self.generated_sentence.len() <= max_length
             } else {
                 true

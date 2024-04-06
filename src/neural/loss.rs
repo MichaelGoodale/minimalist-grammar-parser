@@ -39,6 +39,7 @@ fn retrieve_strings<B: Backend>(
 ) -> (Vec<StringPath>, Vec<StringProbHistory>) {
     let mut grammar_strings: Vec<_> = vec![];
     let mut string_paths: Vec<_> = vec![];
+    let max_string_len = targets.map(|x| x.iter().map(|x| x.len()).max().unwrap());
 
     for (s, h) in NeuralGenerator::new(
         lexicon,
@@ -46,6 +47,7 @@ fn retrieve_strings<B: Backend>(
         lemma_lookups,
         lexeme_weights,
         alternatives,
+        max_string_len,
         &neural_config.parsing_config,
     )
     .filter(|(s, _h)| s.len() < neural_config.padding_length)

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::f64::NAN;
+use std::hash::Hash;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{
@@ -9,7 +10,7 @@ use super::utils::log_sum_exp_dim;
 use crate::lexicon::Lexiconable;
 use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
-use ahash::HashMap;
+use ahash::{HashMap, HashSet};
 use anyhow::bail;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
@@ -265,6 +266,7 @@ fn get_string_prob<B: Backend>(
         Data::new(vec![false], burn::tensor::Shape { dims: [1, 1, 1] }),
         &g.device(),
     );
+    let mut valids: HashSet<_> = HashSet::default();
     for LexemeTypes {
         licensee,
         lexeme_idx,
@@ -272,14 +274,14 @@ fn get_string_prob<B: Backend>(
     } in grammar_cats
     {
         let t = if *licensee { 1 } else { 0 };
-        cats = cats.slice_assign(
-            [
-                *lexeme_idx..lexeme_idx + 1,
-                *category..category + 1,
-                t..t + 1,
-            ],
-            false_tensor.clone(),
-        );
+        let slice = [
+            *lexeme_idx..lexeme_idx + 1,
+            *category..category + 1,
+            t..t + 1,
+        ];
+
+        valids.insert(slice.clone());
+        cats = cats.slice_assign(slice, false_tensor.clone());
     }
 
     let weights: Tensor<B, 3> = log_softmax(
@@ -321,11 +323,11 @@ fn get_string_prob<B: Backend>(
                         FeatureOrLemma::Feature(Feature::Licensee(c)) => (*c, 1),
                         _ => panic!("Should be impossible!"),
                     };
-                    p = p + weights
-                        .clone()
-                        .slice([*lexeme_idx..lexeme_idx + 1, c..c + 1, t..t + 1])
-                        .mul_scalar(*count)
-                        .reshape([1]);
+                    let slice = [*lexeme_idx..lexeme_idx + 1, c..c + 1, t..t + 1];
+                    if !valids.contains(&slice) {
+                        print!("Cannot find {slice:?} in {valids:?}");
+                    }
+                    p = p + weights.clone().slice(slice).mul_scalar(*count).reshape([1]);
                 }
                 _ => (),
             }

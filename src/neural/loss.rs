@@ -128,6 +128,10 @@ fn get_grammar_probs<B: Backend>(
             device,
         );
         let mut g_types = vec![];
+        let mut unattested = std::iter::repeat(true)
+            .take(g.n_lexemes())
+            .collect::<Vec<_>>();
+        let mut attested = vec![];
         let p: Tensor<B, 1> = Tensor::cat(
             key.iter()
                 .map(|n| match n {
@@ -155,6 +159,8 @@ fn get_grammar_probs<B: Backend>(
 
                             _ => panic!("this should not happen!"),
                         };
+                        unattested[*lexeme_idx] = false;
+                        attested.push(*lexeme_idx as u32);
                         g_types.push(x);
 
                         g.included_features()
@@ -170,21 +176,6 @@ fn get_grammar_probs<B: Backend>(
             0,
         )
         .sum_dim(0);
-        let mut unattested = std::iter::repeat(true)
-            .take(g.n_lexemes())
-            .collect::<Vec<_>>();
-        let mut attested = vec![];
-        string_paths[ids[0] as usize].keys().for_each(|x| {
-            if let NeuralProbabilityRecord::Lexeme {
-                node,
-                id: lexeme_idx,
-                ..
-            } = x
-            {
-                unattested[*lexeme_idx] = false;
-                attested.push(*lexeme_idx as u32);
-            }
-        });
 
         let unattested = {
             let unattested = unattested
@@ -297,7 +288,7 @@ fn get_string_prob<B: Backend>(
             .unsqueeze_dims(&[1, 2])
             .repeat(1, g.n_categories())
             .repeat(2, 2)
-            .mask_fill(cats, -100.0),
+            .mask_fill(cats, -500.0),
         0,
     );
 

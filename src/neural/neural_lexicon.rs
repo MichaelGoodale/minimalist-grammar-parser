@@ -368,7 +368,6 @@ impl<B: Backend> NeuralLexicon<B> {
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
             let lexeme_root = graph.add_node((FeatureOrLemma::Root, LogProb::new(0.0).unwrap()));
-            let mut alts = vec![];
             let mut first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
@@ -429,25 +428,22 @@ impl<B: Backend> NeuralLexicon<B> {
                         .map(|(n_features, n_licensees)| {
                             let log_prob = log_prob
                                 + tensor_to_log_prob(
-                                    &grammar_params
+                                    &(grammar_params
                                         .included_features
                                         .clone()
                                         .slice([
                                             lexeme_idx..lexeme_idx + 1,
                                             n_features..n_features + 1,
                                         ])
-                                        .reshape([1]),
-                                )
-                                .unwrap()
-                                + tensor_to_log_prob(
-                                    &grammar_params
-                                        .included_licensees
-                                        .clone()
-                                        .slice([
-                                            lexeme_idx..lexeme_idx + 1,
-                                            n_licensees..n_licensees + 1,
-                                        ])
-                                        .reshape([1]),
+                                        .reshape([1])
+                                        + grammar_params
+                                            .included_licensees
+                                            .clone()
+                                            .slice([
+                                                lexeme_idx..lexeme_idx + 1,
+                                                n_licensees..n_licensees + 1,
+                                            ])
+                                            .reshape([1])),
                                 )
                                 .unwrap();
                             (
@@ -464,7 +460,6 @@ impl<B: Backend> NeuralLexicon<B> {
                                 node,
                             )
                         });
-                alts.push(node);
                 weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
                 let feature = &graph[node].0;
                 match feature {
@@ -482,7 +477,8 @@ impl<B: Backend> NeuralLexicon<B> {
                 };
             }
 
-            add_alternatives(&mut alternative_map, &alts);
+            add_alternatives(&mut alternative_map, &all_categories);
+            add_alternatives(&mut alternative_map, &parent_licensees);
 
             for (licensee, category) in parent_licensees.iter().zip(all_categories.iter()) {
                 graph.add_edge(

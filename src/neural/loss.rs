@@ -87,6 +87,7 @@ fn string_path_to_tensor<B: Backend>(
     s_tensor
 }
 
+#[derive(Debug, Copy, Clone)]
 struct LexemeTypes {
     licensee: bool,
     lexeme_idx: usize,
@@ -160,6 +161,7 @@ fn get_grammar_probs<B: Backend>(
 
                             _ => panic!("this should not happen!"),
                         };
+                        dbg!(x, lexicon.get(*node).unwrap());
                         unattested[*lexeme_idx] = false;
                         attested.push(*lexeme_idx as u32);
                         g_types.push(x);

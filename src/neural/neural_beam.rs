@@ -253,7 +253,9 @@ impl Beam<usize> for NeuralBeam<'_> {
                     self.probability_path.1.insert(NodeFeature::Node(node));
                 }
                 Some((x, y)) => {
-                    self.burnt |= (x != n_features) || (y != n_licensees);
+                    self.burnt |= (x != n_features)
+                        || (y != n_licensees)
+                        || !self.probability_path.1.contains(&NodeFeature::Node(node));
                 }
             }
         };

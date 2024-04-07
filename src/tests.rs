@@ -1,6 +1,9 @@
 use crate::{
     lexicon::Feature,
-    neural::loss::{get_neural_outputs, NeuralConfig},
+    neural::{
+        loss::{get_grammar_with_targets, get_neural_outputs, NeuralConfig},
+        neural_lexicon::NeuralFeature,
+    },
 };
 use anyhow::Result;
 use rand::SeedableRng;
@@ -617,6 +620,22 @@ fn test_loss() -> Result<()> {
         let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)?
             .into_scalar()
             .elem::<f32>();
+        let output = get_grammar_with_targets(&g, targets.clone(), &config, &mut rng)?;
+        let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
+        let top_g = &output.0[top_g].0;
+        let encoded_grammar = [
+            vec![
+                NeuralFeature::Feature(Feature::Category(0)),
+                NeuralFeature::Lemma(Some(0)),
+            ],
+            vec![
+                NeuralFeature::Feature(Feature::Category(0)),
+                NeuralFeature::Feature(Feature::Selector(0, Direction::Left)),
+                NeuralFeature::Lemma(Some(1)),
+            ],
+        ];
+
+        assert_eq!(top_g, &encoded_grammar);
         loss.push(val);
     }
 

@@ -1,6 +1,4 @@
 use std::collections::BTreeSet;
-use std::f64::NAN;
-use std::hash::Hash;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{
@@ -14,7 +12,7 @@ use ahash::{HashMap, HashSet};
 use anyhow::bail;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
-use logprob::{log_sum_exp, LogProb};
+use logprob::LogProb;
 use moka::sync::Cache;
 use petgraph::graph::NodeIndex;
 use rand::Rng;
@@ -103,7 +101,7 @@ fn get_grammar_probs<B: Backend>(
     device: &B::Device,
 ) -> (
     Tensor<B, 1>,
-    Vec<(Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
+    Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
 ) {
     let mut grammar_sets = HashMap::default();
     for (i, string_path) in string_paths.iter().enumerate() {
@@ -116,6 +114,7 @@ fn get_grammar_probs<B: Backend>(
     let mut output = vec![];
     let mut grammar_probs = Tensor::<B, 1>::full([grammar_sets.len()], 0.0, device);
     for (i, (key, ids)) in grammar_sets.iter().enumerate() {
+        let key_id = *ids.first().unwrap() as usize;
         let mut all_valid_strings = ids.clone();
         for (key2, ids) in grammar_sets
             .iter()
@@ -221,6 +220,7 @@ fn get_grammar_probs<B: Backend>(
         grammar_probs = grammar_probs.slice_assign([i..i + 1], p + attested + unattested);
 
         output.push((
+            key_id,
             string_idx,
             all_valid_strings
                 .iter()
@@ -347,7 +347,10 @@ pub fn get_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<(Vec<(Tensor<B, 3>, Tensor<B, 1>)>, Tensor<B, 1>)> {
+) -> anyhow::Result<(
+    Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
+    Tensor<B, 1>,
+)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (strings, string_probs) = retrieve_strings(
         &lexicon,
@@ -358,10 +361,10 @@ pub fn get_grammar<B: Backend>(
         neural_config,
     );
     let strings = string_path_to_tensor(&strings, g, neural_config);
-
     let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon, &g.device());
     let mut grammars = vec![];
-    for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
+    for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
+        let grammar = lexicon.grammar_features(&string_probs[full_grammar_string_id]);
         //(1, n_grammar_strings)
         let string_probs = get_string_prob(
             &string_probs,
@@ -372,7 +375,11 @@ pub fn get_grammar<B: Backend>(
             neural_config,
             &g.device(),
         );
-        grammars.push((strings.clone().select(0, grammar_id.clone()), string_probs));
+        grammars.push((
+            grammar,
+            strings.clone().select(0, grammar_id.clone()),
+            string_probs,
+        ));
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
@@ -384,16 +391,17 @@ pub fn get_grammar_with_targets<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
 ) -> anyhow::Result<(
-    Vec<(Tensor<B, 3>, Tensor<B, 1>)>,
+    Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
     Tensor<B, 1>,
     Tensor<B, 1>,
 )> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (losses, grammar_losses, grammar_idx, strings, string_probs) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
-    let strings = string_path_to_tensor(&strings, g, neural_config);
+    let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
-    for (grammar_id, grammar_set, grammar_cats) in grammar_idx {
+    for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
+        let grammar = lexicon.grammar_features(&string_probs[full_grammar_string_id]);
         //(1, n_grammar_strings)
         let string_probs = get_string_prob(
             &string_probs,
@@ -404,7 +412,11 @@ pub fn get_grammar_with_targets<B: Backend>(
             neural_config,
             &g.device(),
         );
-        grammars.push((strings.clone().select(0, grammar_id.clone()), string_probs));
+        grammars.push((
+            grammar,
+            string_tensor.clone().select(0, grammar_id.clone()),
+            string_probs,
+        ));
     }
 
     //(n_grammar_strings, padding_length, n_lemmas)
@@ -420,7 +432,7 @@ fn get_grammar_losses<B: Backend>(
 ) -> anyhow::Result<(
     Tensor<B, 2>,
     Tensor<B, 1>,
-    Vec<(Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
+    Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Vec<StringPath>,
     Vec<StringProbHistory>,
 )> {
@@ -489,13 +501,13 @@ fn get_grammar_losses<B: Backend>(
         .mask_fill(target_s_ids, -999.0);
 
     let mut loss_per_grammar = vec![];
-    for (grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
+    for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(
             &string_probs,
             lexicon,
             g,
             Some(grammar_set),
-            &grammar_cats,
+            grammar_cats,
             neural_config,
             &loss.device(),
         );

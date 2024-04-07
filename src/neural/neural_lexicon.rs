@@ -1,3 +1,4 @@
+use super::neural_beam::{NodeFeature, StringProbHistory};
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
@@ -656,6 +657,35 @@ impl<B: Backend> NeuralLexicon<B> {
 
     pub fn n_lexemes(&self) -> usize {
         self.n_lexemes
+    }
+
+    pub fn grammar_features(&self, s: &StringProbHistory) -> Vec<Vec<NeuralFeature>> {
+        let nodes = s.attested_nodes();
+        nodes
+            .iter()
+            .filter_map(|x| match x {
+                NodeFeature::Node(_) => None,
+                NodeFeature::NFeats { node, .. } => {
+                    let mut v = vec![self.get(*node).unwrap().clone()];
+                    let mut current = Some(*node);
+                    while current.is_some() {
+                        let mut next = None;
+                        for child in self
+                            .graph
+                            .neighbors_directed(current.unwrap(), petgraph::Direction::Outgoing)
+                        {
+                            if nodes.contains(&NodeFeature::Node(child)) {
+                                v.push(self.get(child).unwrap().clone());
+                                next = Some(child);
+                                break;
+                            }
+                        }
+                        current = next;
+                    }
+                    Some(v)
+                }
+            })
+            .collect()
     }
 }
 

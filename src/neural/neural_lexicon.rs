@@ -636,12 +636,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents = new_parents;
             }
         }
-        categories_map
-            .values_mut()
-            .for_each(|x| x.sort_by(|a, b| a.0 .2.cmp(&b.0 .2)));
-        licensees_map
-            .values_mut()
-            .for_each(|x| x.sort_by(|a, b| a.0 .2.cmp(&b.0 .2)));
+
         Ok((
             NeuralLexicon {
                 graph,

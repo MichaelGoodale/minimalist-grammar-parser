@@ -3,7 +3,7 @@
 use anyhow::Result;
 use burn::{
     backend::{ndarray::NdArrayDevice, NdArray},
-    tensor::Tensor,
+    tensor::{Data, Int, Tensor},
 };
 use itertools::Itertools;
 use logprob::LogProb;
@@ -199,6 +199,15 @@ fn random_neural_generation() -> Result<()> {
         &NdArrayDevice::default(),
     );
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
+    let targets = (1..9)
+        .map(|i| {
+            let mut s: [u32; 11] = [0; 11];
+            s.iter_mut().take(i).for_each(|x| *x = 3);
+            s[i] = 1;
+            Tensor::<NdArray, 1, Int>::from_data(Data::from(s).convert(), &NdArrayDevice::default())
+        })
+        .collect::<Vec<_>>();
+    let targets = Tensor::stack(targets, 0);
 
     for temperature in [0.1, 0.5, 1.0] {
         let g = GrammarParameterization::new(
@@ -215,25 +224,24 @@ fn random_neural_generation() -> Result<()> {
             pad_vector.clone(),
             end_vector.clone(),
             temperature,
-            false,
+            true,
             &mut rng,
         )?;
-        let targets = Tensor::<NdArray, 2, _>::ones([10, 10], &NdArrayDevice::default()).tril(0);
         let config = NeuralConfig {
             n_grammars: 1,
-            n_strings_per_grammar: 10_000,
-            padding_length: 10,
+            n_strings_per_grammar: 100,
+            padding_length: 11,
             temperature: 1.0,
             n_strings_to_sample: 5,
             negative_weight: None,
             parsing_config: ParsingConfig::new(
                 LogProb::new(-256.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
-                20,
-                1000,
+                50,
+                100,
             ),
         };
-        get_neural_outputs(&g, targets, &config, &mut rng)?;
+        get_neural_outputs(&g, targets.clone(), &config, &mut rng)?;
     }
     Ok(())
 }

@@ -78,6 +78,17 @@ impl ParsingConfig {
         }
     }
 
+    pub fn new_steps_only(move_prob: LogProb<f64>, max_steps: usize) -> ParsingConfig {
+        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob: None,
+            move_prob,
+            max_steps: Some(max_steps),
+            max_beams: None,
+            global_steps: None,
+        }
+    }
+
     pub fn new_with_global_steps(
         min_log_prob: LogProb<f64>,
         move_prob: LogProb<f64>,
@@ -532,7 +543,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         max_string_length: Option<usize>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(10));
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(10000000));
         let target_lens = targets.map(|x| x.iter().map(|x| x.len()).collect());
         parse_heap.extend(
             NeuralBeam::new(

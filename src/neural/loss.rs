@@ -526,6 +526,42 @@ fn get_grammar_losses<B: Backend>(
     ))
 }
 
+pub fn get_all_parses<B: Backend>(
+    g: &GrammarParameterization<B>,
+    targets: Tensor<B, 2, Int>,
+    neural_config: &NeuralConfig,
+    rng: &mut impl Rng,
+) -> anyhow::Result<(Vec<StringPath>, Vec<StringProbHistory>)> {
+    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
+    let n_targets = targets.shape().dims[0];
+
+    let target_vec = (0..n_targets)
+        .map(|i| {
+            let v: Vec<usize> = targets
+                .clone()
+                .slice([i..i + 1])
+                .to_data()
+                .convert::<u32>()
+                .value
+                .into_iter()
+                .take_while(|&x| x != 1)
+                .map(|x| x as usize)
+                .collect();
+            v
+        })
+        .collect::<Vec<_>>();
+
+    let (strings, string_probs) = retrieve_strings(
+        &lexicon,
+        Some(&target_vec),
+        g.lemma_lookups(),
+        g.lexeme_weights(),
+        &alternatives,
+        neural_config,
+    );
+    Ok((strings, string_probs))
+}
+
 pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Tensor<B, 2, Int>,

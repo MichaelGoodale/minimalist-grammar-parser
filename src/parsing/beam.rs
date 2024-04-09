@@ -15,7 +15,9 @@ use thin_vec::{thin_vec, ThinVec};
 pub trait Beam<T>: Sized + Ord {
     type Probability;
 
-    fn log_probability(&self) -> &Self::Probability;
+    fn log_prob(&self) -> LogProb<f64>;
+
+    fn probability(&self) -> &Self::Probability;
 
     fn add_to_log_prob(&mut self, x: Self::Probability);
 
@@ -88,7 +90,11 @@ where
 {
     type Probability = LogProb<f64>;
 
-    fn log_probability(&self) -> &LogProb<f64> {
+    fn log_prob(&self) -> LogProb<f64> {
+        self.log_probability
+    }
+
+    fn probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
 
@@ -170,7 +176,7 @@ where
     }
 
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
+        true
     }
 }
 
@@ -375,7 +381,11 @@ where
 {
     type Probability = LogProb<f64>;
 
-    fn log_probability(&self) -> &LogProb<f64> {
+    fn log_prob(&self) -> LogProb<f64> {
+        self.log_probability
+    }
+
+    fn probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
 
@@ -458,7 +468,7 @@ where
         &mut self.top_id
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
+        true
     }
 }
 
@@ -500,7 +510,12 @@ where
     T: std::cmp::Eq + std::fmt::Debug,
 {
     type Probability = LogProb<f64>;
-    fn log_probability(&self) -> &LogProb<f64> {
+
+    fn log_prob(&self) -> LogProb<f64> {
+        self.log_probability
+    }
+
+    fn probability(&self) -> &LogProb<f64> {
         &self.log_probability
     }
 
@@ -568,7 +583,7 @@ where
         &mut self.top_id
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
-        self.log_probability() > &config.min_log_prob && self.n_steps() < config.max_steps
+        true
     }
 }
 

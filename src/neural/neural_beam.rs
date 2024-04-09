@@ -225,22 +225,18 @@ impl Eq for NeuralBeam<'_> {}
 
 impl Ord for NeuralBeam<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self
-            .generated_sentence
-            .len()
-            .cmp(&other.generated_sentence.len())
-        {
-            std::cmp::Ordering::Less => std::cmp::Ordering::Less,
-            std::cmp::Ordering::Equal => (self.max_log_prob).cmp(&other.max_log_prob),
-            std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
-        }
+        (self.max_log_prob).cmp(&other.max_log_prob)
     }
 }
 
 impl Beam<usize> for NeuralBeam<'_> {
     type Probability = NeuralProbability;
 
-    fn log_probability(&self) -> &Self::Probability {
+    fn log_prob(&self) -> LogProb<f64> {
+        self.log_probability.2
+    }
+
+    fn probability(&self) -> &Self::Probability {
         &self.log_probability
     }
 
@@ -432,8 +428,6 @@ impl Beam<usize> for NeuralBeam<'_> {
     }
     fn pushable(&self, config: &ParsingConfig) -> bool {
         !self.burnt
-            && self.max_log_prob >= config.min_log_prob
-            && self.n_steps() < config.max_steps
             && if let Some(max_length) = self.max_string_len {
                 self.generated_sentence.len() <= max_length && self.n_empties <= max_length * 2
             } else {

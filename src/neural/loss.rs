@@ -536,12 +536,7 @@ pub fn get_neural_outputs<B: Backend>(
     let (loss_per_grammar, grammar_losses, _, _, _) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     //Probability of generating each of the target strings
-    let (loss_per_grammar, idx) = loss_per_grammar
-        .sum_dim(0)
-        .squeeze(0)
-        .max_dim_with_indices(0);
-    //let loss: Tensor<B, 1> =
-    //    (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).squeeze(0);
-    let loss = loss_per_grammar + grammar_losses.select(0, idx);
-    Ok(-loss)
+    let loss: Tensor<B, 1> =
+        (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).squeeze(0);
+    Ok(-log_sum_exp_dim(loss, 0))
 }

@@ -54,10 +54,10 @@ impl From<bool> for Direction {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct ParsingConfig {
-    min_log_prob: LogProb<f64>,
+    min_log_prob: Option<LogProb<f64>>,
     move_prob: LogProb<f64>,
-    max_steps: usize,
-    max_beams: usize,
+    max_steps: Option<usize>,
+    max_beams: Option<usize>,
     global_steps: Option<usize>,
 }
 
@@ -70,10 +70,10 @@ impl ParsingConfig {
     ) -> ParsingConfig {
         let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
         ParsingConfig {
-            min_log_prob,
+            min_log_prob: Some(min_log_prob),
             move_prob,
-            max_steps,
-            max_beams,
+            max_steps: Some(max_steps),
+            max_beams: Some(max_beams),
             global_steps: None,
         }
     }
@@ -87,10 +87,10 @@ impl ParsingConfig {
     ) -> ParsingConfig {
         let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
         ParsingConfig {
-            min_log_prob,
+            min_log_prob: Some(min_log_prob),
             move_prob,
-            max_steps,
-            max_beams,
+            max_steps: Some(max_steps),
+            max_beams: Some(max_beams),
             global_steps: Some(global_steps),
         }
     }
@@ -101,7 +101,6 @@ struct ParseHeap<'a, T, B: Beam<T>, A: Allocator = Global> {
     parse_heap: MinMaxHeap<B, A>,
     phantom: PhantomData<T>,
     global_steps: usize,
-    done: bool,
     config: &'a ParsingConfig,
 }
 
@@ -115,12 +114,30 @@ where
 
     fn push(&mut self, v: B) {
         self.global_steps += 1;
+        let mut pushable = true;
         if let Some(max_steps) = self.config.global_steps {
-            self.done = self.global_steps > max_steps;
+            pushable = self.global_steps > max_steps;
         }
-        if !self.done && v.pushable(self.config) {
-            if self.parse_heap.len() > self.config.max_beams {
-                self.parse_heap.push_pop_min(v);
+
+        if let Some(min_log_prob) = self.config.min_log_prob {
+            if v.log_prob() < min_log_prob {
+                pushable = false;
+            }
+        }
+
+        if let Some(max_steps) = self.config.max_steps {
+            if v.n_steps() > max_steps {
+                pushable = false;
+            }
+        }
+
+        if pushable && v.pushable(self.config) {
+            if let Some(max_beams) = self.config.max_beams {
+                if self.parse_heap.len() > max_beams {
+                    self.parse_heap.push_pop_min(v);
+                } else {
+                    self.parse_heap.push(v);
+                }
             } else {
                 self.parse_heap.push(v);
             }
@@ -156,7 +173,7 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, true)?);
         Ok(FuzzyParser {
             lexicon,
@@ -164,7 +181,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -181,7 +197,7 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, false)?);
         Ok(FuzzyParser {
             lexicon,
@@ -189,7 +205,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -247,7 +262,7 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(ParseBeam::new_single(
             lexicon,
             initial_category,
@@ -261,7 +276,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -275,7 +289,7 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(ParseBeam::new_single(
             lexicon,
             initial_category,
@@ -289,7 +303,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -306,7 +319,7 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(ParseBeam::new_multiple(
             lexicon,
             initial_category,
@@ -320,7 +333,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -337,7 +349,7 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(ParseBeam::new_multiple(
             lexicon,
             initial_category,
@@ -351,7 +363,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -419,7 +430,7 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(GeneratorBeam::new(lexicon, initial_category, true)?);
         Ok(Generator {
             lexicon,
@@ -427,7 +438,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -440,7 +450,7 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(5));
         parse_heap.push(GeneratorBeam::new(lexicon, initial_category, false)?);
         Ok(Generator {
             lexicon,
@@ -448,7 +458,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -470,7 +479,6 @@ where
             merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,
@@ -524,7 +532,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         max_string_length: Option<usize>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(10));
         let target_lens = targets.map(|x| x.iter().map(|x| x.len()).collect());
         parse_heap.extend(
             NeuralBeam::new(
@@ -554,7 +562,6 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
             ),
             parse_heap: ParseHeap {
                 global_steps: 0,
-                done: false,
                 parse_heap,
                 config,
                 phantom: PhantomData,

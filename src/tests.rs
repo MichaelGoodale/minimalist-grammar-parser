@@ -165,10 +165,10 @@ fn generation() -> Result<()> {
         &lex,
         'C',
         &ParsingConfig {
-            min_log_prob: LogProb::new(-64.0).unwrap(),
+            min_log_prob: Some(LogProb::new(-64.0).unwrap()),
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-            max_steps: 100,
-            max_beams: 1000,
+            max_steps: Some(100),
+            max_beams: Some(1000),
             global_steps: None,
         },
     )?

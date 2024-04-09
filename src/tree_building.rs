@@ -142,10 +142,10 @@ mod tests {
 
     lazy_static! {
         static ref CONFIG: ParsingConfig = ParsingConfig {
-            min_log_prob: LogProb::new(-128.0).unwrap(),
+            min_log_prob: Some(LogProb::new(-128.0).unwrap()),
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
-            max_steps: 10000,
-            max_beams: 100,
+            max_steps: Some(10000),
+            max_beams: Some(100),
             global_steps: None,
         };
     }

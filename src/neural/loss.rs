@@ -542,6 +542,6 @@ pub fn get_neural_outputs<B: Backend>(
         .max_dim_with_indices(0);
     //let loss: Tensor<B, 1> =
     //    (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).squeeze(0);
-    let loss = loss_per_grammar + grammar_losses.select(1, idx);
+    let loss = loss_per_grammar + grammar_losses.select(0, idx);
     Ok(-loss)
 }

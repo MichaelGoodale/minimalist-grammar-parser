@@ -550,7 +550,6 @@ fn get_grammar_losses<B: Backend>(
         + neural_config.compatible_weight.opposite_prob().into_inner();
 
     let (compatible_mask, compatible_loss) = compatible_strings(&strings, &target_vec, g);
-    dbg!(compatible_mask.clone(), compatible_loss.clone().detach());
 
     let loss = loss.clone().mask_where(
         compatible_mask,

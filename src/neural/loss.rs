@@ -118,7 +118,7 @@ fn compatible_strings<B: Backend>(strings: &[StringPath], targets: &[Vec<usize>]
             &B::Device::default(),
         ));
     }
-    Tensor::stack(n_compatible, 0)
+    Tensor::stack(n_compatible, 1)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -560,8 +560,8 @@ fn get_grammar_losses<B: Backend>(
                 .clone()
                 .select(1, grammar_id.clone())
                 .max_dim(0)
-                .squeeze(0)
-                .sum_dim(0),
+                .sum_dim(1)
+                .squeeze(0),
         );
         //(n_strings_per_grammar);
     }

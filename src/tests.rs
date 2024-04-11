@@ -616,6 +616,7 @@ fn test_loss() -> Result<()> {
             &mut rng,
         )?;
         let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)?
+            .0
             .into_scalar()
             .elem::<f32>();
         let output = get_grammar_with_targets(&g, targets.clone(), &config, &mut rng)?;

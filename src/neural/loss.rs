@@ -493,6 +493,11 @@ fn get_grammar_losses<B: Backend>(
         alternatives,
         neural_config,
     );
+
+    if strings.is_empty() {
+        bail!("Zero outputted strings!");
+    }
+
     let n_compatible = compatible_strings(&strings, &target_vec);
     let max_compatible = *n_compatible.iter().max().unwrap();
 
@@ -533,10 +538,6 @@ fn get_grammar_losses<B: Backend>(
         0,
     );
     let n_strings = strings.len();
-
-    if n_strings == 0 {
-        bail!("Zero outputted strings!");
-    }
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);

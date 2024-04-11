@@ -127,7 +127,7 @@ where
         self.global_steps += 1;
         let mut pushable = true;
         if let Some(max_steps) = self.config.global_steps {
-            pushable = self.global_steps > max_steps;
+            pushable = self.global_steps < max_steps;
         }
 
         if let Some(min_log_prob) = self.config.min_log_prob {

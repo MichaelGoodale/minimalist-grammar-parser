@@ -572,7 +572,7 @@ fn test_loss() -> Result<()> {
         n_strings_per_grammar: 20,
         padding_length: 10,
         temperature: 1.0,
-        compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
+        compatible_weight: 0.99,
         parsing_config: ParsingConfig::new(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -716,7 +716,7 @@ fn random_neural_generation() -> Result<()> {
         n_strings_per_grammar: 10,
         padding_length: 11,
         temperature: 1.0,
-        compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
+        compatible_weight: 0.5,
         parsing_config: ParsingConfig::new(
             LogProb::new(-500.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),

@@ -49,7 +49,7 @@ fn main() {
             1000,
         );
         let neural_config = NeuralConfig {
-            compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
+            compatible_weight: 0.5,
             n_strings_per_grammar: 1000000,
             padding_length: 11,
             temperature: 1.0,

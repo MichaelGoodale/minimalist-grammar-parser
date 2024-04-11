@@ -19,7 +19,7 @@ use rand::Rng;
 
 pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
-    pub compatible_weight: LogProb<f64>,
+    pub compatible_weight: f64,
     pub padding_length: usize,
     pub temperature: f64,
     pub parsing_config: ParsingConfig,
@@ -547,23 +547,14 @@ fn get_grammar_losses<B: Backend>(
         .sum_dim(2)
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0)
-        + neural_config.compatible_weight.opposite_prob().into_inner();
+        * (1.0 - neural_config.compatible_weight);
 
     let (compatible_mask, compatible_loss) = compatible_strings(&strings, &target_vec, g);
+    dbg!(compatible_mask.clone(), compatible_loss.clone().detach());
 
     let loss = loss.clone().mask_where(
         compatible_mask,
-        log_sum_exp_dim(
-            Tensor::stack::<3>(
-                vec![
-                    compatible_loss + neural_config.compatible_weight.into_inner(),
-                    loss,
-                ],
-                2,
-            ),
-            2,
-        )
-        .squeeze(2),
+        compatible_loss * neural_config.compatible_weight + loss,
     );
 
     let mut loss_per_grammar = vec![];

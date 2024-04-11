@@ -49,12 +49,10 @@ fn main() {
             1000,
         );
         let neural_config = NeuralConfig {
-            n_grammars: 1,
+            compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
             n_strings_per_grammar: 1000000,
             padding_length: 11,
             temperature: 1.0,
-            n_strings_to_sample: 5,
-            negative_weight: None,
             parsing_config: config,
         };
         let start = Instant::now();
@@ -254,12 +252,10 @@ fn random_neural_generation() -> Result<()> {
 
     for temperature in [0.1, 0.5, 1.0] {
         let config = NeuralConfig {
-            n_grammars: 1,
+            compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
             n_strings_per_grammar: 100,
             padding_length: 11,
             temperature: 1.0,
-            n_strings_to_sample: 5,
-            negative_weight: None,
             parsing_config: ParsingConfig::new(
                 LogProb::new(-256.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),

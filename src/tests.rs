@@ -569,12 +569,10 @@ fn test_loss() -> Result<()> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
 
     let config = NeuralConfig {
-        n_grammars: 1,
         n_strings_per_grammar: 20,
         padding_length: 10,
-        n_strings_to_sample: 5,
         temperature: 1.0,
-        negative_weight: None,
+        compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
         parsing_config: ParsingConfig::new(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -715,12 +713,10 @@ fn random_neural_generation() -> Result<()> {
     let targets = Tensor::stack(targets, 0);
     dbg!(targets.shape());
     let config = NeuralConfig {
-        n_grammars: 1,
         n_strings_per_grammar: 10,
         padding_length: 11,
         temperature: 1.0,
-        n_strings_to_sample: 5,
-        negative_weight: None,
+        compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
         parsing_config: ParsingConfig::new(
             LogProb::new(-500.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),

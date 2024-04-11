@@ -551,11 +551,11 @@ fn get_grammar_losses<B: Backend>(
 
     let (compatible_mask, compatible_loss) = compatible_strings(&strings, &target_vec, g);
 
-    let loss = loss.clone().mask_where(
-        compatible_mask,
-        compatible_loss * neural_config.compatible_weight + loss,
-    );
+    let compatible_loss = Tensor::full(compatible_loss.shape(), -999.0, &g.device())
+        .mask_where(compatible_mask, compatible_loss)
+        * neural_config.compatible_weight;
 
+    let loss = loss + compatible_loss;
     let mut loss_per_grammar = vec![];
     for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(

@@ -618,10 +618,13 @@ pub fn get_neural_outputs<B: Backend>(
     rng: &mut impl Rng,
 ) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
+    let (loss_per_grammar, grammar_losses, _, _, _, mut n_compatible) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     //Probability of generating each of the target strings
     let loss: Tensor<B, 1> = (loss_per_grammar.sum_dim(0)).squeeze(0);
+    n_compatible = n_compatible
+        .clone()
+        .mask_fill(n_compatible.equal_elem(0.0), -0.5);
 
     Ok((
         -log_sum_exp_dim(loss, 0),

@@ -493,18 +493,6 @@ fn get_grammar_losses<B: Backend>(
         alternatives,
         neural_config,
     );
-    let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
-        target_vec
-            .iter()
-            .map(|t| {
-                let l = t.len();
-                let v = strings.iter().map(|x| x.len() != l).collect::<Vec<_>>();
-                let ids = Tensor::<B, 1, Bool>::from_data(Data::from(v.as_slice()), &g.device());
-                ids
-            })
-            .collect(),
-        0,
-    );
     let n_compatible = compatible_strings(&strings, &target_vec);
     let max_compatible = *n_compatible.iter().max().unwrap();
 
@@ -531,6 +519,19 @@ fn get_grammar_losses<B: Backend>(
             }
         })
         .collect::<Vec<_>>();
+
+    let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
+        target_vec
+            .iter()
+            .map(|t| {
+                let l = t.len();
+                let v = strings.iter().map(|x| x.len() != l).collect::<Vec<_>>();
+                let ids = Tensor::<B, 1, Bool>::from_data(Data::from(v.as_slice()), &g.device());
+                ids
+            })
+            .collect(),
+        0,
+    );
     let n_strings = strings.len();
 
     if n_strings == 0 {

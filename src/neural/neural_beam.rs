@@ -225,7 +225,15 @@ impl Eq for NeuralBeam<'_> {}
 
 impl Ord for NeuralBeam<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.max_log_prob.cmp(&other.max_log_prob)
+        match self
+            .generated_sentence
+            .len()
+            .cmp(&other.generated_sentence.len())
+        {
+            std::cmp::Ordering::Less => std::cmp::Ordering::Less,
+            std::cmp::Ordering::Equal => (self.max_log_prob).cmp(&other.max_log_prob),
+            std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
+        }
     }
 }
 

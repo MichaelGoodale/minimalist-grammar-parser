@@ -10,6 +10,7 @@ use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::{HashMap, HashSet};
 use anyhow::bail;
+use burn::module::Module;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
 use logprob::LogProb;
@@ -87,11 +88,11 @@ fn string_path_to_tensor<B: Backend>(
 
 ///Returns (n_targets, n_strings), (n_targets, n_strings)
 ///Left has if it is a compatible string, and right has its prob of being generated.
-fn compatible_strings(strings: &[StringPath], targets: &[Vec<usize>]) -> Vec<u32> {
-    let mut n_compatible = vec![];
+fn compatible_strings<B: Backend>(strings: &[StringPath], targets: &[Vec<usize>]) -> Tensor<B, 2> {
+    let mut n_compatible = Vec::with_capacity(strings.len());
 
     for s in strings.iter() {
-        let mut n_compatible_per_string = 0;
+        let mut n_compatible_per_string = vec![];
         for target in targets {
             let mut string_target_map = BTreeMap::default();
             let mut compatible = s.len() == target.len();
@@ -110,11 +111,14 @@ fn compatible_strings(strings: &[StringPath], targets: &[Vec<usize>]) -> Vec<u32
                     }
                 }
             }
-            n_compatible_per_string += if compatible { 1 } else { 0 };
+            n_compatible_per_string.push(if compatible { 1.0 } else { 0.0 });
         }
-        n_compatible.push(n_compatible_per_string);
+        n_compatible.push(Tensor::<B, 1>::from_data(
+            Data::from(n_compatible_per_string.as_slice()).convert(),
+            &B::Device::default(),
+        ));
     }
-    n_compatible
+    Tensor::stack(n_compatible, 0)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -466,7 +470,7 @@ fn get_grammar_losses<B: Backend>(
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Vec<StringPath>,
     Vec<StringProbHistory>,
-    Vec<u32>,
+    Tensor<B, 1>,
 )> {
     let n_targets = targets.shape().dims[0];
 
@@ -536,6 +540,7 @@ fn get_grammar_losses<B: Backend>(
         .mask_fill(target_s_ids, -999.0);
 
     let mut loss_per_grammar = vec![];
+    let mut compatible_per_grammar = vec![];
     for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(
             &string_probs,
@@ -550,6 +555,14 @@ fn get_grammar_losses<B: Backend>(
         let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
         loss_per_grammar.push(log_sum_exp_dim(loss, 1));
+        compatible_per_grammar.push(
+            n_compatible
+                .clone()
+                .select(1, grammar_id.clone())
+                .max_dim(0)
+                .squeeze(0)
+                .sum_dim(0),
+        );
         //(n_strings_per_grammar);
     }
     Ok((
@@ -558,7 +571,7 @@ fn get_grammar_losses<B: Backend>(
         grammar_idx,
         strings,
         string_probs,
-        n_compatible,
+        Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
     ))
 }
 
@@ -610,11 +623,8 @@ pub fn get_neural_outputs<B: Backend>(
     //Probability of generating each of the target strings
     let loss: Tensor<B, 1> = (loss_per_grammar.sum_dim(0)).squeeze(0);
 
-    let n_compatible =
-        Tensor::<B, 1, Int>::from_data(Data::from(n_compatible.as_slice()).convert(), &g.device())
-            .float();
     Ok((
         -log_sum_exp_dim(loss, 0),
-        (n_compatible * -grammar_losses).sum(),
+        (n_compatible * -grammar_losses).sum_dim(0),
     ))
 }

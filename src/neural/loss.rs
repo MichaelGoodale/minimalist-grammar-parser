@@ -557,7 +557,6 @@ fn get_grammar_losses<B: Backend>(
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
 
-    let loss = loss;
     let mut loss_per_grammar = vec![];
     for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(

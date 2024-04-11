@@ -252,7 +252,7 @@ fn random_neural_generation() -> Result<()> {
 
     for temperature in [0.1, 0.5, 1.0] {
         let config = NeuralConfig {
-            compatible_weight: LogProb::from_raw_prob(0.5).unwrap(),
+            compatible_weight: 0.5,
             n_strings_per_grammar: 100,
             padding_length: 11,
             temperature: 1.0,

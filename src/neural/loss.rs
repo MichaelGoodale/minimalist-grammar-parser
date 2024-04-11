@@ -87,18 +87,12 @@ fn string_path_to_tensor<B: Backend>(
 
 ///Returns (n_targets, n_strings), (n_targets, n_strings)
 ///Left has if it is a compatible string, and right has its prob of being generated.
-fn compatible_strings<B: Backend>(
-    strings: &[StringPath],
-    targets: &[Vec<usize>],
-    g: &GrammarParameterization<B>,
-) -> (Tensor<B, 2, Bool>, Tensor<B, 2>) {
-    let mut mask = vec![];
-    let mut probs = vec![];
+fn compatible_strings(strings: &[StringPath], targets: &[Vec<usize>]) -> Vec<usize> {
+    let mut n_compatible = vec![];
+
     for s in strings.iter() {
-        let mut compatible_per_target: Vec<bool> = vec![];
-        let mut p_per_target: Vec<_> = vec![];
+        let mut n_compatible_per_string = 0;
         for target in targets {
-            let mut prob_of_target = Tensor::<B, 2>::zeros([1, 1], &g.device());
             let mut string_target_map = BTreeMap::default();
             let mut compatible = s.len() == target.len();
             if compatible {
@@ -106,8 +100,6 @@ fn compatible_strings<B: Backend>(
                     match string_target_map.entry(c) {
                         std::collections::btree_map::Entry::Vacant(v) => {
                             v.insert(c_t);
-                            prob_of_target = prob_of_target
-                                + g.lemmas().clone().slice([*c..c + 1, *c_t..c_t + 1]);
                         }
                         std::collections::btree_map::Entry::Occupied(v) => {
                             if v.get() != &c_t {
@@ -118,20 +110,11 @@ fn compatible_strings<B: Backend>(
                     }
                 }
             }
-            p_per_target.push(prob_of_target);
-            compatible_per_target.push(compatible);
+            n_compatible_per_string += if compatible { 1 } else { 0 };
         }
-        probs.push(Tensor::cat(p_per_target, 1));
-
-        mask.push(Tensor::<B, 1, Bool>::from_data(
-            Data::from(compatible_per_target.as_slice()),
-            &g.device(),
-        ));
+        n_compatible.push(n_compatible_per_string);
     }
-    (
-        Tensor::stack(mask, 0).transpose(),
-        Tensor::cat(probs, 0).transpose(),
-    )
+    n_compatible
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -527,6 +510,32 @@ fn get_grammar_losses<B: Backend>(
     if n_strings == 0 {
         bail!("Zero outputted strings!");
     }
+    let n_compatible = compatible_strings(&strings, &target_vec);
+    let max_compatible = *n_compatible.iter().max().unwrap();
+
+    let strings = strings
+        .into_iter()
+        .zip(n_compatible.iter())
+        .filter_map(|(s, n_compatible)| {
+            if n_compatible == &max_compatible {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let string_probs = string_probs
+        .into_iter()
+        .zip(n_compatible)
+        .filter_map(|(s, n_compatible)| {
+            if n_compatible == max_compatible {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
@@ -546,16 +555,9 @@ fn get_grammar_losses<B: Backend>(
         .squeeze::<3>(3)
         .sum_dim(2)
         .squeeze(2)
-        .mask_fill(target_s_ids, -999.0)
-        * (1.0 - neural_config.compatible_weight);
+        .mask_fill(target_s_ids, -999.0);
 
-    let (compatible_mask, compatible_loss) = compatible_strings(&strings, &target_vec, g);
-
-    let compatible_loss = Tensor::full(compatible_loss.shape(), -999.0, &g.device())
-        .mask_where(compatible_mask, compatible_loss)
-        * neural_config.compatible_weight;
-
-    let loss = loss + compatible_loss;
+    let loss = loss;
     let mut loss_per_grammar = vec![];
     for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(

@@ -87,7 +87,7 @@ fn string_path_to_tensor<B: Backend>(
 
 ///Returns (n_targets, n_strings), (n_targets, n_strings)
 ///Left has if it is a compatible string, and right has its prob of being generated.
-fn compatible_strings(strings: &[StringPath], targets: &[Vec<usize>]) -> Vec<usize> {
+fn compatible_strings(strings: &[StringPath], targets: &[Vec<usize>]) -> Vec<u32> {
     let mut n_compatible = vec![];
 
     for s in strings.iter() {
@@ -427,7 +427,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     Tensor<B, 1>,
 )> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (losses, grammar_losses, grammar_idx, strings, string_probs) =
+    let (losses, grammar_losses, grammar_idx, strings, string_probs, _) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
@@ -466,6 +466,7 @@ fn get_grammar_losses<B: Backend>(
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Vec<StringPath>,
     Vec<StringProbHistory>,
+    Vec<u32>,
 )> {
     let n_targets = targets.shape().dims[0];
 
@@ -499,31 +500,6 @@ fn get_grammar_losses<B: Backend>(
     }
 
     let n_compatible = compatible_strings(&strings, &target_vec);
-    let max_compatible = *n_compatible.iter().max().unwrap();
-
-    let strings = strings
-        .into_iter()
-        .zip(n_compatible.iter())
-        .filter_map(|(s, n_compatible)| {
-            if n_compatible == &max_compatible {
-                Some(s)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let string_probs = string_probs
-        .into_iter()
-        .zip(n_compatible)
-        .filter_map(|(s, n_compatible)| {
-            if n_compatible == max_compatible {
-                Some(s)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -582,6 +558,7 @@ fn get_grammar_losses<B: Backend>(
         grammar_idx,
         strings,
         string_probs,
+        n_compatible,
     ))
 }
 
@@ -626,12 +603,18 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<Tensor<B, 1>> {
+) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (loss_per_grammar, grammar_losses, _, _, _) =
+    let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
     //Probability of generating each of the target strings
-    let loss: Tensor<B, 1> =
-        (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).squeeze(0);
-    Ok(-log_sum_exp_dim(loss, 0))
+    let loss: Tensor<B, 1> = (loss_per_grammar.sum_dim(0)).squeeze(0);
+
+    let n_compatible =
+        Tensor::<B, 1, Int>::from_data(Data::from(n_compatible.as_slice()).convert(), &g.device())
+            .float();
+    Ok((
+        -log_sum_exp_dim(loss, 0),
+        (n_compatible * -grammar_losses).sum(),
+    ))
 }

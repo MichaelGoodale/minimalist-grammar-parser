@@ -77,9 +77,9 @@ checksum = "8901269c6307e8d93993578286ac0edf7f195079ffff5ebdeea6a59ffb7e36bc"
 
 [[package]]
 name = "anyhow"
-version = "1.0.81"
+version = "1.0.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0952808a6c2afd1aa8947271f3a60f1a6763c7b912d210184c5149b5cf147247"
+checksum = "f538837af36e6f6a9be0faa67f9a314f8119e4e4b5867c6ab40ed60360142519"
 
 [[package]]
 name = "approx"
@@ -230,7 +230,7 @@ dependencies = [
 [[package]]
 name = "burn"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-core",
  "burn-train",
@@ -239,7 +239,7 @@ dependencies = [
 [[package]]
 name = "burn-autodiff"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -250,7 +250,7 @@ dependencies = [
 [[package]]
 name = "burn-candle"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-tensor",
  "candle-core",
@@ -261,7 +261,7 @@ dependencies = [
 [[package]]
 name = "burn-common"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -276,7 +276,7 @@ dependencies = [
 [[package]]
 name = "burn-compute"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -293,7 +293,7 @@ dependencies = [
 [[package]]
 name = "burn-core"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "bincode",
  "burn-autodiff",
@@ -321,7 +321,7 @@ dependencies = [
 [[package]]
 name = "burn-dataset"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "csv",
  "derive-new",
@@ -346,7 +346,7 @@ dependencies = [
 [[package]]
 name = "burn-derive"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "derive-new",
  "proc-macro2",
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "burn-fusion"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -371,7 +371,7 @@ dependencies = [
 [[package]]
 name = "burn-jit"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -391,7 +391,7 @@ dependencies = [
 [[package]]
 name = "burn-ndarray"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-autodiff",
  "burn-common",
@@ -409,7 +409,7 @@ dependencies = [
 [[package]]
 name = "burn-tch"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-tensor",
  "half",
@@ -421,7 +421,7 @@ dependencies = [
 [[package]]
 name = "burn-tensor"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -436,7 +436,7 @@ dependencies = [
 [[package]]
 name = "burn-train"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-core",
  "crossterm",
@@ -455,7 +455,7 @@ dependencies = [
 [[package]]
 name = "burn-wgpu"
 version = "0.13.0"
-source = "git+https://github.com/tracel-ai/burn.git#2f885480ede27372a888f31888ff0519ce85c673"
+source = "git+https://github.com/tracel-ai/burn.git#15f2e49aca4b757973264cd40c00bd58698ebd9a"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -2294,9 +2294,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.35"
+version = "1.0.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "291ec9ab5efd934aaf503a6466c5d5251535d108ee747472c3977cc5acc868ef"
+checksum = "0fa76aaf39101c457836aec0ce2316dbdc3ab723cdda1c6bd4e6ad4208acaca7"
 dependencies = [
  "proc-macro2",
 ]
@@ -2971,9 +2971,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.30.9"
+version = "0.30.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9a84fe4cfc513b41cb2596b624e561ec9e7e1c4b46328e496ed56a53514ef2a"
+checksum = "26d7c217777061d5a2d652aea771fb9ba98b6dade657204b08c4b9604d11555b"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",
@@ -3127,9 +3127,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.34"
+version = "0.3.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
+checksum = "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885"
 dependencies = [
  "deranged",
  "itoa",
@@ -3150,9 +3150,9 @@ checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "time-macros"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ba3a3ef41e6672a2f0f001392bb5dcd3ff0a9992d618ca761a11c3121547774"
+checksum = "3f252a68540fde3a3877aeea552b832b40ab9a69e318efd078774a01ddee1ccf"
 dependencies = [
  "num-conv",
  "time-core",

@@ -625,7 +625,7 @@ pub fn get_neural_outputs<B: Backend>(
         .clone()
         .mask_fill(n_compatible.equal_elem(0.0), -0.5);
     let loss: Tensor<B, 1> =
-        (loss_per_grammar.sum_dim(0) + grammar_losses.clone().unsqueeze_dim(0)).squeeze(0);
+        (loss_per_grammar.sum_dim(0) + grammar_losses.clone().detach().unsqueeze_dim(0)).squeeze(0);
 
     Ok((
         -log_sum_exp_dim(loss, 0),

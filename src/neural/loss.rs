@@ -625,15 +625,16 @@ pub fn get_neural_outputs<B: Backend>(
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
 
     let (max_n_compatible, idx) = n_compatible.clone().max_dim_with_indices(0);
-    let mask = n_compatible.clone().equal_elem(0.0);
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
-    let best_grammar: Tensor<B, 1> = loss_per_grammar.clone().select(0, idx).max_dim(0);
-    //let loss: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone().detach();
+    let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses.clone())
+        .clone()
+        .select(0, idx)
+        .max_dim(0);
 
     Ok((
         -best_grammar.clone(),
-        (n_compatible.clone().mask_fill(mask, -0.5) * -grammar_losses).sum_dim(0),
+        (n_compatible.clone() * -grammar_losses).sum_dim(0),
         max_n_compatible,
     ))
 }

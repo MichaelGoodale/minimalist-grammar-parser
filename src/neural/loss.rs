@@ -555,14 +555,17 @@ fn get_grammar_losses<B: Backend>(
         let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
         loss_per_grammar.push(log_sum_exp_dim(loss, 1));
-        compatible_per_grammar.push(
-            n_compatible
-                .clone()
-                .select(1, grammar_id.clone())
-                .max_dim(0)
-                .sum_dim(1)
-                .squeeze(0),
-        );
+
+        let n_compatible = n_compatible
+            .clone()
+            .select(1, grammar_id.clone())
+            .sum_dim(1)
+            .squeeze(1);
+        let n_compatible = n_compatible
+            .clone()
+            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
+        //How many compatible strings in the grammar?
+        compatible_per_grammar.push(n_compatible.sum_dim(0));
         //(n_strings_per_grammar);
     }
     Ok((
@@ -621,16 +624,16 @@ pub fn get_neural_outputs<B: Backend>(
     let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
 
+    let (max_n_compatible, idx) = n_compatible.clone().max_dim_with_indices(0);
     let mask = n_compatible.clone().equal_elem(0.0);
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
-    let best_grammar: Tensor<B, 1> =
-        (loss_per_grammar.clone().mask_fill(mask.clone(), -999.0)).max_dim(0);
+    let best_grammar: Tensor<B, 1> = loss_per_grammar.clone().select(0, idx).max_dim(0);
     //let loss: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone().detach();
 
     Ok((
         -best_grammar.clone(),
         (n_compatible.clone().mask_fill(mask, -0.5) * -grammar_losses).sum_dim(0),
-        n_compatible,
+        max_n_compatible,
     ))
 }

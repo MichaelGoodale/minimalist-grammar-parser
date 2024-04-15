@@ -630,7 +630,7 @@ pub fn get_neural_outputs<B: Backend>(
     let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses.clone())
         .clone()
         .select(0, idx)
-        .max_dim(0);
+        .mean_dim(0);
 
     Ok((
         -best_grammar.clone(),

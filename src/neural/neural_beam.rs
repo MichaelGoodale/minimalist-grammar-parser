@@ -108,6 +108,7 @@ pub struct NeuralBeam<'a> {
     record_rules: bool,
     n_empties: usize,
     max_string_len: Option<usize>,
+    n_lexemes: usize,
 }
 
 impl<'a> NeuralBeam<'a> {
@@ -125,6 +126,7 @@ impl<'a> NeuralBeam<'a> {
         T: AsRef<[usize]>,
     {
         let category_indexes = lexicon.find_category(&initial_category)?;
+        let n_lexemes = category_indexes.len();
         Ok(category_indexes.iter().map(move |(log_probability, node)| {
             let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
             queue.push(Reverse(ParseMoment::new(
@@ -193,6 +195,7 @@ impl<'a> NeuralBeam<'a> {
                 n_empties: 0,
                 record_rules,
                 max_string_len,
+                n_lexemes,
             }
         }))
     }
@@ -281,8 +284,8 @@ impl Beam<usize> for NeuralBeam<'_> {
                             self.log_probability.2 += new_prob;
                             self.max_log_prob += new_prob;
                         }
-                        NeuralProbabilityRecord::Lexeme { id: lexeme_idx, .. } => {
-                            let w = self.weight_lookups[&lexeme_idx];
+                        NeuralProbabilityRecord::Lexeme { .. } => {
+                            let w = LogProb::new(-(self.n_lexemes as f64).ln()).unwrap();
                             self.log_probability.2 += w;
                             self.max_log_prob += w;
                         }

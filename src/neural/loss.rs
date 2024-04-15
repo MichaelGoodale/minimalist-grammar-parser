@@ -13,6 +13,7 @@ use anyhow::bail;
 use burn::module::Module;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
+use itertools::Itertools;
 use logprob::LogProb;
 use moka::sync::Cache;
 use petgraph::graph::NodeIndex;
@@ -128,11 +129,120 @@ struct LexemeTypes {
     category: usize,
 }
 
+fn get_prob_of_grammar<B: Backend>(
+    nodes: &BTreeSet<NodeFeature>,
+    lexicon: &NeuralLexicon<B>,
+    g: &GrammarParameterization<B>,
+) -> (Tensor<B, 1>, Vec<LexemeTypes>) {
+    let mut g_types = vec![];
+    let mut unattested = std::iter::repeat(true)
+        .take(g.n_lexemes())
+        .collect::<Vec<_>>();
+    let mut attested = vec![];
+    let p: Tensor<B, 1> = Tensor::cat(
+        nodes
+            .iter()
+            .map(|n| match n {
+                NodeFeature::Node(n) => lexicon
+                    .get_weight(&NeuralProbabilityRecord::Node(*n))
+                    .unwrap()
+                    .clone(),
+                NodeFeature::NFeats {
+                    node,
+                    lexeme_idx,
+                    n_features,
+                    n_licensees,
+                } => {
+                    let x = match lexicon.get(*node).unwrap() {
+                        FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
+                            licensee: false,
+                            lexeme_idx: *lexeme_idx,
+                            category: *category,
+                        },
+                        FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
+                            licensee: true,
+                            lexeme_idx: *lexeme_idx,
+                            category: *category,
+                        },
+
+                        _ => panic!("this should not happen!"),
+                    };
+                    unattested[*lexeme_idx] = false;
+                    attested.push(*lexeme_idx as u32);
+                    g_types.push(x);
+
+                    g.included_features()
+                        .clone()
+                        .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
+                        + g.included_licensees()
+                            .clone()
+                            .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1])
+                }
+                .reshape([1]),
+            })
+            .collect::<Vec<_>>(),
+        0,
+    )
+    .sum_dim(0);
+
+    let unattested = {
+        let unattested = unattested
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+            .collect::<Vec<_>>();
+        if unattested.is_empty() {
+            Tensor::<B, 1>::zeros([1], &g.device())
+        } else {
+            let unattested = Tensor::<B, 1, Int>::from_data(
+                Data::from(unattested.as_slice()).convert(),
+                &g.device(),
+            );
+            g.include_lemma()
+                .clone()
+                .slice([0..g.n_lexemes(), 0..1])
+                .select(0, unattested)
+                .sum_dim(0)
+                .reshape([1])
+        }
+    };
+    let attested = {
+        if attested.is_empty() {
+            Tensor::<B, 1>::zeros([1], &g.device())
+        } else {
+            let attested = Tensor::<B, 1, Int>::from_data(
+                Data::from(attested.as_slice()).convert(),
+                &g.device(),
+            );
+            g.include_lemma()
+                .clone()
+                .slice([0..g.n_lexemes(), 1..2])
+                .select(0, attested)
+                .sum_dim(0)
+                .reshape([1])
+        }
+    };
+
+    (p + attested + unattested, g_types)
+}
+
+fn get_grammar_per_string<B: Backend>(
+    string_paths: &[StringProbHistory],
+    g: &GrammarParameterization<B>,
+    lexicon: &NeuralLexicon<B>,
+) -> Tensor<B, 1> {
+    let mut grammar_probs = Tensor::<B, 1>::full([string_paths.len()], 0.0, &g.device());
+    for (i, string_path) in string_paths.iter().enumerate() {
+        let (p, _) = get_prob_of_grammar(string_path.attested_nodes(), lexicon, g);
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
+    }
+    grammar_probs
+}
+
 fn get_grammar_probs<B: Backend>(
     string_paths: &[StringProbHistory],
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
-    device: &B::Device,
 ) -> (
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
@@ -146,7 +256,7 @@ fn get_grammar_probs<B: Backend>(
     }
 
     let mut output = vec![];
-    let mut grammar_probs = Tensor::<B, 1>::full([grammar_sets.len()], 0.0, device);
+    let mut grammar_probs = Tensor::<B, 1>::full([grammar_sets.len()], 0.0, &g.device());
     for (i, (key, ids)) in grammar_sets.iter().enumerate() {
         let key_id = *ids.first().unwrap() as usize;
         let mut all_valid_strings = ids.clone();
@@ -162,96 +272,10 @@ fn get_grammar_probs<B: Backend>(
         }
         let string_idx = Tensor::<B, 1, Int>::from_data(
             Data::from(all_valid_strings.as_slice()).convert(),
-            device,
+            &g.device(),
         );
-        let mut g_types = vec![];
-        let mut unattested = std::iter::repeat(true)
-            .take(g.n_lexemes())
-            .collect::<Vec<_>>();
-        let mut attested = vec![];
-        let p: Tensor<B, 1> = Tensor::cat(
-            key.iter()
-                .map(|n| match n {
-                    NodeFeature::Node(n) => lexicon
-                        .get_weight(&NeuralProbabilityRecord::Node(*n))
-                        .unwrap()
-                        .clone(),
-                    NodeFeature::NFeats {
-                        node,
-                        lexeme_idx,
-                        n_features,
-                        n_licensees,
-                    } => {
-                        let x = match lexicon.get(*node).unwrap() {
-                            FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
-                                licensee: false,
-                                lexeme_idx: *lexeme_idx,
-                                category: *category,
-                            },
-                            FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
-                                licensee: true,
-                                lexeme_idx: *lexeme_idx,
-                                category: *category,
-                            },
-
-                            _ => panic!("this should not happen!"),
-                        };
-                        unattested[*lexeme_idx] = false;
-                        attested.push(*lexeme_idx as u32);
-                        g_types.push(x);
-
-                        g.included_features()
-                            .clone()
-                            .slice([*lexeme_idx..lexeme_idx + 1, *n_features..n_features + 1])
-                            + g.included_licensees()
-                                .clone()
-                                .slice([*lexeme_idx..lexeme_idx + 1, *n_licensees..n_licensees + 1])
-                    }
-                    .reshape([1]),
-                })
-                .collect::<Vec<_>>(),
-            0,
-        )
-        .sum_dim(0);
-
-        let unattested = {
-            let unattested = unattested
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-                .collect::<Vec<_>>();
-            if unattested.is_empty() {
-                Tensor::<B, 1>::zeros([1], &g.device())
-            } else {
-                let unattested = Tensor::<B, 1, Int>::from_data(
-                    Data::from(unattested.as_slice()).convert(),
-                    &g.device(),
-                );
-                g.include_lemma()
-                    .clone()
-                    .slice([0..g.n_lexemes(), 0..1])
-                    .select(0, unattested)
-                    .sum_dim(0)
-                    .reshape([1])
-            }
-        };
-        let attested = {
-            if attested.is_empty() {
-                Tensor::<B, 1>::zeros([1], &g.device())
-            } else {
-                let attested = Tensor::<B, 1, Int>::from_data(
-                    Data::from(attested.as_slice()).convert(),
-                    &g.device(),
-                );
-                g.include_lemma()
-                    .clone()
-                    .slice([0..g.n_lexemes(), 1..2])
-                    .select(0, attested)
-                    .sum_dim(0)
-                    .reshape([1])
-            }
-        };
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p + attested + unattested);
+        let (p, g_types) = get_prob_of_grammar(key, lexicon, g);
+        grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
 
         output.push((
             key_id,
@@ -396,7 +420,7 @@ pub fn get_grammar<B: Backend>(
     );
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
-    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon, &g.device());
+    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon);
     let mut grammars = vec![];
     for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
         let grammar = lexicon.grammar_features(&string_probs[full_grammar_string_id]);
@@ -432,7 +456,7 @@ pub fn get_grammar_with_targets<B: Backend>(
 )> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (losses, grammar_losses, grammar_idx, strings, string_probs, _) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, true)?;
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
     for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -464,6 +488,7 @@ fn get_grammar_losses<B: Backend>(
     alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
+    grammar_splitting: bool,
 ) -> anyhow::Result<(
     Tensor<B, 2>,
     Tensor<B, 1>,
@@ -521,8 +546,6 @@ fn get_grammar_losses<B: Backend>(
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(&strings, g, neural_config);
-    let (grammar_probs, grammar_idx) =
-        get_grammar_probs(&string_probs, g, lexicon, &targets.device());
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
@@ -539,43 +562,57 @@ fn get_grammar_losses<B: Backend>(
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
 
-    let mut loss_per_grammar = vec![];
-    let mut compatible_per_grammar = vec![];
-    for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
-        let string_probs = get_string_prob(
-            &string_probs,
-            lexicon,
-            g,
-            Some(grammar_set),
-            grammar_cats,
-            neural_config,
-            &loss.device(),
-        );
+    if grammar_splitting {
+        let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, lexicon);
+        let mut loss_per_grammar = vec![];
+        let mut compatible_per_grammar = vec![];
+        for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
+            let string_probs = get_string_prob(
+                &string_probs,
+                lexicon,
+                g,
+                Some(grammar_set),
+                grammar_cats,
+                neural_config,
+                &loss.device(),
+            );
 
-        let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
-        //Probability of generating each of the targets
-        loss_per_grammar.push(log_sum_exp_dim(loss, 1));
+            let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+            //Probability of generating each of the targets
+            loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
-        let n_compatible = n_compatible
-            .clone()
-            .select(1, grammar_id.clone())
-            .sum_dim(1)
-            .squeeze(1);
-        let n_compatible = n_compatible
-            .clone()
-            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
-        //How many compatible strings in the grammar?
-        compatible_per_grammar.push(n_compatible.sum_dim(0));
-        //(n_strings_per_grammar);
+            let n_compatible = n_compatible
+                .clone()
+                .select(1, grammar_id.clone())
+                .sum_dim(1)
+                .squeeze(1);
+            let n_compatible = n_compatible
+                .clone()
+                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
+            //How many compatible strings in the grammar?
+            compatible_per_grammar.push(n_compatible.sum_dim(0));
+            //(n_strings_per_grammar);
+        }
+        Ok((
+            Tensor::cat(loss_per_grammar, 1),
+            grammar_probs,
+            grammar_idx,
+            strings,
+            string_probs,
+            Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
+        ))
+    } else {
+        let n_compatible = n_compatible.clone().max_dim(0).squeeze(0);
+        let grammar_probs = get_grammar_per_string(&string_probs, g, lexicon);
+        Ok((
+            loss,
+            grammar_probs,
+            vec![],
+            strings,
+            string_probs,
+            n_compatible,
+        ))
     }
-    Ok((
-        Tensor::cat(loss_per_grammar, 1),
-        grammar_probs,
-        grammar_idx,
-        strings,
-        string_probs,
-        Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
-    ))
 }
 
 pub fn get_all_parses<B: Backend>(
@@ -622,9 +659,30 @@ pub fn get_neural_outputs<B: Backend>(
 ) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>, Tensor<B, 1>)> {
     let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
+        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, true)?;
 
-    let (max_n_compatible, idx) = n_compatible.clone().max_dim_with_indices(0);
+    let max_n_compatible = n_compatible.clone().max_dim(0);
+    let idx = Tensor::<B, 1, Int>::from_data(
+        Data::from(
+            n_compatible
+                .clone()
+                .equal(max_n_compatible.clone())
+                .iter_dim(0)
+                .enumerate()
+                .filter_map(|(i, x)| {
+                    if x.into_scalar() {
+                        Some(i as u32)
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec()
+                .as_slice(),
+        )
+        .convert(),
+        &g.device(),
+    );
+
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
     let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses.clone())

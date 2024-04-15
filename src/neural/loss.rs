@@ -717,7 +717,7 @@ pub fn get_neural_outputs<B: Backend>(
         .select(0, idx);
 
     Ok((
-        -log_sum_exp_dim(best_grammar, 0),
+        -best_grammar.mean_dim(0),
         -(n_compatible
             .clone()
             .mask_fill(n_compatible.equal_elem(0.0), -0.5)

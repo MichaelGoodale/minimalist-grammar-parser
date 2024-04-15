@@ -622,20 +622,16 @@ pub fn get_neural_outputs<B: Backend>(
         get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config)?;
 
     let mask = n_compatible.clone().equal_elem(0.0);
-    let has_parse = n_compatible
-        .clone()
-        .mask_fill(mask.clone().bool_not(), 1.0)
-        .mask_fill(mask.clone(), 0.0);
-    let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0) * has_parse;
+    let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
     //Probability of generating each of the target strings
     n_compatible = n_compatible.clone().mask_fill(mask.clone(), -0.5);
 
     let best_grammar: Tensor<B, 1> =
         (loss_per_grammar.clone().mask_fill(mask.clone(), -999.0)).max_dim(0);
-    let loss: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone().detach();
+    //let loss: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone().detach();
 
     Ok((
-        -log_sum_exp_dim(loss, 0),
+        -best_grammar.clone(),
         (n_compatible * -grammar_losses).sum_dim(0),
         best_grammar,
     ))

@@ -634,7 +634,11 @@ pub fn get_neural_outputs<B: Backend>(
 
     Ok((
         -best_grammar.clone(),
-        (n_compatible.clone() * -grammar_losses).sum_dim(0),
+        -(n_compatible
+            .clone()
+            .mask_fill(n_compatible.equal_elem(0.0), -0.5)
+            * grammar_losses)
+            .sum_dim(0),
         max_n_compatible,
     ))
 }

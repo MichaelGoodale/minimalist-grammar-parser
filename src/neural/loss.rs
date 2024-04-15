@@ -559,8 +559,8 @@ fn get_grammar_losses<B: Backend>(
         .gather(3, targets)
         .squeeze::<3>(3)
         .sum_dim(2)
-        .squeeze(2);
-    //.mask_fill(target_s_ids, -999.0);
+        .squeeze(2)
+        .mask_fill(target_s_ids, -999.0);
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, lexicon);

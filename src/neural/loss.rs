@@ -359,18 +359,8 @@ fn get_string_prob<B: Backend>(
         0.0,
         device,
     );
-    let cats = std::iter::repeat(true)
-        .take(g.n_lexemes() * g.n_categories() * 2)
-        .collect::<Vec<_>>();
-    let mut cats: Tensor<B, 3, Bool> = Tensor::from_data(
-        Data::new(
-            cats,
-            burn::tensor::Shape {
-                dims: [g.n_lexemes(), g.n_categories(), 2],
-            },
-        ),
-        &g.device(),
-    );
+    let mut cats: Tensor<B, 3, Bool> =
+        Tensor::<B, 3, Int>::ones([g.n_lexemes(), g.n_categories(), 2], &g.device()).bool();
     let false_tensor = Tensor::from_data(
         Data::new(vec![false], burn::tensor::Shape { dims: [1, 1, 1] }),
         &g.device(),
@@ -745,9 +735,7 @@ pub fn get_neural_outputs<B: Backend>(
 
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
-    let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses.clone())
-        .clone()
-        .select(0, idx);
+    let best_grammar: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone();
 
     Ok((-log_sum_exp_dim(best_grammar, 0), max_n_compatible))
 }

@@ -613,8 +613,7 @@ fn get_grammar_losses<B: Backend>(
                 &loss.device(),
             );
 
-            let loss =
-                loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0).detach();
+            let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
             let inter_compatible = compatible_map
                 .clone()
                 .select(2, grammar_id.clone())
@@ -735,7 +734,7 @@ pub fn get_neural_outputs<B: Backend>(
 
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
-    let best_grammar: Tensor<B, 1> = loss_per_grammar + grammar_losses.clone();
+    let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses).select(0, idx);
 
     Ok((-log_sum_exp_dim(best_grammar, 0), max_n_compatible))
 }

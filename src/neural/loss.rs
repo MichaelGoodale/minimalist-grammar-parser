@@ -496,7 +496,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     Tensor<B, 1>,
 )> {
     let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (losses, grammar_losses, grammar_idx, strings, string_probs, _) =
+    let (losses, grammar_losses, grammar_idx, strings, string_probs, _, _) =
         get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
@@ -535,6 +535,7 @@ fn get_grammar_losses<B: Backend>(
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Vec<StringPath>,
     Vec<StringProbHistory>,
+    Tensor<B, 1>,
     Tensor<B, 1>,
 )> {
     let n_targets = targets.shape().dims[0];
@@ -610,6 +611,7 @@ fn get_grammar_losses<B: Backend>(
         let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, lexicon);
         let mut loss_per_grammar = vec![];
         let mut compatible_per_grammar = vec![];
+        let mut compatible_intra_grammar = vec![];
         for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
             let string_probs = get_string_prob(
                 &string_probs,
@@ -633,7 +635,6 @@ fn get_grammar_losses<B: Backend>(
             //Probability of generating each of the targets
             loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
-            /*
             let n_compatible = n_compatible
                 .clone()
                 .select(1, grammar_id.clone())
@@ -642,9 +643,10 @@ fn get_grammar_losses<B: Backend>(
             let n_compatible = n_compatible
                 .clone()
                 .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
-                .sum_dim(0);*/
+                .sum_dim(0);
             //How many compatible strings in the grammar?
-            compatible_per_grammar.push(inter_compatible);
+            compatible_per_grammar.push(n_compatible);
+            compatible_intra_grammar.push(inter_compatible);
             //(n_strings_per_grammar);
         }
         Ok((
@@ -654,6 +656,7 @@ fn get_grammar_losses<B: Backend>(
             strings,
             string_probs,
             Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
+            Tensor::cat(compatible_intra_grammar, 0).to_device(&g.device()),
         ))
     } else {
         let n_compatible = n_compatible.clone().max_dim(0).squeeze(0);
@@ -664,6 +667,7 @@ fn get_grammar_losses<B: Backend>(
             vec![],
             strings,
             string_probs,
+            n_compatible.clone(),
             n_compatible,
         ))
     }
@@ -703,11 +707,19 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
-) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>, Tensor<B, 1>)> {
+) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>)> {
     let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
+    let (loss_per_grammar, grammar_losses, _, _, _, n_compatible, intra_compatible) =
         get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
 
+    let max_intra_compatible = intra_compatible.clone().max_dim(0).into_scalar();
+
+    let n_compatible = n_compatible.mask_fill(
+        intra_compatible.equal_elem(max_intra_compatible).bool_not(),
+        -99,
+    );
+
+    //Max n compatible of top intra compatible
     let max_n_compatible = n_compatible.clone().max_dim(0);
     let idx = Tensor::<B, 1, Int>::from_data(
         Data::from(
@@ -736,13 +748,5 @@ pub fn get_neural_outputs<B: Backend>(
         .clone()
         .select(0, idx);
 
-    Ok((
-        -log_sum_exp_dim(best_grammar, 0),
-        -(n_compatible
-            .clone()
-            .mask_fill(n_compatible.equal_elem(0.0), -0.5)
-            * grammar_losses)
-            .sum_dim(0),
-        max_n_compatible,
-    ))
+    Ok((-log_sum_exp_dim(best_grammar, 0), max_n_compatible))
 }

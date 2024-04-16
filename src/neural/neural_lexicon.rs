@@ -14,6 +14,7 @@ use petgraph::{
     graph::DiGraph,
     graph::{EdgeIndex, NodeIndex},
 };
+use rand::prelude::SliceRandom;
 use rand::Rng;
 use rand_distr::{Distribution, Gumbel};
 

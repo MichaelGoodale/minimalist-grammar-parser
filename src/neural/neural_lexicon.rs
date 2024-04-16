@@ -220,7 +220,7 @@ impl<B: Backend> GrammarParameterization<B> {
         let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
         let type_categories =
             activation_function(type_categories, 2, inverse_temperature, gumbel, rng);
-        let lemmas = activation_function(lemmas, 1, inverse_temperature, gumbel, rng);
+        let lemmas = gumbel_activation(lemmas, 1, inverse_temperature, rng);
         let unnormalized_weights = weights.clone();
         let weights = log_softmax(weights, 0);
         let licensee_categories =

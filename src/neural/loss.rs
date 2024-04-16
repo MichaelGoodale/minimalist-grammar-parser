@@ -623,7 +623,8 @@ fn get_grammar_losses<B: Backend>(
                 &loss.device(),
             );
 
-            let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+            let loss =
+                loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0).detach();
             let inter_compatible = compatible_map
                 .clone()
                 .select(2, grammar_id.clone())

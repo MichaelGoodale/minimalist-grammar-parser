@@ -193,6 +193,8 @@ fn neural_loss() {
         targets,
         mut rng,
         config,
+        include_lemmas,
+        included_licensees,
     ) = divan::black_box({
         let n_lexemes = 2;
         let n_pos = 3;
@@ -245,27 +247,23 @@ fn neural_loss() {
             &NdArrayDevice::default(),
         );
 
-        let included_features = Tensor::<Autodiff<NdArray>, 3>::full(
-            [n_lexemes, n_licensees + n_pos, 2],
-            -10,
+        let included_licensees = Tensor::<Autodiff<NdArray>, 2>::full(
+            [n_lexemes, n_licensees + 1],
+            -20.0,
             &NdArrayDevice::default(),
         )
         .slice_assign(
-            [0..n_lexemes, 0..n_licensees + n_pos, 1..2],
-            Tensor::full(
-                [n_lexemes, n_licensees + n_pos, 1],
-                10.0,
-                &NdArrayDevice::default(),
-            ),
-        )
-        .slice_assign(
-            [1..2, n_licensees..n_licensees + 1, 0..1],
-            Tensor::full([1, 1, 1], 10, &dev),
-        )
-        .slice_assign(
-            [1..2, n_licensees..n_licensees + 1, 1..2],
-            Tensor::full([1, 1, 1], -10, &dev),
+            [0..n_lexemes, 0..1],
+            Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 1], 10.0, &NdArrayDevice::default()),
         );
+
+        let included_features = Tensor::<Autodiff<NdArray>, 2>::full(
+            [n_lexemes, n_pos + 1],
+            -10,
+            &NdArrayDevice::default(),
+        )
+        .slice_assign([1..2, 1..2], Tensor::full([1, 1], 10, &dev))
+        .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &dev));
 
         let targets = (1..9)
             .map(|i| {
@@ -280,25 +278,27 @@ fn neural_loss() {
             .collect::<Vec<_>>();
 
         let targets = Tensor::stack(targets, 0);
-
         let rng = rand::rngs::StdRng::seed_from_u64(1);
 
         let config = NeuralConfig {
-            n_grammars: 1,
-            n_strings_per_grammar: 50,
+            n_strings_per_grammar: 20,
             padding_length: 10,
-            n_strings_to_sample: 5,
             temperature: 1.0,
-            negative_weight: None,
-            parsing_config: ParsingConfig::new_with_max_length(
-                LogProb::new(-100.0).unwrap(),
+            compatible_weight: 0.99,
+            parsing_config: ParsingConfig::new(
+                LogProb::new(-200.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
                 200,
                 200,
-                10,
             ),
         };
         let silent_lemmas =
+            Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
+                .slice_assign(
+                    [0..n_lexemes, 1..2],
+                    Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
+                );
+        let include_lemmas =
             Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
                 .slice_assign(
                     [0..n_lexemes, 1..2],
@@ -312,6 +312,7 @@ fn neural_loss() {
             [0., 50., 0., 0.],
             &NdArrayDevice::default(),
         );
+
         (
             types,
             type_categories,
@@ -326,9 +327,10 @@ fn neural_loss() {
             targets,
             rng,
             config,
+            include_lemmas,
+            included_licensees,
         )
     });
-    let mut loss: Vec<f32> = vec![];
 
     for t in [0.1, 0.25, 0.5, 1.0, 5.0] {
         let g = GrammarParameterization::new(
@@ -336,22 +338,20 @@ fn neural_loss() {
             type_categories.clone(),
             licensee_categories.clone(),
             included_features.clone(),
+            included_licensees.clone(),
             lemmas.clone(),
             silent_lemmas.clone(),
             categories.clone(),
             weights.clone(),
+            include_lemmas.clone(),
             pad_vector.clone(),
             end_vector.clone(),
             t,
-            false,
+            true,
             &mut rng,
         )
         .unwrap();
-        let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)
-            .unwrap()
-            .into_scalar()
-            .elem::<f32>();
-        loss.push(val);
+        get_neural_outputs(&g, targets.clone(), &config, &mut rng).unwrap();
     }
 }
 

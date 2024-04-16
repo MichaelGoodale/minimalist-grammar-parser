@@ -318,6 +318,7 @@ fn get_grammar_probs<B: Backend>(
                 all_valid_strings.extend(ids);
             }
         }
+        all_valid_strings.sort();
         let string_idx = Tensor::<B, 1, Int>::from_data(
             Data::from(all_valid_strings.as_slice()).convert(),
             &g.device(),

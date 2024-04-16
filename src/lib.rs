@@ -541,10 +541,9 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         max_string_length: Option<usize>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(10000000));
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(100000));
         let target_lens = targets.map(|x| x.iter().map(|x| x.len()).collect());
-        parse_heap
-            .extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length, false).unwrap());
+        parse_heap.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
         NeuralGenerator {
             lexicon,
             target_lens,

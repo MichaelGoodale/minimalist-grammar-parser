@@ -98,14 +98,11 @@ pub struct NeuralBeam<'a, B: Backend> {
     g: &'a GrammarParameterization<B>,
     n_features: Vec<Option<(usize, usize)>>,
     burnt: bool,
-    rules: ThinVec<Rule>,
     probability_path: StringProbHistory,
     top_id: usize,
     steps: usize,
-    record_rules: bool,
     n_empties: usize,
     max_string_len: Option<usize>,
-    n_lexemes: usize,
 }
 
 impl<'a, B: Backend> NeuralBeam<'a, B> {
@@ -115,13 +112,11 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
         initial_category: usize,
         sentences: Option<&'a [T]>,
         max_string_len: Option<usize>,
-        record_rules: bool,
     ) -> Result<impl Iterator<Item = NeuralBeam<'a, B>> + 'a>
     where
         T: AsRef<[usize]>,
     {
         let category_indexes = lexicon.find_category(&initial_category)?;
-        let n_lexemes = category_indexes.len();
         Ok(category_indexes.iter().map(move |(log_probability, node)| {
             let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
             queue.push(Reverse(ParseMoment::new(
@@ -178,18 +173,11 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 sentence_guides: sentences
                     .map(|x| x.iter().map(|x| (x.as_ref(), log_one)).collect())
                     .unwrap_or_default(),
-                rules: if record_rules {
-                    thin_vec![Rule::Start(*node)]
-                } else {
-                    thin_vec![]
-                },
                 probability_path: history,
                 top_id: 0,
                 steps: 0,
                 n_empties: 0,
-                record_rules,
                 max_string_len,
-                n_lexemes,
             }
         }))
     }
@@ -207,7 +195,6 @@ impl<B: Backend> PartialEq for NeuralBeam<'_, B> {
     fn eq(&self, other: &Self) -> bool {
         self.steps == other.steps
             && self.top_id == other.top_id
-            && self.rules == other.rules
             && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
     }
 }
@@ -279,7 +266,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
                             self.max_log_prob += new_prob;
                         }
                         NeuralProbabilityRecord::Lexeme { .. } => {
-                            let w = LogProb::new(-(self.n_lexemes as f64).ln()).unwrap();
+                            let w = LogProb::new(-(self.lexicon.n_lexemes() as f64).ln()).unwrap();
                             self.log_probability.2 += w;
                             self.max_log_prob += w;
                         }
@@ -350,20 +337,18 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
         self.queue.push(Reverse(x))
     }
 
-    fn push_rule(&mut self, x: Rule) {
-        self.rules.push(x)
-    }
+    fn push_rule(&mut self, _: Rule) {}
 
     fn record_rules(&self) -> bool {
-        self.record_rules
+        false
     }
 
     fn scan<A: Allocator>(
         v: &mut ParseHeap<usize, Self, A>,
-        moment: &ParseMoment,
+        _moment: &ParseMoment,
         mut beam: Self,
         s: &Option<usize>,
-        child_node: NodeIndex,
+        _child_node: NodeIndex,
         child_prob: Self::Probability,
     ) {
         beam.queue.shrink_to_fit();
@@ -392,13 +377,6 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
         }
 
         beam.add_to_log_prob(child_prob);
-
-        if beam.record_rules() {
-            beam.rules.push(Rule::Scan {
-                node: child_node,
-                parent: moment.tree.id,
-            });
-        }
         beam.steps += 1;
         v.push(beam);
     }

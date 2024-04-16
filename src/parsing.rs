@@ -147,7 +147,7 @@ fn unmerge<
         beam.push_moment(ParseMoment::new(
             FutureTree {
                 node: *complement,
-                index: moment.tree.index.clone_push(*dir),
+                index: moment.tree.index.clone_push(*dir)?,
                 id: beam.top_id() + 1,
             },
             match dir {
@@ -158,7 +158,7 @@ fn unmerge<
         beam.push_moment(ParseMoment::new(
             FutureTree {
                 node: child_node,
-                index: moment.tree.index.clone_push(dir.flip()),
+                index: moment.tree.index.clone_push(dir.flip())?,
                 id: beam.top_id() + 2,
             },
             match dir {
@@ -277,14 +277,14 @@ fn unmove<
         beam.push_moment(ParseMoment::new(
             FutureTree {
                 node: child_node,
-                index: moment.tree.index.clone_push(Direction::Right),
+                index: moment.tree.index.clone_push(Direction::Right)?,
                 id: beam.top_id() + 1,
             },
             clone_push(
                 &moment.movers,
                 FutureTree {
                     node: *stored,
-                    index: moment.tree.index.clone_push(Direction::Left),
+                    index: moment.tree.index.clone_push(Direction::Left)?,
                     id: beam.top_id() + 2,
                 },
             ),

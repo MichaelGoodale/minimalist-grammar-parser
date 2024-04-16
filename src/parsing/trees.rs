@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 
+use anyhow::bail;
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
@@ -56,11 +57,15 @@ impl From<GornIndex> for Vec<Direction> {
 
 impl GornIndex {
     #[inline]
-    pub fn clone_push(&self, d: Direction) -> Self {
+    pub fn clone_push(&self, d: Direction) -> anyhow::Result<Self> {
         let mut v = *self;
-        v.index.set(v.size, d.into());
-        v.size += 1;
-        v
+        if v.size == MAX_STEPS {
+            bail!("Too big!")
+        } else {
+            v.index.set(v.size, d.into());
+            v.size += 1;
+            Ok(v)
+        }
     }
 }
 

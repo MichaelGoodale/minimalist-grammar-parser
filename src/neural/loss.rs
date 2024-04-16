@@ -604,7 +604,8 @@ fn get_grammar_losses<B: Backend>(
                 &loss.device(),
             );
 
-            let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+            let loss =
+                loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0) * 50.0;
             //Probability of generating each of the targets
             loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
@@ -717,7 +718,7 @@ pub fn get_neural_outputs<B: Backend>(
         .select(0, idx);
 
     Ok((
-        -best_grammar.mean_dim(0),
+        -log_sum_exp_dim(best_grammar, 0),
         -(n_compatible
             .clone()
             .mask_fill(n_compatible.equal_elem(0.0), -0.5)

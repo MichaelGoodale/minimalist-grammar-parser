@@ -286,7 +286,7 @@ fn neural_loss() {
             temperature: 1.0,
             compatible_weight: 0.99,
             parsing_config: ParsingConfig::new(
-                LogProb::new(-200.0).unwrap(),
+                LogProb::new(-300.0).unwrap(),
                 LogProb::from_raw_prob(0.5).unwrap(),
                 200,
                 200,

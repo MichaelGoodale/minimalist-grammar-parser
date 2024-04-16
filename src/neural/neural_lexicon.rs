@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use super::neural_beam::{NodeFeature, StringProbHistory};
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
@@ -88,11 +90,13 @@ pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
+    alternatives: HashMap<NodeIndex, Vec<NodeIndex>>,
     n_lexemes: usize,
     graph: NeuralGraph,
     device: B::Device,
 }
 
+#[derive(Debug, Clone)]
 pub struct GrammarParameterization<B: Backend> {
     types: Tensor<B, 3>,                //(lexeme, lexeme_pos, type_distribution)
     type_categories: Tensor<B, 3>,      //(lexeme, lexeme_pos, categories_position)
@@ -359,7 +363,7 @@ impl<B: Backend> NeuralLexicon<B> {
     pub fn new_superimposed(
         grammar_params: &GrammarParameterization<B>,
         rng: &mut impl Rng,
-    ) -> anyhow::Result<(Self, HashMap<NodeIndex, Vec<NodeIndex>>)> {
+    ) -> anyhow::Result<Self> {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -393,7 +397,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     )
                 }))
                 .collect();
-
+            first_features.shuffle(rng);
             let mut all_categories = vec![];
             let mut parent_licensees = vec![];
             for (n_licensees, feature, prob) in first_features {
@@ -508,6 +512,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         )
                     })
                     .collect::<Vec<_>>();
+                licensees.shuffle(rng);
                 for (feature, prob) in licensees.into_iter() {
                     let node = graph.add_node((feature, tensor_to_log_prob(&prob)?));
                     weights_map.insert(NeuralProbabilityRecord::Node(node), prob);
@@ -577,7 +582,8 @@ impl<B: Backend> NeuralLexicon<B> {
                 );
             }
 
-            let lemmas = [lemma, silent_lemma];
+            let mut lemmas = [lemma, silent_lemma];
+            lemmas.shuffle(rng);
             add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
@@ -585,6 +591,8 @@ impl<B: Backend> NeuralLexicon<B> {
                 let mut new_parents: Vec<_> = (0..grammar_params.n_categories)
                     .cartesian_product(0..N_TYPES)
                     .collect();
+
+                new_parents.shuffle(rng);
 
                 let new_parents = new_parents
                     .into_iter()
@@ -639,21 +647,27 @@ impl<B: Backend> NeuralLexicon<B> {
         //    .values_mut()
         //    .for_each(|x| x.sort_by(|a, b| a.0 .2.cmp(&b.0 .2)));
 
-        Ok((
-            NeuralLexicon {
-                graph,
-                licensees: licensees_map,
-                categories: categories_map,
-                weights: weights_map,
-                n_lexemes: grammar_params.n_lexemes,
-                device: grammar_params.device(),
-            },
-            alternative_map,
-        ))
+        Ok(NeuralLexicon {
+            graph,
+            licensees: licensees_map,
+            categories: categories_map,
+            weights: weights_map,
+            alternatives: alternative_map,
+            n_lexemes: grammar_params.n_lexemes,
+            device: grammar_params.device(),
+        })
     }
 
     pub fn n_lexemes(&self) -> usize {
         self.n_lexemes
+    }
+
+    pub fn has_alternative(&self, nx: &NodeIndex, path: &BTreeSet<NodeFeature>) -> bool {
+        self.alternatives
+            .get(nx)
+            .unwrap_or(&vec![])
+            .iter()
+            .any(|x| path.contains(&NodeFeature::Node(*x)))
     }
 
     pub fn grammar_features(&self, s: &StringProbHistory) -> Vec<Vec<NeuralFeature>> {

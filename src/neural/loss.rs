@@ -11,15 +11,11 @@ use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::{HashMap, HashSet};
 use anyhow::bail;
-use burn::module::Module;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, Int};
 use itertools::Itertools;
-use logprob::LogProb;
 use moka::sync::Cache;
-use petgraph::graph::NodeIndex;
 use rand::Rng;
-use rand_distr::num_traits::Zero;
 
 pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
@@ -31,10 +27,8 @@ pub struct NeuralConfig {
 
 fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
+    g: &GrammarParameterization<B>,
     targets: Option<&[Vec<usize>]>,
-    lemma_lookups: &HashMap<(usize, usize), LogProb<f64>>,
-    lexeme_weights: &HashMap<usize, LogProb<f64>>,
-    alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     neural_config: &NeuralConfig,
 ) -> (Vec<StringPath>, Vec<StringProbHistory>) {
     let mut grammar_strings: Vec<_> = vec![];
@@ -43,10 +37,8 @@ fn retrieve_strings<B: Backend>(
 
     for (s, h) in NeuralGenerator::new(
         lexicon,
+        g,
         targets,
-        lemma_lookups,
-        lexeme_weights,
-        alternatives,
         max_string_len,
         &neural_config.parsing_config,
     )
@@ -426,15 +418,8 @@ pub fn get_grammar<B: Backend>(
     Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
     Tensor<B, 1>,
 )> {
-    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
-    let (strings, string_probs) = retrieve_strings(
-        &lexicon,
-        None,
-        g.lemma_lookups(),
-        g.lexeme_weights(),
-        &alternatives,
-        neural_config,
-    );
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
+    let (strings, string_probs) = retrieve_strings(&lexicon, g, None, neural_config);
     let strings = string_path_to_tensor(&strings, g, neural_config);
 
     let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon);
@@ -471,9 +456,9 @@ pub fn get_grammar_with_targets<B: Backend>(
     Tensor<B, 1>,
     Tensor<B, 1>,
 )> {
-    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
     let (losses, grammar_losses, grammar_idx, strings, string_probs, _) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, true)?;
+        get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
     for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -502,7 +487,6 @@ pub fn get_grammar_with_targets<B: Backend>(
 fn get_grammar_losses<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
-    alternatives: &HashMap<NodeIndex, Vec<NodeIndex>>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     grammar_splitting: bool,
@@ -532,14 +516,7 @@ fn get_grammar_losses<B: Backend>(
         })
         .collect::<Vec<_>>();
 
-    let (strings, string_probs) = retrieve_strings(
-        lexicon,
-        Some(&target_vec),
-        g.lemma_lookups(),
-        g.lexeme_weights(),
-        alternatives,
-        neural_config,
-    );
+    let (strings, string_probs) = retrieve_strings(lexicon, g, Some(&target_vec), neural_config);
 
     if strings.is_empty() {
         bail!("Zero outputted strings!");
@@ -648,7 +625,7 @@ pub fn get_all_parses<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
 ) -> anyhow::Result<(Vec<StringPath>, Vec<StringProbHistory>)> {
-    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
     let n_targets = targets.shape().dims[0];
 
     let target_vec = (0..n_targets)
@@ -667,14 +644,7 @@ pub fn get_all_parses<B: Backend>(
         })
         .collect::<Vec<_>>();
 
-    let (strings, string_probs) = retrieve_strings(
-        &lexicon,
-        Some(&target_vec),
-        g.lemma_lookups(),
-        g.lexeme_weights(),
-        &alternatives,
-        neural_config,
-    );
+    let (strings, string_probs) = retrieve_strings(&lexicon, g, Some(&target_vec), neural_config);
     Ok((strings, string_probs))
 }
 
@@ -684,9 +654,9 @@ pub fn get_neural_outputs<B: Backend>(
     neural_config: &NeuralConfig,
     rng: &mut impl Rng,
 ) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>, Tensor<B, 1>)> {
-    let (lexicon, alternatives) = NeuralLexicon::new_superimposed(g, rng)?;
+    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
     let (loss_per_grammar, grammar_losses, _, _, _, n_compatible) =
-        get_grammar_losses(g, &lexicon, &alternatives, targets, neural_config, true)?;
+        get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
 
     let max_n_compatible = n_compatible.clone().max_dim(0);
     let idx = Tensor::<B, 1, Int>::from_data(

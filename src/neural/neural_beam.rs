@@ -17,9 +17,7 @@ use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
 use thin_vec::{thin_vec, ThinVec};
 
-use ahash::HashMap;
-
-use super::neural_lexicon::{EdgeHistory, NeuralProbability};
+use super::neural_lexicon::{EdgeHistory, GrammarParameterization, NeuralProbability};
 
 #[derive(Debug, Clone, Default)]
 pub struct StringPath(Vec<usize>);
@@ -90,15 +88,14 @@ impl IntoIterator for StringProbHistory {
 }
 
 #[derive(Debug, Clone)]
-pub struct NeuralBeam<'a> {
+pub struct NeuralBeam<'a, B: Backend> {
     log_probability: NeuralProbability,
     max_log_prob: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
     sentence_guides: Vec<(&'a [usize], LogProb<f64>)>,
-    lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
-    weight_lookups: &'a HashMap<usize, LogProb<f64>>,
-    alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
+    lexicon: &'a NeuralLexicon<B>,
+    g: &'a GrammarParameterization<B>,
     n_features: Vec<Option<(usize, usize)>>,
     burnt: bool,
     rules: ThinVec<Rule>,
@@ -111,17 +108,15 @@ pub struct NeuralBeam<'a> {
     n_lexemes: usize,
 }
 
-impl<'a> NeuralBeam<'a> {
-    pub fn new<B: Backend, T>(
+impl<'a, B: Backend> NeuralBeam<'a, B> {
+    pub fn new<T>(
         lexicon: &'a NeuralLexicon<B>,
+        g: &'a GrammarParameterization<B>,
         initial_category: usize,
         sentences: Option<&'a [T]>,
-        lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
-        weight_lookups: &'a HashMap<usize, LogProb<f64>>,
-        alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
         max_string_len: Option<usize>,
         record_rules: bool,
-    ) -> Result<impl Iterator<Item = NeuralBeam<'a>> + 'a>
+    ) -> Result<impl Iterator<Item = NeuralBeam<'a, B>> + 'a>
     where
         T: AsRef<[usize]>,
     {
@@ -172,18 +167,17 @@ impl<'a> NeuralBeam<'a> {
             let log_one = LogProb::new(0.0).unwrap();
 
             NeuralBeam {
+                lexicon,
                 max_log_prob: log_probability.2,
                 log_probability: *log_probability,
                 n_features,
+                g,
                 queue,
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences
                     .map(|x| x.iter().map(|x| (x.as_ref(), log_one)).collect())
                     .unwrap_or_default(),
-                lemma_lookups,
-                alternatives,
-                weight_lookups,
                 rules: if record_rules {
                     thin_vec![Rule::Start(*node)]
                 } else {
@@ -209,7 +203,7 @@ impl<'a> NeuralBeam<'a> {
     }
 }
 
-impl PartialEq for NeuralBeam<'_> {
+impl<B: Backend> PartialEq for NeuralBeam<'_, B> {
     fn eq(&self, other: &Self) -> bool {
         self.steps == other.steps
             && self.top_id == other.top_id
@@ -218,21 +212,21 @@ impl PartialEq for NeuralBeam<'_> {
     }
 }
 
-impl PartialOrd for NeuralBeam<'_> {
+impl<B: Backend> PartialOrd for NeuralBeam<'_, B> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Eq for NeuralBeam<'_> {}
+impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
-impl Ord for NeuralBeam<'_> {
+impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.max_log_prob.cmp(&other.max_log_prob)
     }
 }
 
-impl Beam<usize> for NeuralBeam<'_> {
+impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
     type Probability = NeuralProbability;
 
     fn log_prob(&self) -> LogProb<f64> {
@@ -305,12 +299,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                     self.log_probability.2 += new_prob;
                     self.max_log_prob += new_prob;
                 }
-                self.burnt |= self
-                    .alternatives
-                    .get(&n)
-                    .unwrap_or(&vec![])
-                    .iter()
-                    .any(|x| self.probability_path.1.contains(&NodeFeature::Node(*x)));
+                self.burnt |= self.lexicon.has_alternative(&n, &self.probability_path.1);
                 self.probability_path.1.insert(nf);
             }
         }
@@ -386,7 +375,7 @@ impl Beam<usize> for NeuralBeam<'_> {
                     let lemma: usize = *sentence.get(position).unwrap_or(&0);
                     prob += match lemma {
                         0 => LogProb::new(-1000.0).unwrap(),
-                        _ => *beam.lemma_lookups.get(&(*x, lemma)).unwrap(),
+                        _ => *beam.g.lemma_lookups().get(&(*x, lemma)).unwrap(),
                     }
                 });
             beam.generated_sentence.0.push(*x);
@@ -429,7 +418,7 @@ impl Beam<usize> for NeuralBeam<'_> {
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
     }
-    fn pushable(&self, config: &ParsingConfig) -> bool {
+    fn pushable(&self, _config: &ParsingConfig) -> bool {
         !self.burnt
             && if let Some(max_length) = self.max_string_len {
                 self.generated_sentence.len() <= max_length && self.n_empties <= max_length * 2

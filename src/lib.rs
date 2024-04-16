@@ -2,18 +2,18 @@ use std::collections::BTreeSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use ahash::HashMap;
 use anyhow::Result;
 use bumpalo::Bump;
 use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
-use petgraph::graph::NodeIndex;
 
 use allocator_api2::alloc::{Allocator, Global};
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
-use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbabilityRecord};
+use neural::neural_lexicon::{
+    GrammarParameterization, NeuralLexicon, NeuralProbability, NeuralProbabilityRecord,
+};
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;
@@ -527,7 +527,7 @@ where
 #[derive(Debug)]
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
-    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a>>,
+    parse_heap: ParseHeap<'a, usize, NeuralBeam<'a, B>>,
     target_lens: Option<BTreeSet<usize>>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
@@ -536,28 +536,15 @@ pub struct NeuralGenerator<'a, B: Backend> {
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
     pub fn new(
         lexicon: &'a NeuralLexicon<B>,
+        g: &'a GrammarParameterization<B>,
         targets: Option<&'a [Vec<usize>]>,
-        lemma_lookups: &'a HashMap<(usize, usize), LogProb<f64>>,
-        weight_lookups: &'a HashMap<usize, LogProb<f64>>,
-        alternatives: &'a HashMap<NodeIndex, Vec<NodeIndex>>,
         max_string_length: Option<usize>,
         config: &'a ParsingConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(10000000));
         let target_lens = targets.map(|x| x.iter().map(|x| x.len()).collect());
-        parse_heap.extend(
-            NeuralBeam::new(
-                lexicon,
-                0,
-                targets,
-                lemma_lookups,
-                weight_lookups,
-                alternatives,
-                max_string_length,
-                false,
-            )
-            .unwrap(),
-        );
+        parse_heap
+            .extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length, false).unwrap());
         NeuralGenerator {
             lexicon,
             target_lens,

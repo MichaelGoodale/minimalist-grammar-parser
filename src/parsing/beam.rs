@@ -175,7 +175,7 @@ where
         &mut self.top_id
     }
 
-    fn pushable(&self, config: &ParsingConfig) -> bool {
+    fn pushable(&self, _config: &ParsingConfig) -> bool {
         true
     }
 }
@@ -467,7 +467,7 @@ where
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
     }
-    fn pushable(&self, config: &ParsingConfig) -> bool {
+    fn pushable(&self, _config: &ParsingConfig) -> bool {
         true
     }
 }
@@ -582,7 +582,7 @@ where
     fn top_id_mut(&mut self) -> &mut usize {
         &mut self.top_id
     }
-    fn pushable(&self, config: &ParsingConfig) -> bool {
+    fn pushable(&self, _config: &ParsingConfig) -> bool {
         true
     }
 }

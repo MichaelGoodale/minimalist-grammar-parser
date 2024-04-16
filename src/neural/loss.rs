@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::LN_2;
 
@@ -87,11 +88,11 @@ fn compatible_strings<B: Backend>(
     strings: &[StringPath],
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,
-) -> (Tensor<B, 2>, Tensor<B, 2>) {
+) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 4, Int>) {
     let mut n_compatible = Vec::with_capacity(strings.len());
-    //let mut which_to_use = Vec::with_capacity(strings.len());
     let mut compatible_loss =
         Tensor::<B, 2>::full([targets.len(), strings.len()], -999.0, &g.device());
+    let mut mapping = Vec::with_capacity(strings.len() * targets.len());
 
     for (string_i, s) in strings.iter().enumerate() {
         let mut n_compatible_per_string = vec![];
@@ -100,12 +101,12 @@ fn compatible_strings<B: Backend>(
             let mut compatible = s.len() == target.len();
             if compatible {
                 for (c, c_t) in s.iter().zip(target.iter()) {
-                    match string_target_map.entry(c) {
+                    match string_target_map.entry(*c) {
                         std::collections::btree_map::Entry::Vacant(v) => {
-                            v.insert(c_t);
+                            v.insert(*c_t);
                         }
                         std::collections::btree_map::Entry::Occupied(v) => {
-                            if v.get() != &c_t {
+                            if v.get() != c_t {
                                 compatible = false;
                                 break;
                             }
@@ -116,19 +117,57 @@ fn compatible_strings<B: Backend>(
             n_compatible_per_string.push(if compatible { 1.0 } else { 0.0 });
             if compatible {
                 let mut p = Tensor::zeros([1, 1], &g.device());
-                for (c, c_t) in string_target_map.into_iter() {
+                for (c, c_t) in string_target_map.iter() {
                     p = p + g.lemmas().clone().slice([*c..c + 1, *c_t..c_t + 1]);
                 }
                 compatible_loss = compatible_loss
                     .slice_assign([target_i..target_i + 1, string_i..string_i + 1], p);
+                mapping.push(Some(string_target_map));
             }
+            mapping.push(None);
         }
         n_compatible.push(Tensor::<B, 1>::from_data(
             Data::from(n_compatible_per_string.as_slice()).convert(),
             &B::Device::default(),
         ));
     }
-    (Tensor::stack(n_compatible, 1), compatible_loss)
+
+    let mut compatible_map = Tensor::<B, 4, Int>::zeros(
+        [targets.len(), targets.len(), strings.len(), strings.len()],
+        &g.device(),
+    );
+    let one = Tensor::<B, 4, Int>::ones([1, 1, 1, 1], &g.device());
+    for ((t_i, t_j), (s_i, s_j)) in (0..targets.len())
+        .tuple_combinations::<(_, _)>()
+        .cartesian_product((0..strings.len()).tuple_combinations::<(_, _)>())
+    {
+        let idx_i = t_i * strings.len() + s_i;
+        let idx_j = t_j * strings.len() + s_j;
+        if let (Some(mapping_i), Some(mapping_j)) = (&mapping[idx_i], &mapping[idx_j]) {
+            let mut compatible = true;
+            let all_keys: BTreeSet<_> = mapping_i.keys().chain(mapping_j.keys()).collect();
+            for k in all_keys {
+                if let (Some(v), Some(v_2)) = (mapping_i.get(k), mapping_j.get(k)) {
+                    if v != v_2 {
+                        compatible = false;
+                        break;
+                    }
+                }
+            }
+            if compatible {
+                compatible_map = compatible_map.slice_assign(
+                    [t_i..t_i + 1, t_j..t_j + 1, s_i..s_i + 1, s_j..s_j + 1],
+                    one.clone(),
+                );
+            }
+        }
+    }
+
+    (
+        Tensor::stack(n_compatible, 1),
+        compatible_loss,
+        compatible_map,
+    )
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -522,7 +561,8 @@ fn get_grammar_losses<B: Backend>(
         bail!("Zero outputted strings!");
     }
 
-    let (n_compatible, compatible_loss) = compatible_strings(&strings, &target_vec, g);
+    let (n_compatible, compatible_loss, compatible_map) =
+        compatible_strings(&strings, &target_vec, g);
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -582,9 +622,18 @@ fn get_grammar_losses<B: Backend>(
             );
 
             let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+            let inter_compatible = compatible_map
+                .clone()
+                .select(2, grammar_id.clone())
+                .select(3, grammar_id.clone())
+                .sum_dim(3)
+                .sum_dim(1)
+                .max()
+                .float();
             //Probability of generating each of the targets
             loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
+            /*
             let n_compatible = n_compatible
                 .clone()
                 .select(1, grammar_id.clone())
@@ -592,9 +641,10 @@ fn get_grammar_losses<B: Backend>(
                 .squeeze(1);
             let n_compatible = n_compatible
                 .clone()
-                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
+                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
+                .sum_dim(0);*/
             //How many compatible strings in the grammar?
-            compatible_per_grammar.push(n_compatible.sum_dim(0));
+            compatible_per_grammar.push(inter_compatible);
             //(n_strings_per_grammar);
         }
         Ok((

@@ -230,7 +230,7 @@ dependencies = [
 [[package]]
 name = "burn"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-core",
  "burn-train",
@@ -239,7 +239,7 @@ dependencies = [
 [[package]]
 name = "burn-autodiff"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -251,7 +251,7 @@ dependencies = [
 [[package]]
 name = "burn-candle"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-tensor",
  "candle-core",
@@ -262,7 +262,7 @@ dependencies = [
 [[package]]
 name = "burn-common"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -277,7 +277,7 @@ dependencies = [
 [[package]]
 name = "burn-compute"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -294,7 +294,7 @@ dependencies = [
 [[package]]
 name = "burn-core"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "bincode",
  "burn-autodiff",
@@ -322,7 +322,7 @@ dependencies = [
 [[package]]
 name = "burn-dataset"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "csv",
  "derive-new",
@@ -347,7 +347,7 @@ dependencies = [
 [[package]]
 name = "burn-derive"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "derive-new",
  "proc-macro2",
@@ -358,7 +358,7 @@ dependencies = [
 [[package]]
 name = "burn-fusion"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "burn-tensor",
@@ -372,7 +372,7 @@ dependencies = [
 [[package]]
 name = "burn-jit"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -392,7 +392,7 @@ dependencies = [
 [[package]]
 name = "burn-ndarray"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-autodiff",
  "burn-common",
@@ -410,7 +410,7 @@ dependencies = [
 [[package]]
 name = "burn-tch"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-tensor",
  "half",
@@ -422,7 +422,7 @@ dependencies = [
 [[package]]
 name = "burn-tensor"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "derive-new",
@@ -437,7 +437,7 @@ dependencies = [
 [[package]]
 name = "burn-train"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-core",
  "crossterm",
@@ -456,7 +456,7 @@ dependencies = [
 [[package]]
 name = "burn-wgpu"
 version = "0.14.0"
-source = "git+https://github.com/tracel-ai/burn.git#0ee2021567b3725907df5fd1a905ce60b1aca096"
+source = "git+https://github.com/tracel-ai/burn.git#2a721a9d0c73e36fabd9c9cf337bd3ca4d8d1acc"
 dependencies = [
  "burn-common",
  "burn-compute",
@@ -527,9 +527,8 @@ dependencies = [
 
 [[package]]
 name = "candle-core"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f1b20174c1707e20f4cb364a355b449803c03e9b0c9193324623cf9787a4e00"
+version = "0.5.0"
+source = "git+https://github.com/huggingface/candle.git?rev=2817643#2817643db9c687cacd330ad53385ae278d018c00"
 dependencies = [
  "byteorder",
  "gemm",
@@ -2180,9 +2179,9 @@ checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.80"
+version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a56dea16b0a29e94408b9aa5e2940a4eedbd128a1ba20e8f7ae60fd3d465af0e"
+checksum = "3d1597b0c024618f09a9c3b8655b7e430397a36d23fdafec26d6965e9eec3eba"
 dependencies = [
  "unicode-ident",
 ]
@@ -2645,18 +2644,18 @@ checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
-version = "1.0.197"
+version = "1.0.198"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb1c873e1b9b056a4dc4c0c198b24c3ffa059243875552b2bd0933b1aee4ce2"
+checksum = "9846a40c979031340571da2545a4e5b7c4163bdae79b301d5f86d03979451fcc"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.197"
+version = "1.0.198"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7eb0b34b42edc17f6b7cac84a52a1c5f0e1bb2227e997ca9011ea3dd34e8610b"
+checksum = "e88edab869b01783ba905e7d0153f9fc1a6505a96e4ad3018011eedb838566d9"
 dependencies = [
  "proc-macro2",
  "quote",

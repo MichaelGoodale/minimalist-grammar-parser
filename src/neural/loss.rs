@@ -604,30 +604,7 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let max = n_compatible.clone().max_dim(0);
-    let idx = Tensor::<B, 1, Int>::from_data(
-        Data::from(
-            n_compatible
-                .clone()
-                .equal(max)
-                .iter_dim(0)
-                .enumerate()
-                .filter_map(|(i, x)| {
-                    if x.into_scalar() {
-                        Some(i as u32)
-                    } else {
-                        None
-                    }
-                })
-                .collect_vec()
-                .as_slice(),
-        )
-        .convert(),
-        &g.device(),
-    );
-
-    let best_grammar: Tensor<B, 2> =
-        loss_per_grammar.select(1, idx.clone()) + grammar_losses.select(0, idx).unsqueeze_dim(0);
+    let best_grammar: Tensor<B, 2> = loss_per_grammar + grammar_losses.unsqueeze_dim(0);
 
     (
         -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),

@@ -506,13 +506,7 @@ fn get_grammar_losses<B: Backend>(
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings, 1)
-    let loss: Tensor<B, 3> = grammar
-        .gather(3, targets)
-        .squeeze::<3>(3)
-        .sum_dim(2)
-        .squeeze(2)
-        .mask_fill(target_s_ids, -999.0)
-        .unsqueeze_dim(2);
+    let loss: Tensor<B, 3> = grammar.gather(3, targets).squeeze::<3>(3).sum_dim(2);
 
     let loss: Tensor<B, 2> = log_sum_exp_dim(
         Tensor::cat(

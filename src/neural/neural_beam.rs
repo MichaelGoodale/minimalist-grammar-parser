@@ -101,7 +101,6 @@ pub struct NeuralBeam<'a, B: Backend> {
     probability_path: StringProbHistory,
     top_id: usize,
     steps: usize,
-    n_empties: usize,
     max_string_len: Option<usize>,
 }
 
@@ -176,7 +175,6 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 probability_path: history,
                 top_id: 0,
                 steps: 0,
-                n_empties: 0,
                 max_string_len,
             }
         }))
@@ -372,8 +370,6 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
                     .map(|(_, p)| *p)
                     .max()
                     .unwrap_or_else(|| LogProb::new(0.0).unwrap());
-        } else {
-            beam.n_empties += 1;
         }
 
         beam.add_to_log_prob(child_prob);
@@ -399,7 +395,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
     fn pushable(&self, _config: &ParsingConfig) -> bool {
         !self.burnt
             && if let Some(max_length) = self.max_string_len {
-                self.generated_sentence.len() <= max_length && self.n_empties <= max_length * 2
+                self.generated_sentence.len() <= max_length
             } else {
                 true
             }

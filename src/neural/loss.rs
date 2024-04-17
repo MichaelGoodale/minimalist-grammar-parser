@@ -570,7 +570,7 @@ fn get_grammar_losses<B: Backend>(
         let mut s = vec![];
         for (i, cats) in grammar_cats.into_iter().enumerate() {
             s.push(get_string_prob(
-                &string_probs,
+                string_probs,
                 lexicon,
                 g,
                 Some(&BTreeSet::from([i])),

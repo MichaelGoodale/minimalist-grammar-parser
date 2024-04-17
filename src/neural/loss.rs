@@ -628,14 +628,15 @@ fn get_grammar_losses<B: Backend>(
             //Probability of generating each of the targets
             loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
-            let invalid_strings = n_compatible.clone().sum_dim(0).squeeze(0).bool();
-            let grammar_string_weight = string_probs.mask_fill(invalid_strings, 0.0).sum_dim(0);
+            let n_compatible = n_compatible.clone().select(1, grammar_id.clone());
+            let grammar_string_weight = string_probs
+                .mask_fill(
+                    n_compatible.clone().sum_dim(0).squeeze(0).bool().bool_not(),
+                    0.0,
+                )
+                .sum_dim(0);
 
-            let n_compatible = n_compatible
-                .clone()
-                .select(1, grammar_id.clone())
-                .sum_dim(1)
-                .squeeze(1);
+            let n_compatible = n_compatible.clone().sum_dim(1).squeeze(1);
             let n_compatible = n_compatible
                 .clone()
                 .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)

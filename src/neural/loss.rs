@@ -85,11 +85,10 @@ fn compatible_strings<B: Backend>(
     strings: &[StringPath],
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,
-) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 4, Int>) {
+) -> (Tensor<B, 2>, Tensor<B, 2>) {
     let mut n_compatible = Vec::with_capacity(strings.len());
     let mut compatible_loss =
         Tensor::<B, 2>::full([targets.len(), strings.len()], -999.0, &g.device());
-    let mut mapping = Vec::with_capacity(strings.len() * targets.len());
 
     for (string_i, s) in strings.iter().enumerate() {
         let mut n_compatible_per_string = vec![];
@@ -119,9 +118,7 @@ fn compatible_strings<B: Backend>(
                 }
                 compatible_loss = compatible_loss
                     .slice_assign([target_i..target_i + 1, string_i..string_i + 1], p);
-                mapping.push(Some(string_target_map));
             }
-            mapping.push(None);
         }
         n_compatible.push(Tensor::<B, 1>::from_data(
             Data::from(n_compatible_per_string.as_slice()).convert(),
@@ -129,42 +126,7 @@ fn compatible_strings<B: Backend>(
         ));
     }
 
-    let mut compatible_map = Tensor::<B, 4, Int>::zeros(
-        [targets.len(), targets.len(), strings.len(), strings.len()],
-        &g.device(),
-    );
-    let one = Tensor::<B, 4, Int>::ones([1, 1, 1, 1], &g.device());
-    for ((t_i, t_j), (s_i, s_j)) in (0..targets.len())
-        .tuple_combinations::<(_, _)>()
-        .cartesian_product((0..strings.len()).tuple_combinations::<(_, _)>())
-    {
-        let idx_i = t_i * strings.len() + s_i;
-        let idx_j = t_j * strings.len() + s_j;
-        if let (Some(mapping_i), Some(mapping_j)) = (&mapping[idx_i], &mapping[idx_j]) {
-            let mut compatible = true;
-            let all_keys: BTreeSet<_> = mapping_i.keys().chain(mapping_j.keys()).collect();
-            for k in all_keys {
-                if let (Some(v), Some(v_2)) = (mapping_i.get(k), mapping_j.get(k)) {
-                    if v != v_2 {
-                        compatible = false;
-                        break;
-                    }
-                }
-            }
-            if compatible {
-                compatible_map = compatible_map.slice_assign(
-                    [t_i..t_i + 1, t_j..t_j + 1, s_i..s_i + 1, s_j..s_j + 1],
-                    one.clone(),
-                );
-            }
-        }
-    }
-
-    (
-        Tensor::stack(n_compatible, 1),
-        compatible_loss,
-        compatible_map,
-    )
+    (Tensor::stack(n_compatible, 1), compatible_loss)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -463,7 +425,7 @@ pub fn get_grammar_with_targets<B: Backend>(
 )> {
     let target_vec = target_to_vec(&targets);
     let (strings, string_probs) = retrieve_strings(lexicon, g, Some(&target_vec), neural_config);
-    let (losses, grammar_losses, grammar_idx, _, _) = get_grammar_losses(
+    let (losses, grammar_losses, grammar_idx, _) = get_grammar_losses(
         g,
         lexicon,
         &strings,
@@ -512,12 +474,10 @@ fn get_grammar_losses<B: Backend>(
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Tensor<B, 1>,
-    Tensor<B, 1>,
 ) {
     let n_targets = targets.shape().dims[0];
 
-    let (n_compatible, compatible_loss, compatible_map) =
-        compatible_strings(strings, target_vec, g);
+    let (n_compatible, compatible_loss) = compatible_strings(strings, target_vec, g);
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -565,7 +525,6 @@ fn get_grammar_losses<B: Backend>(
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
         let mut loss_per_grammar = vec![];
         let mut compatible_per_grammar = vec![];
-        let mut compatible_intra_grammar = vec![];
         for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
             let string_probs = get_string_prob(
                 string_probs,
@@ -578,14 +537,6 @@ fn get_grammar_losses<B: Backend>(
             );
 
             let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
-            let inter_compatible = compatible_map
-                .clone()
-                .select(2, grammar_id.clone())
-                .select(3, grammar_id.clone())
-                .sum_dim(3)
-                .sum_dim(1)
-                .max()
-                .float();
             //Probability of generating each of the targets
             loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
@@ -600,7 +551,6 @@ fn get_grammar_losses<B: Backend>(
                 .sum_dim(0);
             //How many compatible strings in the grammar?
             compatible_per_grammar.push(n_compatible);
-            compatible_intra_grammar.push(inter_compatible);
             //(n_strings_per_grammar);
         }
         (
@@ -608,18 +558,15 @@ fn get_grammar_losses<B: Backend>(
             grammar_probs,
             grammar_idx,
             Tensor::cat(compatible_per_grammar, 0),
-            Tensor::cat(compatible_intra_grammar, 0),
         )
     } else {
-        let n_compatible = n_compatible.clone().max_dim(0).squeeze(0);
+        let n_compatible = n_compatible.sum_dim(0);
+        let n_compatible = n_compatible
+            .clone()
+            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
+            .squeeze(0);
         let grammar_probs = get_grammar_per_string(string_probs, g, lexicon);
-        (
-            loss,
-            grammar_probs,
-            vec![],
-            n_compatible.clone(),
-            n_compatible,
-        )
+        (loss, grammar_probs, vec![], n_compatible.clone())
     }
 }
 
@@ -647,7 +594,7 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
-    let (loss_per_grammar, grammar_losses, _, n_compatible, intra_compatible) = get_grammar_losses(
+    let (loss_per_grammar, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
         strings,
@@ -655,23 +602,14 @@ pub fn get_neural_outputs<B: Backend>(
         target_vec,
         targets,
         neural_config,
-        true,
+        false,
     );
 
-    let max_intra_compatible = intra_compatible.clone().max_dim(0).into_scalar();
-
-    //let n_compatible = n_compatible.mask_fill(
-    //    intra_compatible.equal_elem(max_intra_compatible).bool_not(),
-    //    -99,
-    //);
-
-    //Max n compatible of top intra compatible
-    let max_n_compatible = n_compatible.clone().max_dim(0);
     let idx = Tensor::<B, 1, Int>::from_data(
         Data::from(
             n_compatible
                 .clone()
-                .equal(max_n_compatible.clone())
+                .bool()
                 .iter_dim(0)
                 .enumerate()
                 .filter_map(|(i, x)| {
@@ -688,9 +626,11 @@ pub fn get_neural_outputs<B: Backend>(
         &g.device(),
     );
 
-    let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
+    let best_grammar: Tensor<B, 2> =
+        (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
-    let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses).select(0, idx);
-
-    (-log_sum_exp_dim(best_grammar, 0), max_n_compatible)
+    (
+        -log_sum_exp_dim(best_grammar, 1).sum_dim(0).squeeze(0),
+        n_compatible.max_dim(0),
+    )
 }

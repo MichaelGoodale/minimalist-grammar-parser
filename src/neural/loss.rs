@@ -660,10 +660,10 @@ pub fn get_neural_outputs<B: Backend>(
 
     let max_intra_compatible = intra_compatible.clone().max_dim(0).into_scalar();
 
-    let n_compatible = n_compatible.mask_fill(
-        intra_compatible.equal_elem(max_intra_compatible).bool_not(),
-        -99,
-    );
+    //let n_compatible = n_compatible.mask_fill(
+    //    intra_compatible.equal_elem(max_intra_compatible).bool_not(),
+    //    -99,
+    //);
 
     //Max n compatible of top intra compatible
     let max_n_compatible = n_compatible.clone().max_dim(0);

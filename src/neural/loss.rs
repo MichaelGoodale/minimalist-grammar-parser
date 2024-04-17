@@ -573,7 +573,7 @@ fn get_grammar_losses<B: Backend>(
                 &g.device(),
             ));
         }
-        let loss = loss + Tensor::stack(s, 1) * 10.0;
+        let loss = loss + Tensor::stack(s, 1);
         (loss, grammar_probs, vec![], n_compatible.clone())
     }
 }

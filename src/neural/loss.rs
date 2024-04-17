@@ -125,7 +125,7 @@ fn compatible_strings<B: Backend>(
         }
         n_compatible.push(Tensor::<B, 1>::from_data(
             Data::from(n_compatible_per_string.as_slice()).convert(),
-            &B::Device::default(),
+            &g.device(),
         ));
     }
 
@@ -607,8 +607,8 @@ fn get_grammar_losses<B: Backend>(
             Tensor::cat(loss_per_grammar, 1),
             grammar_probs,
             grammar_idx,
-            Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
-            Tensor::cat(compatible_intra_grammar, 0).to_device(&g.device()),
+            Tensor::cat(compatible_per_grammar, 0),
+            Tensor::cat(compatible_intra_grammar, 0),
         )
     } else {
         let n_compatible = n_compatible.clone().max_dim(0).squeeze(0);

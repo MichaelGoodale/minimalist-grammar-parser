@@ -560,11 +560,10 @@ fn get_grammar_losses<B: Backend>(
             Tensor::cat(compatible_per_grammar, 0),
         )
     } else {
-        let n_compatible = n_compatible.sum_dim(0);
+        let n_compatible = n_compatible.sum_dim(0).squeeze(0);
         let n_compatible = n_compatible
             .clone()
-            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
-            .squeeze(0);
+            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
         let grammar_probs = get_grammar_per_string(string_probs, g, lexicon);
         (loss, grammar_probs, vec![], n_compatible.clone())
     }
@@ -627,10 +626,10 @@ pub fn get_neural_outputs<B: Backend>(
     );
 
     let best_grammar: Tensor<B, 2> =
-        (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
+        (loss_per_grammar.select(1, idx.clone()) + grammar_losses.select(0, idx).unsqueeze_dim(0));
 
     (
-        -log_sum_exp_dim(best_grammar, 1).sum_dim(0).squeeze(0),
+        -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),
         n_compatible.max_dim(0),
     )
 }

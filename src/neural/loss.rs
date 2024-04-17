@@ -604,7 +604,7 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let best_grammar: Tensor<B, 2> = loss_per_grammar + grammar_losses.unsqueeze_dim(0);
+    let best_grammar: Tensor<B, 2> = loss_per_grammar;
 
     (
         -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),

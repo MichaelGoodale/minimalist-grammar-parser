@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::LN_2;
 
@@ -11,12 +10,10 @@ use crate::lexicon::Lexiconable;
 use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::{HashMap, HashSet};
-use anyhow::bail;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
-use burn::tensor::{Bool, Data, Int};
+use burn::tensor::{Bool, Data, ElementConversion, Int};
 use itertools::Itertools;
 use moka::sync::Cache;
-use rand::Rng;
 
 pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
@@ -26,7 +23,7 @@ pub struct NeuralConfig {
     pub parsing_config: ParsingConfig,
 }
 
-fn retrieve_strings<B: Backend>(
+pub fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     g: &GrammarParameterization<B>,
     targets: Option<&[Vec<usize>]>,
@@ -440,55 +437,42 @@ fn get_string_prob<B: Backend>(
 pub type NeuralGrammarCache =
     Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
 
-pub fn get_grammar<B: Backend>(
-    g: &GrammarParameterization<B>,
-    neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
-) -> anyhow::Result<(
-    Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
-    Tensor<B, 1>,
-)> {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (strings, string_probs) = retrieve_strings(&lexicon, g, None, neural_config);
-    let strings = string_path_to_tensor(&strings, g, neural_config);
-
-    let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, &lexicon);
-    let mut grammars = vec![];
-    for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
-        let grammar = lexicon.grammar_features(&string_probs[full_grammar_string_id]);
-        //(1, n_grammar_strings)
-        let string_probs = get_string_prob(
-            &string_probs,
-            &lexicon,
-            g,
-            Some(&grammar_set),
-            &grammar_cats,
-            neural_config,
-            &g.device(),
-        );
-        grammars.push((
-            grammar,
-            strings.clone().select(0, grammar_id.clone()),
-            string_probs,
-        ));
-    }
-
-    //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((grammars, grammar_probs))
+pub fn target_to_vec<B: Backend>(targets: &Tensor<B, 2, Int>) -> Vec<Vec<usize>> {
+    targets
+        .clone()
+        .iter_dim(0)
+        .map(|x| {
+            x.iter_dim(1)
+                .map(|x| x.into_scalar().elem())
+                .take_while(|&x| x != 1)
+                .map(|x: u32| x as usize)
+                .collect()
+        })
+        .collect()
 }
+
 pub fn get_grammar_with_targets<B: Backend>(
     g: &GrammarParameterization<B>,
+    lexicon: &NeuralLexicon<B>,
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
 ) -> anyhow::Result<(
     Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
     Tensor<B, 1>,
     Tensor<B, 1>,
 )> {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (losses, grammar_losses, grammar_idx, strings, string_probs, _, _) =
-        get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
+    let target_vec = target_to_vec(&targets);
+    let (strings, string_probs) = retrieve_strings(lexicon, g, Some(&target_vec), neural_config);
+    let (losses, grammar_losses, grammar_idx, _, _) = get_grammar_losses(
+        g,
+        lexicon,
+        &strings,
+        &string_probs,
+        &target_vec,
+        targets,
+        neural_config,
+        true,
+    );
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
     for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
@@ -496,7 +480,7 @@ pub fn get_grammar_with_targets<B: Backend>(
         //(1, n_grammar_strings)
         let string_probs = get_string_prob(
             &string_probs,
-            &lexicon,
+            lexicon,
             g,
             Some(&grammar_set),
             &grammar_cats,
@@ -517,44 +501,23 @@ pub fn get_grammar_with_targets<B: Backend>(
 fn get_grammar_losses<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
+    strings: &[StringPath],
+    string_probs: &[StringProbHistory],
+    target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
     grammar_splitting: bool,
-) -> anyhow::Result<(
+) -> (
     Tensor<B, 2>,
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
-    Vec<StringPath>,
-    Vec<StringProbHistory>,
     Tensor<B, 1>,
     Tensor<B, 1>,
-)> {
+) {
     let n_targets = targets.shape().dims[0];
 
-    let target_vec = (0..n_targets)
-        .map(|i| {
-            let v: Vec<usize> = targets
-                .clone()
-                .slice([i..i + 1])
-                .to_data()
-                .convert::<u32>()
-                .value
-                .into_iter()
-                .take_while(|&x| x != 1)
-                .map(|x| x as usize)
-                .collect();
-            v
-        })
-        .collect::<Vec<_>>();
-
-    let (strings, string_probs) = retrieve_strings(lexicon, g, Some(&target_vec), neural_config);
-
-    if strings.is_empty() {
-        bail!("Zero outputted strings!");
-    }
-
     let (n_compatible, compatible_loss, compatible_map) =
-        compatible_strings(&strings, &target_vec, g);
+        compatible_strings(strings, target_vec, g);
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -571,7 +534,7 @@ fn get_grammar_losses<B: Backend>(
     let n_strings = strings.len();
 
     //(n_grammar_strings, padding_length, n_lemmas)
-    let grammar = string_path_to_tensor(&strings, g, neural_config);
+    let grammar = string_path_to_tensor(strings, g, neural_config);
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
     let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
@@ -599,13 +562,13 @@ fn get_grammar_losses<B: Backend>(
     .squeeze(2);
 
     if grammar_splitting {
-        let (grammar_probs, grammar_idx) = get_grammar_probs(&string_probs, g, lexicon);
+        let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
         let mut loss_per_grammar = vec![];
         let mut compatible_per_grammar = vec![];
         let mut compatible_intra_grammar = vec![];
         for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
             let string_probs = get_string_prob(
-                &string_probs,
+                string_probs,
                 lexicon,
                 g,
                 Some(grammar_set),
@@ -640,68 +603,60 @@ fn get_grammar_losses<B: Backend>(
             compatible_intra_grammar.push(inter_compatible);
             //(n_strings_per_grammar);
         }
-        Ok((
+        (
             Tensor::cat(loss_per_grammar, 1),
             grammar_probs,
             grammar_idx,
-            strings,
-            string_probs,
             Tensor::cat(compatible_per_grammar, 0).to_device(&g.device()),
             Tensor::cat(compatible_intra_grammar, 0).to_device(&g.device()),
-        ))
+        )
     } else {
         let n_compatible = n_compatible.clone().max_dim(0).squeeze(0);
-        let grammar_probs = get_grammar_per_string(&string_probs, g, lexicon);
-        Ok((
+        let grammar_probs = get_grammar_per_string(string_probs, g, lexicon);
+        (
             loss,
             grammar_probs,
             vec![],
-            strings,
-            string_probs,
             n_compatible.clone(),
             n_compatible,
-        ))
+        )
     }
 }
 
 pub fn get_all_parses<B: Backend>(
     g: &GrammarParameterization<B>,
-    targets: Tensor<B, 2, Int>,
+    lexicon: &NeuralLexicon<B>,
+    targets: Option<Tensor<B, 2, Int>>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
-) -> anyhow::Result<(Vec<StringPath>, Vec<StringProbHistory>)> {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let n_targets = targets.shape().dims[0];
-
-    let target_vec = (0..n_targets)
-        .map(|i| {
-            let v: Vec<usize> = targets
-                .clone()
-                .slice([i..i + 1])
-                .to_data()
-                .convert::<u32>()
-                .value
-                .into_iter()
-                .take_while(|&x| x != 1)
-                .map(|x| x as usize)
-                .collect();
-            v
-        })
-        .collect::<Vec<_>>();
-
-    let (strings, string_probs) = retrieve_strings(&lexicon, g, Some(&target_vec), neural_config);
-    Ok((strings, string_probs))
+) -> (Vec<StringPath>, Vec<StringProbHistory>) {
+    match targets {
+        Some(targets) => {
+            let target_vec = target_to_vec(&targets);
+            retrieve_strings(lexicon, g, Some(&target_vec), neural_config)
+        }
+        None => retrieve_strings(lexicon, g, None, neural_config),
+    }
 }
 
 pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
+    lexicon: &NeuralLexicon<B>,
+    strings: &[StringPath],
+    string_probs: &[StringProbHistory],
+    target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-    rng: &mut impl Rng,
-) -> anyhow::Result<(Tensor<B, 1>, Tensor<B, 1>)> {
-    let lexicon = NeuralLexicon::new_superimposed(g, rng)?;
-    let (loss_per_grammar, grammar_losses, _, _, _, n_compatible, intra_compatible) =
-        get_grammar_losses(g, &lexicon, targets, neural_config, true)?;
+) -> (Tensor<B, 1>, Tensor<B, 1>) {
+    let (loss_per_grammar, grammar_losses, _, n_compatible, intra_compatible) = get_grammar_losses(
+        g,
+        lexicon,
+        strings,
+        string_probs,
+        target_vec,
+        targets,
+        neural_config,
+        true,
+    );
 
     let max_intra_compatible = intra_compatible.clone().max_dim(0).into_scalar();
 
@@ -732,11 +687,10 @@ pub fn get_neural_outputs<B: Backend>(
         .convert(),
         &g.device(),
     );
-    dbg!(idx.shape());
 
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 
     let best_grammar: Tensor<B, 1> = (loss_per_grammar + grammar_losses).select(0, idx);
 
-    Ok((-log_sum_exp_dim(best_grammar, 0), max_n_compatible))
+    (-log_sum_exp_dim(best_grammar, 0), max_n_compatible)
 }

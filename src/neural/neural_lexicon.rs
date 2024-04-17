@@ -360,10 +360,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
     //TODO: look into if weights should be done only over categories
 
-    pub fn new_superimposed(
-        grammar_params: &GrammarParameterization<B>,
-        rng: &mut impl Rng,
-    ) -> anyhow::Result<Self> {
+    pub fn new_superimposed(grammar_params: &GrammarParameterization<B>) -> anyhow::Result<Self> {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -397,7 +394,6 @@ impl<B: Backend> NeuralLexicon<B> {
                     )
                 }))
                 .collect();
-            first_features.shuffle(rng);
             let mut all_categories = vec![];
             let mut parent_licensees = vec![];
             for (n_licensees, feature, prob) in first_features {
@@ -496,7 +492,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
             for n_licensees in 1..grammar_params.n_licensees {
                 let mut new_parent_licensees = vec![];
-                let mut licensees = (0..grammar_params.n_categories)
+                let licensees = (0..grammar_params.n_categories)
                     .map(|c| {
                         (
                             FeatureOrLemma::Feature(Feature::Licensee(c)),
@@ -512,7 +508,6 @@ impl<B: Backend> NeuralLexicon<B> {
                         )
                     })
                     .collect::<Vec<_>>();
-                licensees.shuffle(rng);
                 for (feature, prob) in licensees.into_iter() {
                     let node = graph.add_node((feature, tensor_to_log_prob(&prob)?));
                     weights_map.insert(NeuralProbabilityRecord::Node(node), prob);
@@ -582,17 +577,14 @@ impl<B: Backend> NeuralLexicon<B> {
                 );
             }
 
-            let mut lemmas = [lemma, silent_lemma];
-            lemmas.shuffle(rng);
+            let lemmas = [lemma, silent_lemma];
             add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
             for n_categories in 0..grammar_params.n_features {
-                let mut new_parents: Vec<_> = (0..grammar_params.n_categories)
+                let new_parents: Vec<_> = (0..grammar_params.n_categories)
                     .cartesian_product(0..N_TYPES)
                     .collect();
-
-                new_parents.shuffle(rng);
 
                 let new_parents = new_parents
                     .into_iter()

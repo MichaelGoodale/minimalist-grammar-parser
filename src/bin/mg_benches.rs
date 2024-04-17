@@ -1,6 +1,6 @@
 #![allow(unused_variables, dead_code)]
 
-use std::time::Instant;
+use std::{collections::BTreeMap, default, time::Instant};
 
 use anyhow::Result;
 use burn::{
@@ -13,8 +13,8 @@ use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
     neural::{
-        loss::{get_all_parses, get_neural_outputs, NeuralConfig},
-        neural_lexicon::GrammarParameterization,
+        loss::{get_all_parses, NeuralConfig},
+        neural_lexicon::{GrammarParameterization, NeuralLexicon},
         N_TYPES,
     },
     Generator, Parser, ParsingConfig,
@@ -30,7 +30,7 @@ fn main() {
     );
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(32);
-    let targets = (1..10)
+    let targets = (1..5)
         .map(|i| {
             let mut s: [u32; 11] = [0; 11];
             s.iter_mut().take(i).for_each(|x| *x = 3);
@@ -38,15 +38,14 @@ fn main() {
             Tensor::<NdArray, 1, Int>::from_data(Data::from(s).convert(), &NdArrayDevice::default())
         })
         .collect::<Vec<_>>();
-    let targets = Tensor::stack(targets, 0);
-    let g = get_grammar_structure(&mut rng, 1.0, NdArrayDevice::default()).unwrap();
+    let g = get_grammar_structure::<NdArray>(&mut rng, 1.0, NdArrayDevice::default()).unwrap();
 
-    for depth in [1, 5, 10, 100, 1000] {
+    for depth in [1, 5, 10, 20] {
         let config: ParsingConfig = ParsingConfig::new(
-            LogProb::new(-128.0).unwrap(),
+            LogProb::new(-512.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             depth,
-            1000,
+            5000,
         );
         let neural_config = NeuralConfig {
             compatible_weight: 0.5,
@@ -56,13 +55,19 @@ fn main() {
             parsing_config: config,
         };
         let start = Instant::now();
-        let n = get_all_parses(&g, targets.clone(), &neural_config, &mut rng)
-            .unwrap()
-            .0
-            .len();
+        let lexicon = NeuralLexicon::new_superimposed(&g).unwrap();
+        let (strings, string_probs) = get_all_parses(&g, &lexicon, None, &neural_config);
         let elapse = start.elapsed();
+        let n = strings.len();
+        let mut counts = BTreeMap::default();
+        strings
+            .iter()
+            .for_each(|x| *counts.entry(x.len()).or_insert(0) += 1);
 
-        println!("DONE, {depth} has {n} parses in {} ms", elapse.as_millis());
+        println!(
+            "DONE, {depth} has {n} parses in {} ms and the following counts: {counts:?}",
+            elapse.as_millis()
+        );
     }
 }
 
@@ -234,37 +239,7 @@ fn get_grammar_structure<B: Backend>(
         pad_vector.clone(),
         end_vector.clone(),
         temperature,
-        true,
+        false,
         rng,
     )
-}
-fn random_neural_generation() -> Result<()> {
-    let mut rng = rand::rngs::StdRng::seed_from_u64(32);
-    let targets = (1..9)
-        .map(|i| {
-            let mut s: [u32; 11] = [0; 11];
-            s.iter_mut().take(i).for_each(|x| *x = 3);
-            s[i] = 1;
-            Tensor::<NdArray, 1, Int>::from_data(Data::from(s).convert(), &NdArrayDevice::default())
-        })
-        .collect::<Vec<_>>();
-    let targets = Tensor::stack(targets, 0);
-
-    for temperature in [0.1, 0.5, 1.0] {
-        let config = NeuralConfig {
-            compatible_weight: 0.5,
-            n_strings_per_grammar: 100,
-            padding_length: 11,
-            temperature: 1.0,
-            parsing_config: ParsingConfig::new(
-                LogProb::new(-256.0).unwrap(),
-                LogProb::from_raw_prob(0.5).unwrap(),
-                50,
-                100,
-            ),
-        };
-        let g = get_grammar_structure(&mut rng, temperature, NdArrayDevice::default())?;
-        get_neural_outputs(&g, targets.clone(), &config, &mut rng)?;
-    }
-    Ok(())
 }

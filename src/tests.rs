@@ -1,14 +1,17 @@
 use crate::{
     lexicon::Feature,
     neural::{
-        loss::{get_grammar_with_targets, get_neural_outputs, NeuralConfig},
+        loss::{
+            get_grammar_with_targets, get_neural_outputs, retrieve_strings, target_to_vec,
+            NeuralConfig,
+        },
         neural_lexicon::NeuralFeature,
     },
 };
 use anyhow::Result;
 use rand::SeedableRng;
 
-use self::neural::{loss::get_grammar, neural_lexicon::GrammarParameterization};
+use self::neural::neural_lexicon::GrammarParameterization;
 
 use super::*;
 use crate::{
@@ -615,11 +618,23 @@ fn test_loss() -> Result<()> {
             false,
             &mut rng,
         )?;
-        let val = get_neural_outputs(&g, targets.clone(), &config, &mut rng)?
-            .0
-            .into_scalar()
-            .elem::<f32>();
-        let output = get_grammar_with_targets(&g, targets.clone(), &config, &mut rng)?;
+
+        let lexicon = NeuralLexicon::new_superimposed(&g)?;
+        let target_vec = target_to_vec(&targets);
+        let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+        let val = get_neural_outputs(
+            &g,
+            &lexicon,
+            &strings,
+            &string_probs,
+            &target_vec,
+            targets.clone(),
+            &config,
+        )
+        .0
+        .into_scalar()
+        .elem::<f32>();
+        let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
         let top_g = &output.0[top_g].0;
         let encoded_grammar = [
@@ -725,7 +740,19 @@ fn random_neural_generation() -> Result<()> {
             500,
         ),
     };
-    get_neural_outputs(&g, targets, &config, &mut rng)?;
-    get_grammar(&g, &config, &mut rng)?;
+
+    let lexicon = NeuralLexicon::new_superimposed(&g)?;
+    let target_vec = target_to_vec(&targets);
+    let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+    let val = get_neural_outputs(
+        &g,
+        &lexicon,
+        &strings,
+        &string_probs,
+        &target_vec,
+        targets.clone(),
+        &config,
+    );
+    get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
     Ok(())
 }

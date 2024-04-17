@@ -237,13 +237,15 @@ fn get_grammar_per_string<B: Backend>(
     string_paths: &[StringProbHistory],
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
-) -> Tensor<B, 1> {
+) -> (Tensor<B, 1>, Vec<Vec<LexemeTypes>>) {
     let mut grammar_probs = Tensor::<B, 1>::full([string_paths.len()], 0.0, &g.device());
+    let mut cats = vec![];
     for (i, string_path) in string_paths.iter().enumerate() {
-        let (p, _) = get_prob_of_grammar(string_path.attested_nodes(), lexicon, g);
+        let (p, g) = get_prob_of_grammar(string_path.attested_nodes(), lexicon, g);
         grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
+        cats.push(g);
     }
-    grammar_probs
+    (grammar_probs, cats)
 }
 
 fn get_grammar_probs<B: Backend>(
@@ -563,7 +565,20 @@ fn get_grammar_losses<B: Backend>(
         let n_compatible = n_compatible
             .clone()
             .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
-        let grammar_probs = get_grammar_per_string(string_probs, g, lexicon);
+        let (grammar_probs, grammar_cats) = get_grammar_per_string(string_probs, g, lexicon);
+        let mut s = vec![];
+        for (i, cats) in grammar_cats.into_iter().enumerate() {
+            s.push(get_string_prob(
+                &string_probs,
+                lexicon,
+                g,
+                Some(&BTreeSet::from([i])),
+                &cats,
+                neural_config,
+                &g.device(),
+            ));
+        }
+        let loss = loss + Tensor::stack(s, 1);
         (loss, grammar_probs, vec![], n_compatible.clone())
     }
 }

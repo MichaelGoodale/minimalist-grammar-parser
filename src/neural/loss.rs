@@ -732,6 +732,7 @@ pub fn get_neural_outputs<B: Backend>(
         .convert(),
         &g.device(),
     );
+    dbg!(idx.shape());
 
     let loss_per_grammar = loss_per_grammar.sum_dim(0).squeeze(0);
 

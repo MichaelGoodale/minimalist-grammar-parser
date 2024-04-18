@@ -515,7 +515,10 @@ fn get_grammar_losses<B: Backend>(
 
     let loss: Tensor<B, 2> = log_sum_exp_dim(
         Tensor::cat(
-            vec![loss.clone() + LN_2, compatible_loss.unsqueeze_dim(2) + LN_2],
+            vec![
+                loss.unsqueeze_dim::<3>(2) + LN_2,
+                compatible_loss.unsqueeze_dim(2) + LN_2,
+            ],
             2,
         ),
         2,

@@ -10,6 +10,7 @@ use crate::lexicon::Lexiconable;
 use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::{HashMap, HashSet};
+use burn::tensor::activation::softmax;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, ElementConversion, Int};
 use itertools::Itertools;
@@ -427,7 +428,7 @@ pub fn get_grammar_with_targets<B: Backend>(
 )> {
     let target_vec = target_to_vec(&targets);
     let (strings, string_probs) = retrieve_strings(lexicon, g, Some(&target_vec), neural_config);
-    let (losses, grammar_losses, grammar_idx, _) = get_grammar_losses(
+    let (losses, _, grammar_losses, grammar_idx, _) = get_grammar_losses(
         g,
         lexicon,
         &strings,
@@ -472,6 +473,7 @@ fn get_grammar_losses<B: Backend>(
     neural_config: &NeuralConfig,
     grammar_splitting: bool,
 ) -> (
+    Tensor<B, 2>,
     Tensor<B, 2>,
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
@@ -559,6 +561,7 @@ fn get_grammar_losses<B: Backend>(
         }
         (
             Tensor::cat(loss_per_grammar, 1),
+            Tensor::zeros([1, 1], &g.device()),
             grammar_probs,
             grammar_idx,
             Tensor::cat(compatible_per_grammar, 0),
@@ -581,8 +584,13 @@ fn get_grammar_losses<B: Backend>(
                 &g.device(),
             ));
         }
-        let loss = loss + Tensor::stack(s, 1);
-        (loss, grammar_probs, vec![], n_compatible.clone())
+        (
+            loss,
+            Tensor::stack(s, 1),
+            grammar_probs,
+            vec![],
+            n_compatible.clone(),
+        )
     }
 }
 
@@ -610,7 +618,7 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
-    let (loss_per_grammar, grammar_losses, _, n_compatible) = get_grammar_losses(
+    let (loss_per_grammar, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
         strings,
@@ -636,12 +644,15 @@ pub fn get_neural_outputs<B: Backend>(
         .collect();
 
     let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
+    let s_w = softmax(string_probs.select(1, idx.clone()), 1);
 
     let best_grammar: Tensor<B, 2> =
         (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
     (
-        -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),
+        -log_sum_exp_dim(s_w * best_grammar, 1)
+            .squeeze(1)
+            .mean_dim(0),
         max_n_compatible,
     )
 }

@@ -370,7 +370,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
             let lexeme_root = graph.add_node((FeatureOrLemma::Root, LogProb::new(0.0).unwrap()));
-            let mut first_features: Vec<_> = (0..grammar_params.n_categories)
+            let first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
                         1,

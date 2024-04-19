@@ -621,10 +621,27 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let best_grammar: Tensor<B, 2> = loss_per_grammar + grammar_losses.unsqueeze_dim(0);
+    let max_n_compatible = n_compatible.clone().max_dim(0);
+    let idx: Vec<u32> = n_compatible
+        .equal_elem(max_n_compatible.clone().into_scalar())
+        .iter_dim(0)
+        .enumerate()
+        .filter_map(|(i, x)| {
+            if x.into_scalar() {
+                Some(i as u32)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
+
+    let best_grammar: Tensor<B, 2> =
+        (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
     (
         -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),
-        n_compatible.max_dim(0),
+        max_n_compatible,
     )
 }

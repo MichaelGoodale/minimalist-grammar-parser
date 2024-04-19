@@ -619,7 +619,7 @@ fn test_loss() -> Result<()> {
             &mut rng,
         )?;
 
-        let lexicon = NeuralLexicon::new_superimposed(&g)?;
+        let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
         let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
         let val = get_neural_outputs(
@@ -741,7 +741,7 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
 
-    let lexicon = NeuralLexicon::new_superimposed(&g)?;
+    let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
     let target_vec = target_to_vec(&targets);
     let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
     let val = get_neural_outputs(

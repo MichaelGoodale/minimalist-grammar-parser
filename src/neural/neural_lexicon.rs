@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use super::loss::NeuralConfig;
 use super::neural_beam::{NodeFeature, StringProbHistory};
 use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
@@ -360,7 +361,10 @@ impl<B: Backend> NeuralLexicon<B> {
 
     //TODO: look into if weights should be done only over categories
 
-    pub fn new_superimposed(grammar_params: &GrammarParameterization<B>) -> anyhow::Result<Self> {
+    pub fn new_superimposed(
+        grammar_params: &GrammarParameterization<B>,
+        config: &NeuralConfig,
+    ) -> anyhow::Result<Self> {
         let mut licensees_map = HashMap::default();
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
@@ -421,31 +425,28 @@ impl<B: Backend> NeuralLexicon<B> {
                     0 => 0..1,
                     _ => 1..grammar_params.n_licensees + 1,
                 };
-                let ps =
-                    n_features
-                        .cartesian_product(n_licensees)
-                        .map(|(n_features, n_licensees)| {
-                            let log_prob = log_prob
-                                + tensor_to_log_prob(
-                                    &(grammar_params
-                                        .included_features
+                let ps = n_features.cartesian_product(n_licensees).filter_map(
+                    |(n_features, n_licensees)| {
+                        let log_prob = log_prob
+                            + tensor_to_log_prob(
+                                &(grammar_params
+                                    .included_features
+                                    .clone()
+                                    .slice([lexeme_idx..lexeme_idx + 1, n_features..n_features + 1])
+                                    .reshape([1])
+                                    + grammar_params
+                                        .included_licensees
                                         .clone()
                                         .slice([
                                             lexeme_idx..lexeme_idx + 1,
-                                            n_features..n_features + 1,
+                                            n_licensees..n_licensees + 1,
                                         ])
-                                        .reshape([1])
-                                        + grammar_params
-                                            .included_licensees
-                                            .clone()
-                                            .slice([
-                                                lexeme_idx..lexeme_idx + 1,
-                                                n_licensees..n_licensees + 1,
-                                            ])
-                                            .reshape([1])),
-                                )
-                                .unwrap();
-                            (
+                                        .reshape([1])),
+                            )
+                            .unwrap();
+                        match config.parsing_config.min_log_prob {
+                            Some(min) if log_prob < min => None,
+                            _ => Some((
                                 NeuralProbability(
                                     NeuralProbabilityRecord::Lexeme {
                                         node,
@@ -457,8 +458,10 @@ impl<B: Backend> NeuralLexicon<B> {
                                     log_prob,
                                 ),
                                 node,
-                            )
-                        });
+                            )),
+                        }
+                    },
+                );
                 weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
                 let feature = &graph[node].0;
                 match feature {

@@ -650,9 +650,7 @@ pub fn get_neural_outputs<B: Backend>(
         (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
     (
-        -log_sum_exp_dim(s_w * best_grammar, 1)
-            .squeeze(1)
-            .mean_dim(0),
+        -((s_w * best_grammar).mean_dim(1).squeeze::<1>(1).mean_dim(0)),
         max_n_compatible,
     )
 }

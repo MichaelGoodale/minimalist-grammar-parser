@@ -55,7 +55,7 @@ fn main() {
             parsing_config: config,
         };
         let start = Instant::now();
-        let lexicon = NeuralLexicon::new_superimposed(&g, &neural_config).unwrap();
+        let lexicon = NeuralLexicon::new_superimposed(&g, &mut rng, &neural_config).unwrap();
         let (strings, string_probs) = get_all_parses(&g, &lexicon, None, &neural_config);
         let elapse = start.elapsed();
         let n = strings.len();

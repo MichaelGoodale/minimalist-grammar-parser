@@ -363,6 +363,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
     pub fn new_superimposed(
         grammar_params: &GrammarParameterization<B>,
+        rng: &mut impl Rng,
         config: &NeuralConfig,
     ) -> anyhow::Result<Self> {
         let mut licensees_map = HashMap::default();
@@ -374,7 +375,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
         for lexeme_idx in 0..grammar_params.n_lexemes {
             let lexeme_root = graph.add_node((FeatureOrLemma::Root, LogProb::new(0.0).unwrap()));
-            let first_features: Vec<_> = (0..grammar_params.n_categories)
+            let mut first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
                         1,
@@ -400,6 +401,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 .collect();
             let mut all_categories = vec![];
             let mut parent_licensees = vec![];
+            first_features.shuffle(rng);
             for (n_licensees, feature, prob) in first_features {
                 let lexeme_p = prob.clone();
                 let lexeme_weight = grammar_params
@@ -425,8 +427,9 @@ impl<B: Backend> NeuralLexicon<B> {
                     0 => 0..1,
                     _ => 1..grammar_params.n_licensees + 1,
                 };
-                let ps = n_features.cartesian_product(n_licensees).filter_map(
-                    |(n_features, n_licensees)| {
+                let mut ps = n_features
+                    .cartesian_product(n_licensees)
+                    .filter_map(|(n_features, n_licensees)| {
                         let log_prob = log_prob
                             + tensor_to_log_prob(
                                 &(grammar_params
@@ -460,10 +463,11 @@ impl<B: Backend> NeuralLexicon<B> {
                                 node,
                             )),
                         }
-                    },
-                );
+                    })
+                    .collect_vec();
                 weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
                 let feature = &graph[node].0;
+                ps.shuffle(rng);
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {
                         all_categories.push(node);
@@ -495,7 +499,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
             for n_licensees in 1..grammar_params.n_licensees {
                 let mut new_parent_licensees = vec![];
-                let licensees = (0..grammar_params.n_categories)
+                let mut licensees = (0..grammar_params.n_categories)
                     .map(|c| {
                         (
                             FeatureOrLemma::Feature(Feature::Licensee(c)),
@@ -511,6 +515,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         )
                     })
                     .collect::<Vec<_>>();
+                licensees.shuffle(rng);
                 for (feature, prob) in licensees.into_iter() {
                     let node = graph.add_node((feature, tensor_to_log_prob(&prob)?));
                     weights_map.insert(NeuralProbabilityRecord::Node(node), prob);
@@ -580,7 +585,8 @@ impl<B: Backend> NeuralLexicon<B> {
                 );
             }
 
-            let lemmas = [lemma, silent_lemma];
+            let mut lemmas = [lemma, silent_lemma];
+            lemmas.shuffle(rng);
             add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
@@ -589,7 +595,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     .cartesian_product(0..N_TYPES)
                     .collect();
 
-                let new_parents = new_parents
+                let mut new_parents = new_parents
                     .into_iter()
                     .map(|(c, t)| {
                         let feature = to_feature(t, c);
@@ -608,7 +614,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         Ok(node)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-
+                new_parents.shuffle(rng);
                 for (node, parent) in new_parents.iter().cartesian_product(parents.iter()) {
                     graph.add_edge(
                         *parent,

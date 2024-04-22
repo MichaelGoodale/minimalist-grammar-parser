@@ -646,18 +646,16 @@ pub fn get_neural_outputs<B: Backend>(
 
     let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
 
-    let grammar =
-        loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0) + string_probs.clone();
-    let compatible_loss: Tensor<B, 1> = softmax(string_probs.squeeze(0).select(0, idx.clone()), 0)
-        * grammar_losses.clone().select(0, idx.clone());
+    let grammar = loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
+    let best_grammar = grammar.clone().select(1, idx.clone());
+    let s_w: Tensor<B, 2> = if max_n_compatible == 1.0 {
+        softmax(string_probs.select(1, idx), 0)
+    } else {
+        Tensor::ones_like(&best_grammar)
+    };
 
     (
-        if max_n_compatible == 1.0 {
-            -((log_sum_exp_dim(grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0)
-                + compatible_loss.sum_dim(0))
-        } else {
-            -(log_sum_exp_dim(grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0)
-        },
+        -(log_sum_exp_dim(s_w * best_grammar, 1).squeeze(1)).mean_dim(0),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

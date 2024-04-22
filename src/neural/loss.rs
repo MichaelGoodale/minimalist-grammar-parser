@@ -143,9 +143,6 @@ fn get_prob_of_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 1>, Vec<LexemeTypes>) {
     let mut g_types = vec![];
-    let mut unattested = std::iter::repeat(true)
-        .take(g.n_lexemes())
-        .collect::<Vec<_>>();
     let mut attested = vec![];
     let p: Tensor<B, 1> = Tensor::cat(
         nodes
@@ -175,7 +172,6 @@ fn get_prob_of_grammar<B: Backend>(
 
                         _ => panic!("this should not happen!"),
                     };
-                    unattested[*lexeme_idx] = false;
                     attested.push(*lexeme_idx as u32);
                     g_types.push(x);
 
@@ -193,27 +189,6 @@ fn get_prob_of_grammar<B: Backend>(
     )
     .sum_dim(0);
 
-    let unattested = {
-        let unattested = unattested
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-            .collect::<Vec<_>>();
-        if unattested.is_empty() {
-            Tensor::<B, 1>::zeros([1], &g.device())
-        } else {
-            let unattested = Tensor::<B, 1, Int>::from_data(
-                Data::from(unattested.as_slice()).convert(),
-                &g.device(),
-            );
-            g.include_lemma()
-                .clone()
-                .slice([0..g.n_lexemes(), 0..1])
-                .select(0, unattested)
-                .sum_dim(0)
-                .reshape([1])
-        }
-    };
     let attested = {
         if attested.is_empty() {
             Tensor::<B, 1>::zeros([1], &g.device())
@@ -518,8 +493,8 @@ fn get_grammar_losses<B: Backend>(
     let loss: Tensor<B, 2> = log_sum_exp_dim(
         Tensor::cat(
             vec![
-                loss.unsqueeze_dim::<3>(2) + (0.25_f32).ln(),
-                compatible_loss.unsqueeze_dim(2) + (0.75_f32).ln(),
+                loss.unsqueeze_dim::<3>(2) + (0.05_f32).ln(),
+                compatible_loss.unsqueeze_dim(2) + (0.95_f32).ln(),
             ],
             2,
         ),
@@ -629,27 +604,10 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let max_n_compatible: f32 = n_compatible.clone().max_dim(0).into_scalar().elem();
-    let idx: Vec<u32> = n_compatible
-        .clone()
-        .equal_elem(max_n_compatible)
-        .iter_dim(0)
-        .enumerate()
-        .filter_map(|(i, x)| {
-            if x.into_scalar() {
-                Some(i as u32)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
-
     let grammar = loss_per_grammar + grammar_losses.unsqueeze_dim(0) + string_probs;
 
     (
-        -(log_sum_exp_dim(grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
+        -(log_sum_exp_dim(grammar.clone(), 1).squeeze(1)).mean_dim(0),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

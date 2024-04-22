@@ -629,29 +629,14 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let max_n_compatible = n_compatible.clone().max_dim(0);
-    let idx: Vec<u32> = n_compatible
-        .equal_elem(max_n_compatible.clone().into_scalar())
-        .iter_dim(0)
-        .enumerate()
-        .filter_map(|(i, x)| {
-            if x.into_scalar() {
-                Some(i as u32)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
-    let s_w = softmax(string_probs.clone().select(1, idx.clone()), 1);
-
-    let grammar = loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0) + string_probs;
-    let best_grammar: Tensor<B, 2> = loss_per_grammar.select(1, idx.clone())
-        + s_w * grammar_losses.clone().select(0, idx).unsqueeze_dim(0);
+    let grammar =
+        loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0) + string_probs.clone();
+    let compatible_loss: Tensor<B, 1> =
+        n_compatible * (string_probs.squeeze(0) + grammar_losses.clone());
 
     (
-        -log_sum_exp_dim(best_grammar, 1).squeeze(1).mean_dim(0),
+        -((log_sum_exp_dim(grammar.clone(), 1).squeeze(1)).mean_dim(0)
+            + compatible_loss.mean_dim(0)),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

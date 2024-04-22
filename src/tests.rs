@@ -619,7 +619,7 @@ fn test_loss() -> Result<()> {
             &mut rng,
         )?;
 
-        let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
+        let lexicon = NeuralLexicon::new_superimposed(&g, &mut rng, &config)?;
         let target_vec = target_to_vec(&targets);
         let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
         let val = get_neural_outputs(
@@ -636,8 +636,8 @@ fn test_loss() -> Result<()> {
         .elem::<f32>();
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
-        let top_g = &output.0[top_g].0;
-        let encoded_grammar = [
+        let top_g: BTreeSet<_> = output.0[top_g].0.clone().into_iter().collect();
+        let encoded_grammar = BTreeSet::from([
             vec![
                 NeuralFeature::Feature(Feature::Category(0)),
                 NeuralFeature::Lemma(Some(0)),
@@ -647,9 +647,9 @@ fn test_loss() -> Result<()> {
                 NeuralFeature::Feature(Feature::Selector(0, Direction::Left)),
                 NeuralFeature::Lemma(Some(1)),
             ],
-        ];
+        ]);
 
-        assert_eq!(top_g, &encoded_grammar);
+        assert_eq!(top_g, encoded_grammar);
         loss.push(val);
     }
 
@@ -741,7 +741,7 @@ fn random_neural_generation() -> Result<()> {
         ),
     };
 
-    let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
+    let lexicon = NeuralLexicon::new_superimposed(&g, &mut rng, &config)?;
     let target_vec = target_to_vec(&targets);
     let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
     let val = get_neural_outputs(

@@ -143,7 +143,6 @@ fn get_prob_of_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 1>, Vec<LexemeTypes>) {
     let mut g_types = vec![];
-    let mut attested = vec![];
     let p: Tensor<B, 1> = Tensor::cat(
         nodes
             .iter()
@@ -172,7 +171,6 @@ fn get_prob_of_grammar<B: Backend>(
 
                         _ => panic!("this should not happen!"),
                     };
-                    attested.push(*lexeme_idx as u32);
                     g_types.push(x);
 
                     g.included_features()
@@ -189,24 +187,7 @@ fn get_prob_of_grammar<B: Backend>(
     )
     .sum_dim(0);
 
-    let attested = {
-        if attested.is_empty() {
-            Tensor::<B, 1>::zeros([1], &g.device())
-        } else {
-            let attested = Tensor::<B, 1, Int>::from_data(
-                Data::from(attested.as_slice()).convert(),
-                &g.device(),
-            );
-            g.include_lemma()
-                .clone()
-                .slice([0..g.n_lexemes(), 1..2])
-                .select(0, attested)
-                .sum_dim(0)
-                .reshape([1])
-        }
-    };
-
-    (p + attested, g_types)
+    (p, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(

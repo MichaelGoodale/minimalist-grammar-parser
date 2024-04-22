@@ -630,7 +630,7 @@ pub fn get_neural_outputs<B: Backend>(
         true,
     );
 
-    let grammar = loss_per_grammar + grammar_losses.unsqueeze_dim(0) + string_probs;
+    let grammar = loss_per_grammar + grammar_losses.unsqueeze_dim(0);
 
     (
         -(log_sum_exp_dim(grammar.clone(), 1).squeeze(1)).mean_dim(0),

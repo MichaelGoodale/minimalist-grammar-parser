@@ -470,7 +470,7 @@ fn get_grammar_losses<B: Backend>(
         .sum_dim(2)
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
-
+    /*
     let loss: Tensor<B, 2> = log_sum_exp_dim(
         Tensor::cat(
             vec![
@@ -481,7 +481,7 @@ fn get_grammar_losses<B: Backend>(
         ),
         2,
     )
-    .squeeze(2);
+    .squeeze(2);*/
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);

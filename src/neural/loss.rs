@@ -514,24 +514,12 @@ fn get_grammar_losses<B: Backend>(
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings, 1)
-    let loss: Tensor<B, 2> = grammar
+    let prefix_loss: Tensor<B, 2> = grammar
         .gather(3, targets)
         .squeeze::<3>(3)
         .sum_dim(2)
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
-
-    let loss: Tensor<B, 2> = log_sum_exp_dim(
-        Tensor::cat(
-            vec![
-                loss.unsqueeze_dim::<3>(2) + (0.05_f32).ln(),
-                compatible_loss.unsqueeze_dim(2) + (0.95_f32).ln(),
-            ],
-            2,
-        ),
-        2,
-    )
-    .squeeze(2);
 
     let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
     let mut loss_per_grammar = vec![];
@@ -544,10 +532,11 @@ fn get_grammar_losses<B: Backend>(
             Some(grammar_id.clone()),
             grammar_cats,
             neural_config,
-            &loss.device(),
+            &g.device(),
         );
 
-        let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+        let loss =
+            prefix_loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
         loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 

@@ -647,9 +647,13 @@ pub fn get_neural_outputs<B: Backend>(
     let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
 
     let s_w: Tensor<B, 2> = if max_n_compatible == 1.0 {
-        softmax(string_probs.select(1, idx.clone()), 0)
+        softmax(string_probs.select(1, idx.clone()), 1)
     } else {
-        Tensor::full([1, idx.shape().dims[0]], 1, &g.device())
+        Tensor::full(
+            [1, idx.shape().dims[0]],
+            1.0 / (idx.shape().dims[0] as f32),
+            &g.device(),
+        )
     };
     let grammar = loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
 

@@ -655,7 +655,7 @@ pub fn get_neural_outputs<B: Backend>(
         string_probs.clone() + loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
 
     (
-        -(log_sum_exp_dim(grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
+        -(log_sum_exp_dim(s_w * grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

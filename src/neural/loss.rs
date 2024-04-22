@@ -651,7 +651,11 @@ pub fn get_neural_outputs<B: Backend>(
     let s_w: Tensor<B, 2> = if max_n_compatible == 1.0 {
         softmax(string_probs.select(1, idx), 0)
     } else {
-        Tensor::ones_like(&best_grammar)
+        Tensor::full(
+            [1, idx.shape().dims[0]],
+            1.0 / (idx.shape().dims[0] as f32),
+            &g.device(),
+        )
     };
 
     (

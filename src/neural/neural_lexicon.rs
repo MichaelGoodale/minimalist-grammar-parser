@@ -373,9 +373,9 @@ impl<B: Backend> NeuralLexicon<B> {
 
         let mut graph: NeuralGraph = DiGraph::new();
 
-        for lexeme_idx in (0..grammar_params.n_lexemes) {
+        for lexeme_idx in 0..grammar_params.n_lexemes {
             let lexeme_root = graph.add_node((FeatureOrLemma::Root, LogProb::new(0.0).unwrap()));
-            let mut first_features: Vec<_> = (0..grammar_params.n_categories)
+            let first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
                     (
                         1,
@@ -403,10 +403,6 @@ impl<B: Backend> NeuralLexicon<B> {
             let mut parent_licensees = vec![];
             for (n_licensees, feature, prob) in first_features {
                 let lexeme_p = prob.clone();
-                let lexeme_weight = grammar_params
-                    .weights
-                    .clone()
-                    .slice([lexeme_idx..lexeme_idx + 1]);
 
                 let log_prob = tensor_to_log_prob(&lexeme_p)?;
                 let node = graph.add_node((feature, log_prob));
@@ -426,7 +422,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     0 => 0..1,
                     _ => 1..grammar_params.n_licensees + 1,
                 };
-                let mut ps = n_features
+                let ps = n_features
                     .cartesian_product(n_licensees)
                     .filter_map(|(n_features, n_licensees)| {
                         let log_prob = log_prob
@@ -464,7 +460,7 @@ impl<B: Backend> NeuralLexicon<B> {
                         }
                     })
                     .collect_vec();
-                weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
+                weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_p);
                 let feature = &graph[node].0;
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {
@@ -497,7 +493,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
             for n_licensees in 1..grammar_params.n_licensees {
                 let mut new_parent_licensees = vec![];
-                let mut licensees = (0..grammar_params.n_categories)
+                let licensees = (0..grammar_params.n_categories)
                     .map(|c| {
                         (
                             FeatureOrLemma::Feature(Feature::Licensee(c)),
@@ -582,7 +578,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 );
             }
 
-            let mut lemmas = [lemma, silent_lemma];
+            let lemmas = [lemma, silent_lemma];
             add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
@@ -591,7 +587,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     .cartesian_product(0..N_TYPES)
                     .collect();
 
-                let mut new_parents = new_parents
+                let new_parents = new_parents
                     .into_iter()
                     .map(|(c, t)| {
                         let feature = to_feature(t, c);

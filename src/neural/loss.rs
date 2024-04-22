@@ -231,7 +231,7 @@ fn get_prob_of_grammar<B: Backend>(
         }
     };
 
-    (p + attested + unattested, g_types)
+    (p + attested, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(

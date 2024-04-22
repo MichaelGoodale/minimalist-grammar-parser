@@ -143,6 +143,11 @@ fn get_prob_of_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 1>, Vec<LexemeTypes>) {
     let mut g_types = vec![];
+    let mut unattested = std::iter::repeat(true)
+        .take(g.n_lexemes())
+        .collect::<Vec<_>>();
+    let mut attested = vec![];
+
     let p: Tensor<B, 1> = Tensor::cat(
         nodes
             .iter()
@@ -172,6 +177,8 @@ fn get_prob_of_grammar<B: Backend>(
                         _ => panic!("this should not happen!"),
                     };
                     g_types.push(x);
+                    unattested[*lexeme_idx] = false;
+                    attested.push(*lexeme_idx as u32);
 
                     g.included_features()
                         .clone()
@@ -187,7 +194,45 @@ fn get_prob_of_grammar<B: Backend>(
     )
     .sum_dim(0);
 
-    (p, g_types)
+    let unattested = {
+        let unattested = unattested
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+            .collect::<Vec<_>>();
+        if unattested.is_empty() {
+            Tensor::<B, 1>::zeros([1], &g.device())
+        } else {
+            let unattested = Tensor::<B, 1, Int>::from_data(
+                Data::from(unattested.as_slice()).convert(),
+                &g.device(),
+            );
+            g.include_lemma()
+                .clone()
+                .slice([0..g.n_lexemes(), 0..1])
+                .select(0, unattested)
+                .sum_dim(0)
+                .reshape([1])
+        }
+    };
+    let attested = {
+        if attested.is_empty() {
+            Tensor::<B, 1>::zeros([1], &g.device())
+        } else {
+            let attested = Tensor::<B, 1, Int>::from_data(
+                Data::from(attested.as_slice()).convert(),
+                &g.device(),
+            );
+            g.include_lemma()
+                .clone()
+                .slice([0..g.n_lexemes(), 1..2])
+                .select(0, attested)
+                .sum_dim(0)
+                .reshape([1])
+        }
+    };
+
+    (p + attested + unattested, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(
@@ -582,7 +627,7 @@ pub fn get_neural_outputs<B: Backend>(
         target_vec,
         targets,
         neural_config,
-        false,
+        true,
     );
 
     let grammar = loss_per_grammar + grammar_losses.unsqueeze_dim(0) + string_probs;

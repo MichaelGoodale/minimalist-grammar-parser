@@ -403,8 +403,8 @@ impl<B: Backend> NeuralLexicon<B> {
             let mut parent_licensees = vec![];
             for (n_licensees, feature, prob) in first_features {
                 let lexeme_p = prob.clone();
-
                 let log_prob = tensor_to_log_prob(&lexeme_p)?;
+
                 let node = graph.add_node((feature, log_prob));
                 let edge_history = match n_licensees {
                     0 => EdgeHistory::AtMostNLicenseses {

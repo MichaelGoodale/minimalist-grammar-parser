@@ -373,9 +373,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
         let mut graph: NeuralGraph = DiGraph::new();
 
-        let mut order = (0..grammar_params.n_lexemes).collect_vec();
-        order.shuffle(rng);
-        for lexeme_idx in order {
+        for lexeme_idx in (0..grammar_params.n_lexemes) {
             let lexeme_root = graph.add_node((FeatureOrLemma::Root, LogProb::new(0.0).unwrap()));
             let mut first_features: Vec<_> = (0..grammar_params.n_categories)
                 .map(|c| {
@@ -403,7 +401,6 @@ impl<B: Backend> NeuralLexicon<B> {
                 .collect();
             let mut all_categories = vec![];
             let mut parent_licensees = vec![];
-            first_features.shuffle(rng);
             for (n_licensees, feature, prob) in first_features {
                 let lexeme_p = prob.clone();
                 let lexeme_weight = grammar_params
@@ -469,7 +466,6 @@ impl<B: Backend> NeuralLexicon<B> {
                     .collect_vec();
                 weights_map.insert(NeuralProbabilityRecord::Node(node), lexeme_weight);
                 let feature = &graph[node].0;
-                ps.shuffle(rng);
                 match feature {
                     FeatureOrLemma::Feature(Feature::Category(c)) => {
                         all_categories.push(node);
@@ -517,7 +513,6 @@ impl<B: Backend> NeuralLexicon<B> {
                         )
                     })
                     .collect::<Vec<_>>();
-                licensees.shuffle(rng);
                 for (feature, prob) in licensees.into_iter() {
                     let node = graph.add_node((feature, tensor_to_log_prob(&prob)?));
                     weights_map.insert(NeuralProbabilityRecord::Node(node), prob);
@@ -588,7 +583,6 @@ impl<B: Backend> NeuralLexicon<B> {
             }
 
             let mut lemmas = [lemma, silent_lemma];
-            lemmas.shuffle(rng);
             add_alternatives(&mut alternative_map, &lemmas);
 
             let mut parents = all_categories;
@@ -616,7 +610,6 @@ impl<B: Backend> NeuralLexicon<B> {
                         Ok(node)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
-                new_parents.shuffle(rng);
                 for (node, parent) in new_parents.iter().cartesian_product(parents.iter()) {
                     graph.add_edge(
                         *parent,

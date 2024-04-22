@@ -306,7 +306,7 @@ fn get_string_prob<B: Backend>(
     string_paths: &[StringProbHistory],
     lexicon: &NeuralLexicon<B>,
     g: &GrammarParameterization<B>,
-    include: Option<&BTreeSet<usize>>,
+    include: Option<Tensor<B, 1, Int>>,
     grammar_cats: &[LexemeTypes],
     neural_config: &NeuralConfig,
     device: &B::Device,
@@ -319,7 +319,10 @@ fn get_string_prob<B: Backend>(
         .into_inner();
 
     let mut string_path_tensor = Tensor::<B, 1>::full(
-        [include.map(|s| s.len()).unwrap_or(string_paths.len())],
+        [include
+            .as_ref()
+            .map(|s| s.shape().dims[0])
+            .unwrap_or(string_paths.len())],
         0.0,
         device,
     );
@@ -357,15 +360,17 @@ fn get_string_prob<B: Backend>(
         0,
     );
 
-    for (i, string_path) in string_paths
-        .iter()
-        .enumerate()
-        .filter_map(|(i, x)| {
-            if include.map(|s| s.contains(&i)).unwrap_or(true) {
-                Some(x)
-            } else {
-                None
-            }
+    let idx = if let Some(x) = include {
+        x
+    } else {
+        Tensor::arange(0..string_paths.len() as i64, &g.device())
+    };
+
+    for (i, string_path) in idx
+        .iter_dim(0)
+        .map(|x| {
+            let i: u32 = x.into_scalar().elem();
+            &string_paths[i as usize]
         })
         .enumerate()
     {
@@ -448,7 +453,7 @@ pub fn get_grammar_with_targets<B: Backend>(
             &string_probs,
             lexicon,
             g,
-            Some(&grammar_set),
+            Some(grammar_id.clone()),
             &grammar_cats,
             neural_config,
             &g.device(),
@@ -528,71 +533,44 @@ fn get_grammar_losses<B: Backend>(
     )
     .squeeze(2);
 
-    if grammar_splitting {
-        let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
-        let mut loss_per_grammar = vec![];
-        let mut compatible_per_grammar = vec![];
-        for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
-            let string_probs = get_string_prob(
-                string_probs,
-                lexicon,
-                g,
-                Some(grammar_set),
-                grammar_cats,
-                neural_config,
-                &loss.device(),
-            );
+    let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
+    let mut loss_per_grammar = vec![];
+    let mut compatible_per_grammar = vec![];
+    for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
+        let string_probs = get_string_prob(
+            string_probs,
+            lexicon,
+            g,
+            Some(grammar_id.clone()),
+            grammar_cats,
+            neural_config,
+            &loss.device(),
+        );
 
-            let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
-            //Probability of generating each of the targets
-            loss_per_grammar.push(log_sum_exp_dim(loss, 1));
+        let loss = loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
+        //Probability of generating each of the targets
+        loss_per_grammar.push(log_sum_exp_dim(loss, 1));
 
-            let n_compatible = n_compatible
-                .clone()
-                .select(1, grammar_id.clone())
-                .sum_dim(1)
-                .squeeze(1);
-            let n_compatible = n_compatible
-                .clone()
-                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
-                .sum_dim(0);
-            //How many compatible strings in the grammar?
-            compatible_per_grammar.push(n_compatible);
-            //(n_strings_per_grammar);
-        }
-        (
-            Tensor::cat(loss_per_grammar, 1),
-            Tensor::zeros([1, 1], &g.device()),
-            grammar_probs,
-            grammar_idx,
-            Tensor::cat(compatible_per_grammar, 0),
-        )
-    } else {
-        let n_compatible = n_compatible.sum_dim(0).squeeze(0);
         let n_compatible = n_compatible
             .clone()
-            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
-        let (grammar_probs, grammar_cats) = get_grammar_per_string(string_probs, g, lexicon);
-        let mut s = vec![];
-        for (i, cats) in grammar_cats.into_iter().enumerate() {
-            s.push(get_string_prob(
-                string_probs,
-                lexicon,
-                g,
-                Some(&BTreeSet::from([i])),
-                &cats,
-                neural_config,
-                &g.device(),
-            ));
-        }
-        (
-            loss,
-            Tensor::stack(s, 1),
-            grammar_probs,
-            vec![],
-            n_compatible.clone(),
-        )
+            .select(1, grammar_id.clone())
+            .sum_dim(1)
+            .squeeze(1);
+        let n_compatible = n_compatible
+            .clone()
+            .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
+            .sum_dim(0);
+        //How many compatible strings in the grammar?
+        compatible_per_grammar.push(n_compatible);
+        //(n_strings_per_grammar);
     }
+    (
+        Tensor::cat(loss_per_grammar, 1),
+        Tensor::zeros([1, 1], &g.device()),
+        grammar_probs,
+        grammar_idx,
+        Tensor::cat(compatible_per_grammar, 0),
+    )
 }
 
 pub fn get_all_parses<B: Backend>(
@@ -630,7 +608,7 @@ pub fn get_neural_outputs<B: Backend>(
         true,
     );
 
-    let grammar = loss_per_grammar.mean_dim(0) + grammar_losses.unsqueeze_dim(0) + string_probs;
+    let grammar = loss_per_grammar.mean_dim(0) + grammar_losses.unsqueeze_dim(0);
 
     (
         -log_sum_exp_dim(grammar.clone(), 1).squeeze(1).sum_dim(0),

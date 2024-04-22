@@ -518,8 +518,8 @@ fn get_grammar_losses<B: Backend>(
     let loss: Tensor<B, 2> = log_sum_exp_dim(
         Tensor::cat(
             vec![
-                loss.unsqueeze_dim::<3>(2) + (0.01_f32).ln(),
-                compatible_loss.unsqueeze_dim(2) + (0.99_f32).ln(),
+                loss.unsqueeze_dim::<3>(2) + (0.5_f32).ln(),
+                compatible_loss.unsqueeze_dim(2) + (0.5_f32).ln(),
             ],
             2,
         ),
@@ -647,14 +647,15 @@ pub fn get_neural_outputs<B: Backend>(
     let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
 
     let s_w: Tensor<B, 2> = if max_n_compatible == 1.0 {
-        softmax(string_probs.select(1, idx.clone()), 1)
+        softmax(string_probs.clone().select(1, idx.clone()), 1)
     } else {
         Tensor::ones([1, idx.shape().dims[0]], &g.device())
     };
-    let grammar = loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
+    let grammar =
+        string_probs.clone() + loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
 
     (
-        -(log_sum_exp_dim(s_w * grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
+        -(log_sum_exp_dim(grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

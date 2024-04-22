@@ -656,11 +656,9 @@ pub fn get_neural_outputs<B: Backend>(
         )
     };
     let grammar = loss_per_grammar.clone() + grammar_losses.clone().unsqueeze_dim(0);
-    let best_grammar = loss_per_grammar.select(1, idx.clone())
-        + s_w * grammar_losses.clone().select(0, idx).unsqueeze_dim(0);
 
     (
-        -(log_sum_exp_dim(best_grammar, 1).squeeze(1)).mean_dim(0),
+        -(log_sum_exp_dim(s_w * grammar.clone().select(1, idx), 1).squeeze(1)).mean_dim(0),
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
     )
 }

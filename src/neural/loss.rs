@@ -144,9 +144,6 @@ fn get_prob_of_grammar<B: Backend>(
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 1>, Vec<LexemeTypes>) {
     let mut g_types = vec![];
-    let mut unattested = std::iter::repeat(true)
-        .take(g.n_lexemes())
-        .collect::<Vec<_>>();
     let mut attested = vec![];
 
     let p: Tensor<B, 1> = Tensor::cat(
@@ -178,7 +175,6 @@ fn get_prob_of_grammar<B: Backend>(
                         _ => panic!("this should not happen!"),
                     };
                     g_types.push(x);
-                    unattested[*lexeme_idx] = false;
                     attested.push(*lexeme_idx as u32);
 
                     g.included_features()
@@ -195,27 +191,6 @@ fn get_prob_of_grammar<B: Backend>(
     )
     .sum_dim(0);
 
-    let unattested = {
-        let unattested = unattested
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-            .collect::<Vec<_>>();
-        if unattested.is_empty() {
-            Tensor::<B, 1>::zeros([1], &g.device())
-        } else {
-            let unattested = Tensor::<B, 1, Int>::from_data(
-                Data::from(unattested.as_slice()).convert(),
-                &g.device(),
-            );
-            g.include_lemma()
-                .clone()
-                .slice([0..g.n_lexemes(), 0..1])
-                .select(0, unattested)
-                .sum_dim(0)
-                .reshape([1])
-        }
-    };
     let attested = {
         if attested.is_empty() {
             Tensor::<B, 1>::zeros([1], &g.device())
@@ -226,14 +201,13 @@ fn get_prob_of_grammar<B: Backend>(
             );
             g.include_lemma()
                 .clone()
-                .slice([0..g.n_lexemes(), 1..2])
                 .select(0, attested)
                 .sum_dim(0)
                 .reshape([1])
         }
     };
 
-    (p + attested + unattested, g_types)
+    (p + attested, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(
@@ -584,7 +558,7 @@ fn get_grammar_losses<B: Backend>(
             ));
         }
 
-        let n_compatible = n_compatible.sum_dim(1).squeeze(1);
+        let n_compatible = n_compatible.sum_dim(0).squeeze(0);
         let n_compatible = Tensor::min_pair(n_compatible.clone(), Tensor::ones_like(&n_compatible));
         (
             prefix_loss,

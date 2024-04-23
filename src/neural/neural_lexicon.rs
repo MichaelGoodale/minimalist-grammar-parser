@@ -6,6 +6,7 @@ use super::{utils::*, N_TYPES};
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 use ahash::HashMap;
 use anyhow::{bail, Context};
+use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{activation::log_softmax, backend::Backend, Device, ElementConversion, Tensor};
 use burn::tensor::{Data, Shape};
 use itertools::Itertools;
@@ -108,7 +109,7 @@ pub struct GrammarParameterization<B: Backend> {
     included_licensees: Tensor<B, 2>,   //(lexeme, n_licensees)
     weights: Tensor<B, 1>,              //(lexeme)
     unnormalized_weights: Tensor<B, 1>, //(lexeme)
-    include_lemma: Tensor<B, 2>,        // (lexeme, 2)
+    include_lemma: Tensor<B, 1>,        // (lexeme)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
@@ -190,7 +191,7 @@ impl<B: Backend> GrammarParameterization<B> {
         silent_probabilities: Tensor<B, 2>, //(lexeme, 2)
         categories: Tensor<B, 2>,           // (lexeme, n_categories)
         weights: Tensor<B, 1>,              // (lexeme)
-        include_lemma: Tensor<B, 2>,
+        include_lemma: Tensor<B, 1>,
         pad_vector: Tensor<B, 1>,
         end_vector: Tensor<B, 1>,
         temperature: f64,
@@ -216,7 +217,7 @@ impl<B: Backend> GrammarParameterization<B> {
             activation_function(included_features, 1, inverse_temperature, gumbel, rng);
         let included_licensees =
             activation_function(included_licensees, 1, inverse_temperature, gumbel, rng);
-        let include_lemma = activation_function(include_lemma, 1, inverse_temperature, gumbel, rng);
+        let include_lemma = log_sigmoid(include_lemma);
 
         let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
         let type_categories =
@@ -299,7 +300,7 @@ impl<B: Backend> GrammarParameterization<B> {
         &self.lexeme_weights
     }
 
-    pub fn include_lemma(&self) -> &Tensor<B, 2> {
+    pub fn include_lemma(&self) -> &Tensor<B, 1> {
         &self.include_lemma
     }
     pub fn included_licensees(&self) -> &Tensor<B, 2> {
@@ -810,8 +811,8 @@ mod test {
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );
-        let include_lemma = Tensor::<NdArray, 2>::random(
-            [n_lexemes, 2],
+        let include_lemma = Tensor::<NdArray, 1>::random(
+            [n_lexemes],
             burn::tensor::Distribution::Default,
             &NdArrayDevice::default(),
         );

@@ -590,11 +590,7 @@ fn test_loss() -> Result<()> {
                 Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
             );
     let include_lemmas =
-        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
-            .slice_assign(
-                [0..n_lexemes, 1..2],
-                Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
-            );
+        Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], 10.0, &NdArrayDevice::default());
     let pad_vector =
         Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
     let end_vector =
@@ -637,17 +633,10 @@ fn test_loss() -> Result<()> {
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
         let top_g: BTreeSet<_> = output.0[top_g].0.clone().into_iter().collect();
-        let encoded_grammar = BTreeSet::from([
-            vec![
-                NeuralFeature::Feature(Feature::Category(0)),
-                NeuralFeature::Lemma(Some(0)),
-            ],
-            vec![
-                NeuralFeature::Feature(Feature::Category(0)),
-                NeuralFeature::Feature(Feature::Selector(0, Direction::Left)),
-                NeuralFeature::Lemma(Some(1)),
-            ],
-        ]);
+        let encoded_grammar = BTreeSet::from([vec![
+            NeuralFeature::Feature(Feature::Category(0)),
+            NeuralFeature::Lemma(Some(0)),
+        ]]);
 
         assert_eq!(top_g, encoded_grammar);
         loss.push(val);
@@ -689,7 +678,7 @@ fn random_neural_generation() -> Result<()> {
     let weights = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
     let silent_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
-    let include_lemmas = Tensor::<NdArray, 2>::zeros([n_lexemes, 2], &NdArrayDevice::default());
+    let include_lemmas = Tensor::<NdArray, 1>::zeros([n_lexemes], &NdArrayDevice::default());
 
     let pad_vector = Tensor::<NdArray, 1>::from_floats(
         [10., 0., 0., 0., 0., 0., 0., 0., 0., 0.],

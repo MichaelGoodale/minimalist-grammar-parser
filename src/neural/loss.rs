@@ -484,7 +484,7 @@ fn get_grammar_losses<B: Backend>(
 ) {
     let n_targets = targets.shape().dims[0];
 
-    let (n_compatible, compatible_grammars) = compatible_strings(strings, target_vec, g);
+    let (_n_compatible, compatible_grammars) = compatible_strings(strings, target_vec, g);
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -499,6 +499,7 @@ fn get_grammar_losses<B: Backend>(
         0,
     );
     let n_strings = strings.len();
+    println!("n_strings: {n_strings}");
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(strings, g, neural_config);
@@ -733,21 +734,7 @@ pub fn get_neural_outputs<B: Backend>(
         true,
     );
 
-    let max_n_compatible = n_compatible.clone().max().into_scalar();
-    let idx = Data::from(
-        n_compatible
-            .clone()
-            .equal_elem(max_n_compatible)
-            .into_data()
-            .value
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-            .collect_vec()
-            .as_slice(),
-    );
-    let idx = Tensor::<B, 1, Int>::from_data(idx.convert(), &g.device());
-    let grammar = (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).select(1, idx);
+    let grammar = loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0);
 
     (
         -log_sum_exp_dim(grammar.clone(), 1).squeeze(1).sum_dim(0),

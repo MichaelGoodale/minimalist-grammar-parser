@@ -633,12 +633,6 @@ impl<B: Backend> NeuralLexicon<B> {
                 parents = new_parents;
             }
         }
-        for (_, v) in licensees_map.iter_mut() {
-            v.shuffle(rng);
-        }
-        for (_, v) in categories_map.iter_mut() {
-            v.shuffle(rng);
-        }
 
         Ok(NeuralLexicon {
             graph,

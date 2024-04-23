@@ -618,12 +618,11 @@ pub fn get_neural_outputs<B: Backend>(
 
     let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
 
-    let grammar = loss_per_grammar + string_probs + grammar_losses.unsqueeze_dim(0);
+    let grammar = softmax(string_probs.select(1, idx.clone()), 1)
+        * (loss_per_grammar + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
     (
-        -log_sum_exp_dim(grammar.select(1, idx), 1)
-            .squeeze(1)
-            .mean_dim(0),
+        -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
         n_compatible,
     )
 }

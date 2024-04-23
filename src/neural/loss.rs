@@ -624,6 +624,7 @@ fn get_grammar_losses<B: Backend>(
             .map(|(i, x)| (x.iter().sum::<u32>(), i))
             .max()
             .unwrap();
+        dbg!(&n_compatible_with_target);
 
         let compatible_string_probs = Tensor::cat(
             strings_used[max_i]

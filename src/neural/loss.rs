@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::f32::consts::LN_2;
 use std::f32::NEG_INFINITY;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
@@ -626,12 +625,26 @@ fn get_grammar_losses<B: Backend>(
             .max()
             .unwrap();
 
-        let loss = log_sum_exp_dim(
-            prefix_loss.clone().select(1, grammar_id.clone())
-                + string_probs.clone().unsqueeze_dim(0),
-            1,
-        )
-        .squeeze(1);
+        let compatible_string_probs = Tensor::cat(
+            strings_used[max_i]
+                .iter()
+                .map(|strings| match strings.len() {
+                    0 => Tensor::<B, 1>::full([1], NEG_INFINITY, &g.device()),
+                    1 => {
+                        let i = *strings.first().unwrap() as usize;
+                        string_probs.clone().slice([i..i + 1])
+                    }
+                    _ => {
+                        let strings = Tensor::<B, 1, Int>::from_data(
+                            Data::from(strings.as_slice()).convert(),
+                            &g.device(),
+                        );
+                        log_sum_exp_dim(string_probs.clone().select(0, strings), 0)
+                    }
+                })
+                .collect_vec(),
+            0,
+        );
         let best_mapping = &master_mapping[max_i];
         let mut compatible_loss = Tensor::<B, 2>::full([1, 1], 0.0, &g.device());
         if let Some(best_mapping) = best_mapping {
@@ -640,33 +653,33 @@ fn get_grammar_losses<B: Backend>(
                     compatible_loss + g.lemmas().clone().slice([*k..k + 1, *v..v + 1]);
             }
         }
-        let compatible_loss = compatible_loss.squeeze(0);
 
-        let loss = Tensor::cat(
-            strings_used[max_i]
-                .iter()
-                .enumerate()
-                .map(|(i, strings)| match strings.len() {
-                    0 => loss.clone().slice([i..i + 1]),
-                    1 => {
-                        let i = *strings.first().unwrap() as usize;
-                        compatible_loss.clone() + string_probs.clone().slice([i..i + 1])
-                    }
-                    _ => {
-                        let strings = Tensor::<B, 1, Int>::from_data(
-                            Data::from(strings.as_slice()).convert(),
-                            &g.device(),
-                        );
-                        compatible_loss.clone()
-                            + log_sum_exp_dim(string_probs.clone().select(0, strings), 0)
-                    }
-                })
-                .collect_vec(),
-            0,
-        );
+        let compatible_targets = Tensor::<B, 1, Int>::from_data(
+            Data::from(n_compatible_with_target[max_i].as_slice()).convert(),
+            &g.device(),
+        )
+        .bool();
+        let compatible_loss: Tensor<B, 2> = compatible_loss
+            .repeat(0, n_targets)
+            .reshape([n_targets])
+            .mask_fill(compatible_targets.bool_not(), -999.0)
+            .unsqueeze_dim(1);
 
+        let loss =
+            prefix_loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
-        loss_per_grammar.push(loss.unsqueeze_dim(1));
+        loss_per_grammar.push(
+            log_sum_exp_dim(
+                Tensor::cat(
+                    vec![
+                        compatible_loss + 0.5_f32.ln(),
+                        log_sum_exp_dim(loss, 1) + 0.5_f32.ln(),
+                    ],
+                    1,
+                ),
+                1,
+            ) + compatible_string_probs.unsqueeze_dim(1),
+        );
 
         //How many compatible strings in the grammar?
         compatible_per_grammar.push(n_compatible);

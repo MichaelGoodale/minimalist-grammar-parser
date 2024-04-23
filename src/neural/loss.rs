@@ -624,7 +624,6 @@ fn get_grammar_losses<B: Backend>(
             .map(|(i, x)| (x.iter().sum::<u32>(), i))
             .max()
             .unwrap();
-        dbg!(&n_compatible_with_target);
 
         let compatible_string_probs = Tensor::cat(
             strings_used[max_i]
@@ -731,7 +730,21 @@ pub fn get_neural_outputs<B: Backend>(
         true,
     );
 
-    let grammar = loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0);
+    let max_n_compatible = n_compatible.clone().max().into_scalar();
+    let idx = Data::from(
+        n_compatible
+            .clone()
+            .equal_elem(max_n_compatible)
+            .into_data()
+            .value
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+            .collect_vec()
+            .as_slice(),
+    );
+    let idx = Tensor::<B, 1, Int>::from_data(idx.convert(), &g.device());
+    let grammar = (loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0)).select(1, idx);
 
     (
         -log_sum_exp_dim(grammar.clone(), 1).squeeze(1).sum_dim(0),

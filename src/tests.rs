@@ -753,6 +753,8 @@ fn random_neural_generation() -> Result<()> {
         targets.clone(),
         &config,
     );
+    dbg!(val);
+    panic!();
     get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
     Ok(())
 }

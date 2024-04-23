@@ -668,18 +668,16 @@ fn get_grammar_losses<B: Backend>(
         let loss =
             prefix_loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
-        loss_per_grammar.push(
-            log_sum_exp_dim(
-                Tensor::cat(
-                    vec![
-                        compatible_loss + 0.5_f32.ln(),
-                        log_sum_exp_dim(loss, 1) + 0.5_f32.ln(),
-                    ],
-                    1,
-                ),
+        loss_per_grammar.push(log_sum_exp_dim(
+            Tensor::cat(
+                vec![
+                    compatible_loss + compatible_string_probs.unsqueeze_dim(0) + 0.5_f32.ln(),
+                    log_sum_exp_dim(loss, 1) + 0.5_f32.ln(),
+                ],
                 1,
-            ) + compatible_string_probs.unsqueeze_dim(1),
-        );
+            ),
+            1,
+        ));
 
         //How many compatible strings in the grammar?
         compatible_per_grammar.push(n_compatible);

@@ -647,22 +647,23 @@ fn get_grammar_losses<B: Backend>(
                 .iter()
                 .enumerate()
                 .map(|(i, strings)| match strings.len() {
-                    0 => loss.clone().slice([i..i + 1]) - 50.0,
+                    0 => loss.clone().slice([i..i + 1]),
                     1 => {
                         let i = *strings.first().unwrap() as usize;
-                        string_probs.clone().slice([i..i + 1])
+                        compatible_loss.clone() + string_probs.clone().slice([i..i + 1])
                     }
                     _ => {
                         let strings = Tensor::<B, 1, Int>::from_data(
                             Data::from(strings.as_slice()).convert(),
                             &g.device(),
                         );
-                        log_sum_exp_dim(string_probs.clone().select(0, strings), 0)
+                        compatible_loss.clone()
+                            + log_sum_exp_dim(string_probs.clone().select(0, strings), 0)
                     }
                 })
                 .collect_vec(),
             0,
-        ) + compatible_loss;
+        );
 
         //Probability of generating each of the targets
         loss_per_grammar.push(loss.unsqueeze_dim(1));

@@ -500,7 +500,6 @@ fn get_grammar_losses<B: Backend>(
     //    2,
     //)
     //.squeeze(2);
-    println!("n_strings: {}", strings.len());
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);

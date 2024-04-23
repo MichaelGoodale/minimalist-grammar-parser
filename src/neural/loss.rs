@@ -631,10 +631,25 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
+    let max_n_compatible = n_compatible.clone().max_dim(0);
+    let idx = n_compatible
+        .clone()
+        .equal_elem(max_n_compatible.into_scalar())
+        .into_data()
+        .value
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
+        .collect_vec();
+
+    let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
+
     let grammar = loss_per_grammar + string_probs + grammar_losses.unsqueeze_dim(0);
 
     (
-        -log_sum_exp_dim(grammar.clone(), 1).squeeze(1).mean_dim(0),
+        -log_sum_exp_dim(grammar.select(1, idx), 1)
+            .squeeze(1)
+            .mean_dim(0),
         n_compatible,
     )
 }

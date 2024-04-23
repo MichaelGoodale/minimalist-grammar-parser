@@ -661,7 +661,7 @@ fn get_grammar_losses<B: Backend>(
             &g.device(),
         )
         .bool();
-        let compatible_loss = compatible_loss
+        let compatible_loss: Tensor<B, 2> = compatible_loss
             .repeat(0, n_targets)
             .reshape([n_targets])
             .mask_fill(compatible_targets.bool_not(), -999.0)
@@ -738,7 +738,7 @@ pub fn get_neural_outputs<B: Backend>(
         true,
     );
 
-    let grammar = loss_per_grammar.mean_dim(0) + grammar_losses.unsqueeze_dim(0);
+    let grammar = loss_per_grammar.sum_dim(0) + grammar_losses.unsqueeze_dim(0);
 
     (
         -log_sum_exp_dim(grammar.clone(), 1).squeeze(1).sum_dim(0),

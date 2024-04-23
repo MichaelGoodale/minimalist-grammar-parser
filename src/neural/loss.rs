@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::f32::consts::LN_2;
+use std::f32::NEG_INFINITY;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{
@@ -544,6 +545,17 @@ fn get_grammar_losses<B: Backend>(
             .collect();
 
         let mut master_mapping: Vec<Option<BTreeMap<_, _>>> = mappings.first().unwrap().to_vec();
+        let mut strings_used: Vec<_> = master_mapping
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let mut v = vec![vec![]; n_targets];
+                if x.is_some() {
+                    v[i].push(0_u32);
+                }
+                v
+            })
+            .collect();
         let mut n_compatible_with_target: Vec<Vec<u32>> = master_mapping
             .iter()
             .enumerate()
@@ -555,10 +567,11 @@ fn get_grammar_losses<B: Backend>(
                 v
             })
             .collect();
-        for mapping in mappings.iter().skip(1) {
-            for (master_map, target) in master_mapping
+        for (i, mapping) in mappings.iter().enumerate().skip(1) {
+            for ((master_map, target), strings_used) in master_mapping
                 .iter_mut()
                 .zip(n_compatible_with_target.iter_mut())
+                .zip(strings_used.iter_mut())
             {
                 if let Some(master_map) = master_map {
                     let mut candidates = Vec::with_capacity(n_targets);
@@ -578,7 +591,13 @@ fn get_grammar_losses<B: Backend>(
                                         new_keys.push((*key, *v));
                                     }
                                 }
-                                candidates.push(Some((target_i, new_keys)));
+                                if new_keys.is_empty() {
+                                    target[target_i] = 1;
+                                    strings_used[target_i].push(i as u32);
+                                    candidates.push(None);
+                                } else {
+                                    candidates.push(Some((target_i, new_keys)));
+                                }
                             } else {
                                 candidates.push(None);
                             }
@@ -592,12 +611,14 @@ fn get_grammar_losses<B: Backend>(
                             for (k, v) in c {
                                 master_map.insert(k, v);
                             }
+                            strings_used[target_i].push(i as u32);
                             break;
                         }
                     }
                 }
             }
         }
+
         let max_i = n_compatible_with_target
             .iter()
             .enumerate()
@@ -606,6 +627,26 @@ fn get_grammar_losses<B: Backend>(
             .unwrap()
             .1;
 
+        let compatible_string_probs = Tensor::cat(
+            strings_used[max_i]
+                .iter()
+                .map(|strings| match strings.len() {
+                    0 => Tensor::<B, 1>::full([1], NEG_INFINITY, &g.device()),
+                    1 => {
+                        let i = *strings.first().unwrap() as usize;
+                        string_probs.clone().slice([i..i + 1])
+                    }
+                    _ => {
+                        let strings = Tensor::<B, 1, Int>::from_data(
+                            Data::from(strings.as_slice()).convert(),
+                            &g.device(),
+                        );
+                        log_sum_exp_dim(string_probs.clone().select(0, strings), 0)
+                    }
+                })
+                .collect_vec(),
+            0,
+        );
         let best_mapping = &master_mapping[max_i];
         let mut compatible_loss = Tensor::<B, 2>::full([1, 1], 0.0, &g.device());
         if let Some(best_mapping) = best_mapping {
@@ -632,7 +673,7 @@ fn get_grammar_losses<B: Backend>(
         loss_per_grammar.push(log_sum_exp_dim(
             Tensor::cat(
                 vec![
-                    compatible_loss + 0.9_f32.ln(),
+                    compatible_loss + compatible_string_probs.unsqueeze_dim(1) + 0.9_f32.ln(),
                     log_sum_exp_dim(loss, 1) + 0.1_f32.ln(),
                 ],
                 1,

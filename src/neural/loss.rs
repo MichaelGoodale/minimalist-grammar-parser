@@ -495,11 +495,11 @@ fn get_grammar_losses<B: Backend>(
         .sum_dim(2)
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
-    //let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
-    //    Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
-    //    2,
-    //)
-    //.squeeze(2);
+    let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
+        Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
+        2,
+    )
+    .squeeze(2);
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
@@ -621,9 +621,7 @@ pub fn get_neural_outputs<B: Backend>(
     let grammar = loss_per_grammar + string_probs + grammar_losses.unsqueeze_dim(0);
 
     (
-        -log_sum_exp_dim(grammar.select(1, idx), 1)
-            .squeeze(1)
-            .sum_dim(0),
+        -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
         n_compatible,
     )
 }

@@ -623,7 +623,7 @@ pub fn get_neural_outputs<B: Backend>(
     (
         -log_sum_exp_dim(grammar.select(1, idx), 1)
             .squeeze(1)
-            .mean_dim(0),
+            .sum_dim(0),
         n_compatible,
     )
 }

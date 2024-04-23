@@ -86,10 +86,9 @@ fn compatible_strings<B: Backend>(
     strings: &[StringPath],
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,
-) -> (Tensor<B, 2>, Tensor<B, 2>) {
+) -> (Tensor<B, 2>, Vec<Option<BTreeMap<usize, usize>>>) {
     let mut n_compatible = Vec::with_capacity(strings.len());
-    let mut compatible_loss =
-        Tensor::<B, 2>::full([targets.len(), strings.len()], -999.0, &g.device());
+    let mut compatible_grammars = Vec::with_capacity(strings.len() * targets.len());
 
     for (string_i, s) in strings.iter().enumerate() {
         let mut n_compatible_per_string = vec![];
@@ -112,14 +111,11 @@ fn compatible_strings<B: Backend>(
                 }
             }
             n_compatible_per_string.push(if compatible { 1.0 } else { 0.0 });
-            if compatible {
-                let mut p = Tensor::zeros([1, 1], &g.device());
-                for (c, c_t) in string_target_map.iter() {
-                    p = p + g.lemmas().clone().slice([*c..c + 1, *c_t..c_t + 1]);
-                }
-                compatible_loss = compatible_loss
-                    .slice_assign([target_i..target_i + 1, string_i..string_i + 1], p);
-            }
+            compatible_grammars.push(if compatible {
+                Some(string_target_map)
+            } else {
+                None
+            });
         }
         n_compatible.push(Tensor::<B, 1>::from_data(
             Data::from(n_compatible_per_string.as_slice()).convert(),
@@ -127,7 +123,7 @@ fn compatible_strings<B: Backend>(
         ));
     }
 
-    (Tensor::stack(n_compatible, 1), compatible_loss)
+    (Tensor::stack(n_compatible, 1), compatible_grammars)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -446,7 +442,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     );
     let string_tensor = string_path_to_tensor(&strings, g, neural_config);
     let mut grammars = vec![];
-    for (full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx {
+    for (full_grammar_string_id, grammar_id, _grammar_set, grammar_cats) in grammar_idx {
         let grammar = lexicon.grammar_features(&string_probs[full_grammar_string_id]);
         //(1, n_grammar_strings)
         let string_probs = get_string_prob(
@@ -487,7 +483,7 @@ fn get_grammar_losses<B: Backend>(
 ) {
     let n_targets = targets.shape().dims[0];
 
-    let (n_compatible, compatible_loss) = compatible_strings(strings, target_vec, g);
+    let (n_compatible, compatible_grammars) = compatible_strings(strings, target_vec, g);
 
     let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
         target_vec
@@ -524,7 +520,7 @@ fn get_grammar_losses<B: Backend>(
     let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
     let mut loss_per_grammar = vec![];
     let mut compatible_per_grammar = vec![];
-    for (_full_grammar_string_id, grammar_id, grammar_set, grammar_cats) in grammar_idx.iter() {
+    for (_full_grammar_string_id, grammar_id, _grammar_set, grammar_cats) in grammar_idx.iter() {
         let string_probs = get_string_prob(
             string_probs,
             lexicon,
@@ -535,10 +531,114 @@ fn get_grammar_losses<B: Backend>(
             &g.device(),
         );
 
+        let mappings: Vec<_> = grammar_id
+            .clone()
+            .to_data()
+            .convert::<u32>()
+            .value
+            .into_iter()
+            .map(|i| {
+                let i: usize = i as usize;
+                &compatible_grammars[i * n_targets..i * n_targets + n_targets]
+            })
+            .collect();
+
+        let mut master_mapping: Vec<Option<BTreeMap<_, _>>> = mappings.first().unwrap().to_vec();
+        let mut n_compatible_with_target: Vec<Vec<u32>> = master_mapping
+            .iter()
+            .enumerate()
+            .map(|(i, x)| {
+                let mut v = vec![0; n_targets];
+                if x.is_some() {
+                    v[i] = 1;
+                }
+                v
+            })
+            .collect();
+        for mapping in mappings.iter().skip(1) {
+            for (master_map, target) in master_mapping
+                .iter_mut()
+                .zip(n_compatible_with_target.iter_mut())
+            {
+                if let Some(master_map) = master_map {
+                    let mut candidates = Vec::with_capacity(n_targets);
+                    for (target_i, map) in mapping.iter().enumerate() {
+                        if let Some(map) = map {
+                            let mut compatible = true;
+                            for (key, v) in master_map.iter() {
+                                compatible &= match map.get(key) {
+                                    Some(v2) => v == v2,
+                                    None => true,
+                                };
+                            }
+                            if compatible {
+                                let mut new_keys = vec![];
+                                for (key, v) in map.iter() {
+                                    if !master_map.contains_key(key) {
+                                        new_keys.push((*key, *v));
+                                    }
+                                }
+                                candidates.push(Some((target_i, new_keys)));
+                            } else {
+                                candidates.push(None);
+                            }
+                        } else {
+                            candidates.push(None);
+                        }
+                    }
+                    for (target_i, c) in candidates.into_iter().flatten() {
+                        if target[target_i] == 0 {
+                            target[target_i] = 1;
+                            for (k, v) in c {
+                                master_map.insert(k, v);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        let max_i = n_compatible_with_target
+            .iter()
+            .enumerate()
+            .map(|(i, x)| (x.iter().sum::<u32>(), i))
+            .max()
+            .unwrap()
+            .1;
+
+        let best_mapping = &master_mapping[max_i];
+        let mut compatible_loss = Tensor::<B, 2>::full([1, 1], 0.0, &g.device());
+        if let Some(best_mapping) = best_mapping {
+            for (k, v) in best_mapping {
+                compatible_loss =
+                    compatible_loss + g.lemmas().clone().slice([*k..k + 1, *v..v + 1]);
+            }
+        }
+
+        let compatible_targets = Tensor::<B, 1, Int>::from_data(
+            Data::from(n_compatible_with_target[max_i].as_slice()).convert(),
+            &g.device(),
+        )
+        .bool();
+        let compatible_loss = compatible_loss
+            .repeat(0, n_targets)
+            .reshape([n_targets])
+            .mask_fill(compatible_targets.bool_not(), -999.0)
+            .unsqueeze_dim(1);
+
         let loss =
             prefix_loss.clone().select(1, grammar_id.clone()) + string_probs.unsqueeze_dim(0);
         //Probability of generating each of the targets
-        loss_per_grammar.push(log_sum_exp_dim(loss, 1));
+        loss_per_grammar.push(log_sum_exp_dim(
+            Tensor::cat(
+                vec![
+                    compatible_loss + 0.9_f32.ln(),
+                    log_sum_exp_dim(loss, 1) + 0.1_f32.ln(),
+                ],
+                1,
+            ),
+            1,
+        ));
 
         let n_compatible = n_compatible
             .clone()

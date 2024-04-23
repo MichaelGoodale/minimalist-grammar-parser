@@ -258,8 +258,8 @@ fn get_grammar_probs<B: Backend>(
     for (i, string_path) in string_paths.iter().enumerate() {
         grammar_sets
             .entry(string_path.attested_nodes().clone())
-            .or_insert(vec![])
-            .push(i as u32);
+            .or_insert(BTreeSet::default())
+            .insert(i as u32);
     }
 
     let mut output = vec![];
@@ -277,6 +277,7 @@ fn get_grammar_probs<B: Backend>(
                 all_valid_strings.extend(ids);
             }
         }
+        let mut all_valid_strings = all_valid_strings.into_iter().collect_vec();
         all_valid_strings.sort();
         let string_idx = Tensor::<B, 1, Int>::from_data(
             Data::from(all_valid_strings.as_slice()).convert(),

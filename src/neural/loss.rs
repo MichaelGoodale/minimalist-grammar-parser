@@ -673,7 +673,9 @@ fn get_grammar_losses<B: Backend>(
         loss_per_grammar.push(log_sum_exp_dim(
             Tensor::cat(
                 vec![
-                    compatible_loss + compatible_string_probs.unsqueeze_dim(1) + 0.9_f32.ln(),
+                    compatible_loss
+                        + (compatible_string_probs.unsqueeze_dim(1) * 100.0)
+                        + 0.9_f32.ln(),
                     log_sum_exp_dim(loss, 1) + 0.1_f32.ln(),
                 ],
                 1,

@@ -459,7 +459,7 @@ fn get_grammar_losses<B: Backend>(
     Tensor<B, 2>,
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
-    Tensor<B, 1>,
+    Tensor<B, 2>,
 ) {
     let n_targets = targets.shape().dims[0];
 
@@ -496,13 +496,12 @@ fn get_grammar_losses<B: Backend>(
         .squeeze(2)
         .mask_fill(target_s_ids, -999.0);
 
-    /*
-        let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
-            Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
-            2,
-        )
-        .squeeze(2);
-    */
+    let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
+        Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
+        2,
+    )
+    .squeeze(2);
+
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
         let mut loss_per_grammar = vec![];
@@ -543,7 +542,7 @@ fn get_grammar_losses<B: Backend>(
             Tensor::zeros([1, 1], &g.device()),
             grammar_probs,
             grammar_idx,
-            Tensor::<B, 1>::cat(compatible_per_grammar, 0),
+            Tensor::<B, 1>::cat(compatible_per_grammar, 0).unsqueeze_dim(1),
         )
     } else {
         let (grammar_probs, g_details) = get_grammar_per_string(string_probs, g, lexicon);
@@ -560,8 +559,6 @@ fn get_grammar_losses<B: Backend>(
             ));
         }
 
-        let n_compatible = n_compatible.sum_dim(0).squeeze(0);
-        let n_compatible = Tensor::min_pair(n_compatible.clone(), Tensor::ones_like(&n_compatible));
         (
             prefix_loss,
             Tensor::cat(s, 0).unsqueeze_dim(0),
@@ -607,21 +604,10 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let max_n_compatible = n_compatible.clone().max_dim(0);
-    let idx = n_compatible
-        .clone()
-        .equal_elem(max_n_compatible.into_scalar())
-        .into_data()
-        .value
-        .into_iter()
-        .enumerate()
-        .filter_map(|(i, x)| if x { Some(i as u32) } else { None })
-        .collect_vec();
-
-    let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
-
     let grammar = loss_per_grammar + string_probs + grammar_losses.unsqueeze_dim(0);
 
+    let n_compatible = n_compatible.sum_dim(1).squeeze(1);
+    let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
     (
         -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
         n_compatible,

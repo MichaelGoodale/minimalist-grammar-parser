@@ -482,14 +482,14 @@ fn get_grammar_losses<B: Backend>(
     let grammar = string_path_to_tensor(strings, g, neural_config);
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
-    let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
+    let prefix_loss: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 
     //(n_targets, n_grammar_strings, padding_length, 1)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dims(&[1, 3]).repeat(1, strings.len());
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings, 1)
-    let prefix_loss: Tensor<B, 4> = grammar.gather(3, targets);
+    //let prefix_loss: Tensor<B, 4> = grammar.gather(3, targets);
     //.squeeze::<3>(3)
     //.sum_dim(2)
     //.squeeze(2)

@@ -456,7 +456,7 @@ fn get_grammar_losses<B: Backend>(
     grammar_splitting: bool,
 ) -> (
     Tensor<B, 2>,
-    Tensor<B, 2>,
+    Tensor<B, 1>,
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
     Tensor<B, 2>,
@@ -539,7 +539,7 @@ fn get_grammar_losses<B: Backend>(
         }
         (
             Tensor::cat(loss_per_grammar, 1),
-            Tensor::zeros([1, 1], &g.device()),
+            Tensor::zeros([1], &g.device()),
             grammar_probs,
             grammar_idx,
             Tensor::<B, 1>::cat(compatible_per_grammar, 0).unsqueeze_dim(1),
@@ -561,7 +561,7 @@ fn get_grammar_losses<B: Backend>(
 
         (
             prefix_loss,
-            Tensor::cat(s, 0).unsqueeze_dim(0),
+            Tensor::cat(s, 0),
             grammar_probs,
             vec![],
             n_compatible,
@@ -604,12 +604,10 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let grammar = loss_per_grammar + string_probs + grammar_losses.unsqueeze_dim(0);
+    let p_of_t_given_p = log_sum_exp_dim(loss_per_grammar, 0).squeeze(0);
+    let p_of_p = string_probs + grammar_losses;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (
-        -log_sum_exp_dim(grammar, 1).squeeze(1).mean_dim(0),
-        n_compatible,
-    )
+    (-log_sum_exp_dim(p_of_t_given_p + p_of_p, 0), n_compatible)
 }

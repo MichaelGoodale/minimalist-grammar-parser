@@ -604,10 +604,11 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
+    dbg!(loss_per_grammar.clone().detach());
     let p_of_t_given_p: Tensor<B, 1> = log_sum_exp_dim(loss_per_grammar, 0).squeeze(0);
     let p_of_p = string_probs + grammar_losses;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (-p_of_t_given_p.sum_dim(0), n_compatible)
+    (-log_sum_exp_dim(p_of_t_given_p + p_of_p, 0), n_compatible)
 }

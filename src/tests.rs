@@ -524,7 +524,8 @@ fn test_loss() -> Result<()> {
     .slice_assign(
         [0..n_lexemes, 0..n_pos, 1..2],
         Tensor::zeros([n_lexemes, n_pos, 1], &NdArrayDevice::default()),
-    );
+    )
+    .require_grad();
 
     let lemmas = Tensor::<Autodiff<NdArray>, 2>::zeros([n_lexemes, 4], &NdArrayDevice::default())
         .slice_assign(
@@ -627,9 +628,8 @@ fn test_loss() -> Result<()> {
             targets.clone(),
             &config,
         )
-        .0
-        .into_scalar()
-        .elem::<f32>();
+        .0;
+        val.backward();
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
         let top_g: BTreeSet<_> = output.0[top_g].0.clone().into_iter().collect();
@@ -639,7 +639,7 @@ fn test_loss() -> Result<()> {
         ]]);
 
         assert_eq!(top_g, encoded_grammar);
-        loss.push(val);
+        loss.push(val.into_scalar().elem::<f32>());
     }
 
     let stored_losses = [26.346354, 26.346354, 26.346354, 26.346354, 26.346355];

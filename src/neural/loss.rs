@@ -455,7 +455,7 @@ fn get_grammar_losses<B: Backend>(
     neural_config: &NeuralConfig,
     grammar_splitting: bool,
 ) -> (
-    Tensor<B, 4>,
+    Tensor<B, 2>,
     Tensor<B, 1>,
     Tensor<B, 1>,
     Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
@@ -482,24 +482,25 @@ fn get_grammar_losses<B: Backend>(
     let grammar = string_path_to_tensor(strings, g, neural_config);
 
     //(n_targets, n_grammar_strings, padding_length, n_lemmas)
-    let prefix_loss: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
+    let grammar: Tensor<B, 4> = grammar.unsqueeze_dim(0).repeat(0, n_targets);
 
     //(n_targets, n_grammar_strings, padding_length, 1)
     let targets: Tensor<B, 4, Int> = targets.unsqueeze_dims(&[1, 3]).repeat(1, strings.len());
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings, 1)
-    //let prefix_loss: Tensor<B, 4> = grammar.gather(3, targets);
-    //.squeeze::<3>(3)
-    //.sum_dim(2)
-    //.squeeze(2)
-    //.mask_fill(target_s_ids, -999.0);
+    let prefix_loss: Tensor<B, 2> = grammar
+        .gather(3, targets)
+        .squeeze::<3>(3)
+        .sum_dim(2)
+        .squeeze(2)
+        .mask_fill(target_s_ids, -999.0);
 
-    //let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
-    //    Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
-    //    2,
-    //)
-    //.squeeze(2);
+    let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
+        Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
+        2,
+    )
+    .squeeze(2);
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
@@ -591,7 +592,7 @@ pub fn get_neural_outputs<B: Backend>(
     target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-) -> (Tensor<B, 4>, Tensor<B, 1>) {
+) -> (Tensor<B, 1>, Tensor<B, 1>) {
     let (loss_per_grammar, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
@@ -603,10 +604,10 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    //let p_of_t_given_p = log_sum_exp_dim(loss_per_grammar, 0);
+    let p_of_t_given_p = log_sum_exp_dim(loss_per_grammar, 0).squeeze(0);
     let p_of_p: Tensor<B, 1> = string_probs + grammar_losses;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (loss_per_grammar, n_compatible)
+    (log_sum_exp_dim(p_of_t_given_p + p_of_p, 0), n_compatible)
 }

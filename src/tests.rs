@@ -747,3 +747,19 @@ fn random_neural_generation() -> Result<()> {
     get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
     Ok(())
 }
+
+#[test]
+fn whatthe() {
+    let a: Vec<f32> = vec![0.0, 0.0];
+    let b = [0, 0];
+    let b: Tensor<Autodiff<NdArray>, 2, Int> =
+        Tensor::from_data(Data::from(b.as_slice()), &NdArrayDevice::default()).reshape([2, 1]);
+    let a = Tensor::from_data(Data::from(a.as_slice()), &NdArrayDevice::default())
+        .reshape([2, 1])
+        .require_grad();
+
+    let loss = a.gather(1, b);
+    let loss = loss.clone().max_dim(0) + loss;
+    let loss = loss.sum();
+    let g = loss.backward();
+}

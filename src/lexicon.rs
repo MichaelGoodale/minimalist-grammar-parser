@@ -224,8 +224,8 @@ impl<
             n_categories.unwrap_or_else(|| category_symbols.len().try_into().unwrap());
 
         let bits_per_feature: f64 = (MG_TYPES * n_categories).into();
-        let bits_per_feature = bits_per_feature.log2();
-        let bits_per_phoneme: f64 = (Into::<f64>::into(n_phonemes)).log2();
+        let bits_per_feature = bits_per_feature.ln();
+        let bits_per_phoneme: f64 = (Into::<f64>::into(n_phonemes)).ln();
 
         Ok(lexemes
             .into_iter()
@@ -775,7 +775,7 @@ ed::=v +k t";
                 let bits_per_phoneme: f64 = alphabet_size.into();
                 assert_relative_eq!(
                     lex.mdl_score(alphabet_size)?,
-                    string_size * bits_per_phoneme.log2() + feature_size * bits_per_symbol.log2()
+                    string_size * bits_per_phoneme.ln() + feature_size * bits_per_symbol.ln()
                 );
             }
         }

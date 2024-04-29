@@ -610,10 +610,11 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let loss = -(unstable_log_sum_exp_dim(p_of_t_given_p, 0).squeeze(0)
-        + (string_probs + grammar_losses))
-        .mean_dim(0);
+    let parse_probs = (string_probs + grammar_losses).unsqueeze_dim(0);
+    let p_of_t = log_sum_exp_dim(p_of_t_given_p + parse_probs.clone().detach(), 1).mean_dim(0);
+    let p_of_p = log_sum_exp_dim(n_compatible.clone() * parse_probs, 1).mean_dim(0);
+
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (loss, n_compatible)
+    (-(p_of_p + p_of_t).squeeze(1), n_compatible)
 }

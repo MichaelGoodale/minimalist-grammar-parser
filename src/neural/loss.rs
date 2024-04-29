@@ -603,15 +603,15 @@ pub fn get_neural_outputs<B: Backend>(
         neural_config,
         false,
     );
-    let n_grammars = grammar_losses.shape().dims[0];
 
-    let p_of_p = -(log_sum_exp_dim(p_of_t_given_p.clone(), 0)
-        .clone()
-        .reshape([n_grammars])
-        + (string_probs + grammar_losses))
-        .mean_dim(0);
-    dbg!(p_of_p.clone().detach());
+    let p_of_p = (log_sum_exp_dim(
+        n_compatible.clone() * (string_probs + grammar_losses).unsqueeze_dim(0),
+        1,
+    ))
+    .mean_dim(0);
+    let p_of_t = log_sum_exp_dim(p_of_t_given_p, 1).mean_dim(0);
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (p_of_p, n_compatible)
+    let loss = (p_of_p + p_of_t).squeeze(0);
+    (-loss, n_compatible)
 }

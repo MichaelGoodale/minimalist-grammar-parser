@@ -593,7 +593,7 @@ pub fn get_neural_outputs<B: Backend>(
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
-    let (loss_per_grammar, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
+    let (p_of_t_given_p, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
         strings,
@@ -604,10 +604,14 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let p_of_t_given_p = log_sum_exp_dim(loss_per_grammar, 0).squeeze(0);
-    let p_of_p: Tensor<B, 1> = string_probs + grammar_losses;
-
+    let p_of_p = (log_sum_exp_dim(
+        n_compatible.clone() * (string_probs + grammar_losses).unsqueeze_dim(0),
+        1,
+    ))
+    .mean_dim(0);
+    let p_of_t = log_sum_exp_dim(p_of_t_given_p, 1).mean_dim(0);
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (log_sum_exp_dim(p_of_t_given_p + p_of_p, 0), n_compatible)
+    let loss = (p_of_p + p_of_t).squeeze(0);
+    (-loss, n_compatible)
 }

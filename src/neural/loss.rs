@@ -603,8 +603,10 @@ pub fn get_neural_outputs<B: Backend>(
         neural_config,
         false,
     );
+    let n_grammars = grammar_losses.shape().dims[0];
 
-    let p_of_p = -(log_sum_exp_dim(p_of_t_given_p, 0).squeeze(0) + (string_probs + grammar_losses))
+    let p_of_p = -(log_sum_exp_dim(p_of_t_given_p, 0).reshape([n_grammars])
+        + (string_probs + grammar_losses))
         .mean_dim(0);
     dbg!(p_of_p.clone().detach());
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);

@@ -619,7 +619,7 @@ pub fn get_neural_outputs<B: Backend>(
     target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-) -> (Tensor<B, 1>, Tensor<B, 1>, Tensor<B, 1>) {
+) -> (Tensor<B, 1>, Tensor<B, 1>) {
     let (p_of_t_given_p, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
@@ -631,51 +631,11 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let hmm =
+    let p_of_s =
         p_of_t_given_p.clone() + (string_probs.clone() + grammar_losses.clone()).unsqueeze_dim(0);
-
-    let mut alt_idx = vec![];
-    let idx = n_compatible
-        .clone()
-        .iter_dim(1)
-        .enumerate()
-        .filter_map(|(i, x)| {
-            let y: f64 = x.max().into_scalar().elem();
-            if y == 1.0 {
-                Some(i as u32)
-            } else {
-                alt_idx.push(i as u32);
-                None
-            }
-        })
-        .collect_vec();
-
-    let loss = if !idx.is_empty() {
-        let idx = Tensor::<B, 1, Int>::from_data(Data::from(idx.as_slice()).convert(), &g.device());
-        log_sum_exp_dim(hmm.clone().select(1, idx), 1)
-            .sum_dim(0)
-            .reshape([1])
-    } else {
-        Tensor::zeros([1], &g.device())
-    };
-
-    let avoid = if !alt_idx.is_empty() {
-        let alt_idx =
-            Tensor::<B, 1, Int>::from_data(Data::from(alt_idx.as_slice()).convert(), &g.device());
-        log_sum_exp_dim(hmm.clone().select(1, alt_idx), 1)
-            .sum_dim(0)
-            .reshape([1])
-    } else {
-        Tensor::zeros([1], &g.device())
-    };
-
-    let loss = avoid - loss;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (
-        loss,
-        n_compatible,
-        log_sum_exp_dim(hmm, 1).sum_dim(0).reshape([1]),
-    )
+    let loss = log_sum_exp_dim(p_of_s, 1).sum_dim(0).reshape([1]);
+    (loss, n_compatible)
 }

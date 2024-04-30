@@ -594,7 +594,7 @@ pub fn get_neural_outputs<B: Backend>(
     target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
-) -> (Tensor<B, 1>, Tensor<B, 1>) {
+) -> (Tensor<B, 1>, Tensor<B, 1>, Tensor<B, 1>) {
     let (p_of_t_given_p, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
         g,
         lexicon,
@@ -607,20 +607,19 @@ pub fn get_neural_outputs<B: Backend>(
     );
 
     let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
+    let prob = log_sum_exp_dim(
+        p_of_t_given_p.clone() + (string_probs.clone() + grammar_losses.clone()).unsqueeze_dim(0),
+        1,
+    )
+    .sum_dim(0)
+    .reshape([1]);
 
-    //let loss = n_compatible.clone() * (p_of_t_given_p + grammar_losses.unsqueeze_dim(0));
-    let loss = (n_compatible.clone().max_dim(0).squeeze(0) - (string_probs + grammar_losses).exp())
-        .powf_scalar(2.0)
-        .mean_dim(0);
-    let loss = ((n_compatible.clone() - p_of_t_given_p.exp())
-        .powf_scalar(2.0)
-        .sum_dim(0)
-        .sum_dim(1)
-        / n)
-        .squeeze(1)
-        + loss;
+    let loss = (n_compatible.clone()
+        - (p_of_t_given_p + (string_probs + grammar_losses).unsqueeze_dim(0)).exp())
+    .powf_scalar(2.0);
+    let loss = loss.sum_dim(1).sum_dim(0) / n;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (loss, n_compatible)
+    (loss.squeeze(1), n_compatible, prob)
 }

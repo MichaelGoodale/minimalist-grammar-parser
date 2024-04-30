@@ -366,12 +366,12 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
             beam.generated_sentence.0.push(*x);
 
             beam.max_log_prob = beam.log_probability.2
-            // + beam
-            //     .sentence_guides
-            //     .iter()
-            //     .map(|(_, p)| *p)
-            //     .max()
-            //     .unwrap_or_else(|| LogProb::new(0.0).unwrap());
+                + beam
+                    .sentence_guides
+                    .iter()
+                    .map(|(_, p)| *p)
+                    .max()
+                    .unwrap_or_else(|| LogProb::new(0.0).unwrap());
         } else {
             beam.n_empties += 1;
         }

@@ -191,7 +191,7 @@ fn get_prob_of_grammar<B: Backend>(
         0,
     )
     .sum_dim(0);
-
+    /*
     let unattested = (0..g.n_lexemes())
         .filter_map(|i| {
             let i = i as u32;
@@ -218,7 +218,6 @@ fn get_prob_of_grammar<B: Backend>(
                 .reshape([1])
         }
     };
-
     let unattested = {
         if unattested.is_empty() {
             Tensor::<B, 1>::zeros([1], &g.device())
@@ -233,9 +232,9 @@ fn get_prob_of_grammar<B: Backend>(
                 .sum_dim(0)
                 .reshape([1])
         }
-    };
+    };*/
 
-    (p + attested + unattested, g_types)
+    (p, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(

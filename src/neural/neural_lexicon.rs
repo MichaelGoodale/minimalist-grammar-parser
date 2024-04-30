@@ -390,7 +390,11 @@ impl<B: Backend> NeuralLexicon<B> {
                             .licensee_categories
                             .clone()
                             .slice([lexeme_idx..lexeme_idx + 1, 0..1, c..c + 1])
-                            .reshape([1]),
+                            .reshape([1])
+                            + grammar_params
+                                .include_lemma()
+                                .clone()
+                                .slice([lexeme_idx..lexeme_idx + 1]),
                     )
                 })
                 .chain((0..grammar_params.n_categories).map(|c| {
@@ -401,7 +405,11 @@ impl<B: Backend> NeuralLexicon<B> {
                             .categories
                             .clone()
                             .slice([lexeme_idx..lexeme_idx + 1, c..c + 1])
-                            .reshape([1]),
+                            .reshape([1])
+                            + grammar_params
+                                .include_lemma()
+                                .clone()
+                                .slice([lexeme_idx..lexeme_idx + 1]),
                     )
                 }))
                 .collect();

@@ -16,6 +16,7 @@ use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, ElementConversion, Int};
 use itertools::Itertools;
 use moka::sync::Cache;
+use rand_distr::num_traits::Zero;
 
 pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
@@ -585,12 +586,6 @@ pub fn get_all_parses<B: Backend>(
     }
 }
 
-fn unstable_log_sum_exp_dim<B: Backend, const D: usize>(
-    tensor: Tensor<B, D>,
-    dim: usize,
-) -> Tensor<B, D> {
-    (tensor).exp().sum_dim(dim).log()
-}
 pub fn get_neural_outputs<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
@@ -611,14 +606,14 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let parse_probs = (string_probs + grammar_losses).unsqueeze_dim(0);
     let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
-    let loss = (n_compatible.clone() * (p_of_t_given_p + parse_probs))
-        .sum_dim(1)
-        .sum_dim(0)
-        / n;
+    //let loss = n_compatible.clone() * (p_of_t_given_p + grammar_losses.unsqueeze_dim(0));
+    let loss = (n_compatible.clone()
+        - (p_of_t_given_p + (string_probs + grammar_losses).unsqueeze_dim(0)).exp())
+    .powf_scalar(2.0);
+    let loss = loss.sum_dim(1).sum_dim(0) / n;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    (-loss.squeeze(1), n_compatible)
+    (loss.squeeze(1), n_compatible)
 }

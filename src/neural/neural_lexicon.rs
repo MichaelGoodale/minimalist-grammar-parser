@@ -111,7 +111,6 @@ pub struct GrammarParameterization<B: Backend> {
     include_lemma: Tensor<B, 1>,        // (lexeme)
     dont_include_lemma: Tensor<B, 1>,   // (lexeme)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
-    lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
     n_features: usize,
     n_licensees: usize,
@@ -235,7 +234,6 @@ impl<B: Backend> GrammarParameterization<B> {
             gumbel_activation(silent_probabilities, 1, inverse_temperature, rng);
 
         let mut lemma_lookups = HashMap::default();
-        let mut lexeme_weights = HashMap::default();
         for lexeme_i in 0..n_lexemes {
             let v = lemmas
                 .clone()
@@ -246,17 +244,6 @@ impl<B: Backend> GrammarParameterization<B> {
             for (lemma_i, v) in v.into_iter().enumerate() {
                 lemma_lookups.insert((lexeme_i, lemma_i), LogProb::new(clamp_prob(v)?).unwrap());
             }
-            lexeme_weights.insert(
-                lexeme_i,
-                LogProb::new(clamp_prob(
-                    weights
-                        .clone()
-                        .slice([lexeme_i..lexeme_i + 1])
-                        .into_scalar()
-                        .elem(),
-                )?)
-                .unwrap(),
-            );
         }
 
         Ok(GrammarParameterization {
@@ -272,7 +259,6 @@ impl<B: Backend> GrammarParameterization<B> {
             lemma_lookups,
             n_lexemes,
             n_features,
-            lexeme_weights,
             n_licensees,
             n_lemmas,
             n_categories,
@@ -293,10 +279,6 @@ impl<B: Backend> GrammarParameterization<B> {
 
     pub fn lemma_lookups(&self) -> &HashMap<(usize, usize), LogProb<f64>> {
         &self.lemma_lookups
-    }
-
-    pub fn lexeme_weights(&self) -> &HashMap<usize, LogProb<f64>> {
-        &self.lexeme_weights
     }
 
     pub fn include_lemma(&self) -> &Tensor<B, 1> {

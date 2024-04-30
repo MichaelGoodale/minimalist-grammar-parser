@@ -631,8 +631,9 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
+    let s = softmax(string_probs, 0);
     let p_of_s =
-        p_of_t_given_p.clone() + (string_probs.clone() + grammar_losses.clone()).unsqueeze_dim(0);
+        s.unsqueeze_dim(0) * (p_of_t_given_p.clone() + grammar_losses.clone().unsqueeze_dim(0));
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);

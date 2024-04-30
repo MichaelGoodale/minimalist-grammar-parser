@@ -636,6 +636,6 @@ pub fn get_neural_outputs<B: Backend>(
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    let loss = log_sum_exp_dim(p_of_s, 1).sum_dim(0).reshape([1]);
+    let loss = -log_sum_exp_dim(p_of_s, 1).sum_dim(0).reshape([1]);
     (loss, n_compatible)
 }

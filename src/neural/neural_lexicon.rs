@@ -305,7 +305,7 @@ impl<B: Backend> GrammarParameterization<B> {
     }
 
     pub fn dont_include_lemma(&self) -> &Tensor<B, 1> {
-        &self.include_lemma
+        &self.dont_include_lemma
     }
 
     pub fn included_licensees(&self) -> &Tensor<B, 2> {

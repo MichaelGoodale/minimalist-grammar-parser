@@ -610,7 +610,8 @@ pub fn get_neural_outputs<B: Backend>(
 
     //let loss = n_compatible.clone() * (p_of_t_given_p + grammar_losses.unsqueeze_dim(0));
     let loss = (n_compatible.clone().max_dim(0).squeeze(0) - (string_probs + grammar_losses).exp())
-        .powf_scalar(2.0);
+        .powf_scalar(2.0)
+        .mean_dim(0);
     let loss = ((n_compatible.clone() - p_of_t_given_p.exp())
         .powf_scalar(2.0)
         .sum_dim(0)

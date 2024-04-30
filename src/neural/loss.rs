@@ -611,7 +611,7 @@ pub fn get_neural_outputs<B: Backend>(
     );
 
     let parse_probs = (string_probs.clone() + grammar_losses).unsqueeze_dim(0);
-    let loss = ((string_probs.exp().unsqueeze_dim(0) * n_compatible.clone())
+    let loss = ((string_probs.exp().unsqueeze_dim(0).detach() * n_compatible.clone() * 100.0)
         * (p_of_t_given_p + parse_probs.clone()))
     .mean_dim(1)
     .mean_dim(0);

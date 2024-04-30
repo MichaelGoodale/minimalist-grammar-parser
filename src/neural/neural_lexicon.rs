@@ -107,9 +107,9 @@ pub struct GrammarParameterization<B: Backend> {
     categories: Tensor<B, 2>,           //(lexeme, categories)
     included_features: Tensor<B, 2>,    //(lexeme, n_features)
     included_licensees: Tensor<B, 2>,   //(lexeme, n_licensees)
-    weights: Tensor<B, 1>,              //(lexeme)
     unnormalized_weights: Tensor<B, 1>, //(lexeme)
     include_lemma: Tensor<B, 1>,        // (lexeme)
+    dont_include_lemma: Tensor<B, 1>,   // (lexeme)
     lemma_lookups: HashMap<(usize, usize), LogProb<f64>>,
     lexeme_weights: HashMap<usize, LogProb<f64>>,
     n_lexemes: usize,
@@ -217,6 +217,7 @@ impl<B: Backend> GrammarParameterization<B> {
             activation_function(included_features, 1, inverse_temperature, gumbel, rng);
         let included_licensees =
             activation_function(included_licensees, 1, inverse_temperature, gumbel, rng);
+        let dont_include_lemma = log_sigmoid(-include_lemma.clone());
         let include_lemma = log_sigmoid(include_lemma);
 
         let types = activation_function(types, 2, inverse_temperature, gumbel, rng);
@@ -224,7 +225,6 @@ impl<B: Backend> GrammarParameterization<B> {
             activation_function(type_categories, 2, inverse_temperature, gumbel, rng);
         let lemmas = activation_function(lemmas, 1, inverse_temperature, gumbel, rng);
         let unnormalized_weights = weights.clone();
-        let weights = log_softmax(weights, 0);
         let licensee_categories =
             activation_function(licensee_categories, 2, inverse_temperature, gumbel, rng);
         let categories = activation_function(categories, 1, inverse_temperature, gumbel, rng);
@@ -268,7 +268,7 @@ impl<B: Backend> GrammarParameterization<B> {
             included_features,
             included_licensees,
             include_lemma,
-            weights,
+            dont_include_lemma,
             unnormalized_weights,
             lemma_lookups,
             n_lexemes,
@@ -303,6 +303,11 @@ impl<B: Backend> GrammarParameterization<B> {
     pub fn include_lemma(&self) -> &Tensor<B, 1> {
         &self.include_lemma
     }
+
+    pub fn dont_include_lemma(&self) -> &Tensor<B, 1> {
+        &self.include_lemma
+    }
+
     pub fn included_licensees(&self) -> &Tensor<B, 2> {
         &self.included_licensees
     }

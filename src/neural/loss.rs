@@ -192,6 +192,17 @@ fn get_prob_of_grammar<B: Backend>(
     )
     .sum_dim(0);
 
+    let unattested = (0..g.n_lexemes())
+        .filter_map(|i| {
+            let i = i as u32;
+            if attested.contains(&i) {
+                None
+            } else {
+                Some(i)
+            }
+        })
+        .collect_vec();
+
     let attested = {
         if attested.is_empty() {
             Tensor::<B, 1>::zeros([1], &g.device())
@@ -208,7 +219,23 @@ fn get_prob_of_grammar<B: Backend>(
         }
     };
 
-    (p + attested, g_types)
+    let unattested = {
+        if unattested.is_empty() {
+            Tensor::<B, 1>::zeros([1], &g.device())
+        } else {
+            let unattested = Tensor::<B, 1, Int>::from_data(
+                Data::from(unattested.as_slice()).convert(),
+                &g.device(),
+            );
+            g.dont_include_lemma()
+                .clone()
+                .select(0, unattested)
+                .sum_dim(0)
+                .reshape([1])
+        }
+    };
+
+    (p + attested + unattested, g_types)
 }
 
 fn get_grammar_per_string<B: Backend>(
@@ -532,8 +559,7 @@ fn get_grammar_losses<B: Backend>(
                 .squeeze(1);
             let n_compatible = n_compatible
                 .clone()
-                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0)
-                .sum_dim(0);
+                .mask_fill(n_compatible.greater_equal_elem(1.0), 1.0);
             //How many compatible strings in the grammar?
             compatible_per_grammar.push(n_compatible);
 
@@ -544,7 +570,7 @@ fn get_grammar_losses<B: Backend>(
             Tensor::zeros([1], &g.device()),
             grammar_probs,
             grammar_idx,
-            Tensor::<B, 1>::cat(compatible_per_grammar, 0).unsqueeze_dim(1),
+            Tensor::<B, 1>::stack(compatible_per_grammar, 1),
         )
     } else {
         let (grammar_probs, g_details) = get_grammar_per_string(string_probs, g, lexicon);
@@ -603,20 +629,20 @@ pub fn get_neural_outputs<B: Backend>(
         target_vec,
         targets,
         neural_config,
-        false,
+        true,
     );
 
     let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
+
     let prob = log_sum_exp_dim(
-        p_of_t_given_p.clone() + (string_probs.clone() + grammar_losses.clone()).unsqueeze_dim(0),
+        p_of_t_given_p.clone() + grammar_losses.clone().unsqueeze_dim(0),
         1,
     )
     .sum_dim(0)
     .reshape([1]);
 
-    let loss = (n_compatible.clone()
-        - (p_of_t_given_p + (string_probs + grammar_losses).unsqueeze_dim(0)).exp())
-    .powf_scalar(2.0);
+    let loss = (n_compatible.clone() - (p_of_t_given_p + grammar_losses.unsqueeze_dim(0)).exp())
+        .powf_scalar(2.0);
     let loss = loss.sum_dim(1).sum_dim(0) / n;
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);

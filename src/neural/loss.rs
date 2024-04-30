@@ -610,10 +610,11 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let parse_probs = (string_probs + grammar_losses).unsqueeze_dim(0);
-    let loss = (n_compatible.clone() * (p_of_t_given_p + parse_probs.clone()))
-        .mean_dim(1)
-        .mean_dim(0);
+    let parse_probs = (string_probs.clone() + grammar_losses).unsqueeze_dim(0);
+    let loss = ((string_probs.exp().unsqueeze_dim(0) * n_compatible.clone())
+        * (p_of_t_given_p + parse_probs.clone()))
+    .mean_dim(1)
+    .mean_dim(0);
     let p_of_p = log_sum_exp_dim(n_compatible.clone() * parse_probs, 1).mean_dim(0);
 
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);

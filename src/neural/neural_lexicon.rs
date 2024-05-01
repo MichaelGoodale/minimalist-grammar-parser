@@ -515,6 +515,8 @@ impl<B: Backend> Lexiconable<usize, usize> for NeuralLexicon<B> {
 mod test {
     use burn::backend::{ndarray::NdArrayDevice, NdArray};
     use burn::tensor::Tensor;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     use super::{GrammarParameterization, N_TYPES};
 
@@ -587,6 +589,7 @@ mod test {
             [0., 10., 0., 0., 0., 0., 0., 0., 0., 0.],
             &NdArrayDevice::default(),
         );
+        let mut rng = StdRng::seed_from_u64(0);
 
         let _g = GrammarParameterization::new(
             types,
@@ -603,6 +606,7 @@ mod test {
             end_vector,
             1.0,
             true,
+            &mut rng,
         );
         Ok(())
     }

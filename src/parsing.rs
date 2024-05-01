@@ -1,14 +1,73 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
-use crate::{Direction, ParseHeap};
-use allocator_api2::alloc::Allocator;
+use crate::Direction;
 use anyhow::Result;
 use beam::Beam;
 use itertools::repeat_n;
+use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 pub(crate) use trees::FutureTree;
 pub(crate) use trees::GornIndex;
 pub(crate) use trees::ParseMoment;
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct ParsingConfig {
+    pub min_log_prob: Option<LogProb<f64>>,
+    pub move_prob: LogProb<f64>,
+    pub max_steps: Option<usize>,
+    pub max_beams: Option<usize>,
+    pub global_steps: Option<usize>,
+}
+
+impl ParsingConfig {
+    pub fn new(
+        min_log_prob: LogProb<f64>,
+        move_prob: LogProb<f64>,
+        max_steps: usize,
+        max_beams: usize,
+    ) -> ParsingConfig {
+        let max_steps = usize::min(MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob: Some(min_log_prob),
+            move_prob,
+            max_steps: Some(max_steps),
+            max_beams: Some(max_beams),
+            global_steps: None,
+        }
+    }
+
+    pub fn new_steps_only(move_prob: LogProb<f64>, max_steps: usize) -> ParsingConfig {
+        let max_steps = usize::min(MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob: None,
+            move_prob,
+            max_steps: Some(max_steps),
+            max_beams: None,
+            global_steps: None,
+        }
+    }
+
+    pub fn new_with_global_steps(
+        min_log_prob: LogProb<f64>,
+        move_prob: LogProb<f64>,
+        max_steps: usize,
+        max_beams: usize,
+        global_steps: usize,
+    ) -> ParsingConfig {
+        let max_steps = usize::min(MAX_STEPS, max_steps);
+        ParsingConfig {
+            min_log_prob: Some(min_log_prob),
+            move_prob,
+            max_steps: Some(max_steps),
+            max_beams: Some(max_beams),
+            global_steps: Some(global_steps),
+        }
+    }
+}
+
+pub trait ParseHolder<T, B: Beam<T>> {
+    fn add(&mut self, beam: B);
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
@@ -56,9 +115,9 @@ fn unmerge_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
-    A: Allocator,
+    H: ParseHolder<T, B>,
 >(
-    v: &mut ParseHeap<T, B, A>,
+    v: &mut H,
     lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
@@ -111,7 +170,7 @@ fn unmerge_from_mover<
                     }
                     *beam.top_id_mut() += 2;
                     beam.inc();
-                    v.push(beam);
+                    v.add(beam);
                     output = inverse_rule_prob.clone();
                 }
                 _ => (),
@@ -128,9 +187,9 @@ fn unmerge<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
-    A: Allocator,
+    H: ParseHolder<T, B>,
 >(
-    v: &mut ParseHeap<T, B, A>,
+    v: &mut H,
     lexicon: &L,
     moment: &ParseMoment,
     beam: B,
@@ -180,7 +239,7 @@ fn unmerge<
         }
         *beam.top_id_mut() += 2;
         beam.inc();
-        v.push(beam);
+        v.add(beam);
     }
     Ok(())
 }
@@ -192,9 +251,9 @@ fn unmove_from_mover<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
-    A: Allocator,
+    H: ParseHolder<T, B>,
 >(
-    v: &mut ParseHeap<T, B, A>,
+    v: &mut H,
     lexicon: &L,
     moment: &ParseMoment,
     beam: &B,
@@ -243,7 +302,7 @@ fn unmove_from_mover<
                     }
                     *beam.top_id_mut() += 2;
                     beam.inc();
-                    v.push(beam);
+                    v.add(beam);
                     output = inverse_rule_prob.clone();
                 }
                 _ => (),
@@ -260,9 +319,9 @@ fn unmove<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone,
-    A: Allocator,
+    H: ParseHolder<T, B>,
 >(
-    v: &mut ParseHeap<T, B, A>,
+    v: &mut H,
     lexicon: &L,
     moment: &ParseMoment,
     beam: B,
@@ -302,7 +361,7 @@ fn unmove<
         }
         *beam.top_id_mut() += 2;
         beam.inc();
-        v.push(beam);
+        v.add(beam);
     }
     Ok(())
 }
@@ -313,9 +372,9 @@ pub fn expand<
     Category: Eq + std::fmt::Debug + Clone,
     L: Lexiconable<T, Category>,
     B: Beam<T, Probability = L::Probability> + Clone + 'a,
-    A: Allocator,
+    H: ParseHolder<T, B>,
 >(
-    extender: &mut ParseHeap<'a, T, B, A>,
+    extender: &mut H,
     moment: ParseMoment,
     beam: B,
     lexicon: &'a L,

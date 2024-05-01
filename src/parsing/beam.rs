@@ -1,8 +1,8 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
+use super::ParseHolder;
 use super::Rule;
 use crate::lexicon::{Lexicon, Lexiconable};
-use crate::{ParseHeap, ParsingConfig};
-use allocator_api2::alloc::Allocator;
+use crate::ParsingConfig;
 use anyhow::{bail, Result};
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -29,8 +29,8 @@ pub trait Beam<T>: Sized + Ord {
 
     fn record_rules(&self) -> bool;
 
-    fn scan<A: Allocator>(
-        v: &mut ParseHeap<T, Self, A>,
+    fn scan<H: ParseHolder<T, Self>>(
+        v: &mut H,
         moment: &ParseMoment,
         beam: Self,
         s: &Option<T>,
@@ -122,8 +122,8 @@ where
         self.record_rules
     }
 
-    fn scan<A: Allocator>(
-        v: &mut ParseHeap<T, Self, A>,
+    fn scan<H: ParseHolder<T, Self>>(
+        v: &mut H,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -155,7 +155,7 @@ where
                 });
             }
             beam.steps += 1;
-            v.push(beam);
+            v.add(beam);
         };
     }
 
@@ -413,8 +413,8 @@ where
         self.record_rules
     }
 
-    fn scan<A: Allocator>(
-        v: &mut ParseHeap<T, Self, A>,
+    fn scan<H: ParseHolder<T, Self>>(
+        v: &mut H,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -449,7 +449,7 @@ where
             });
         }
         beam.steps += 1;
-        v.push(beam);
+        v.add(beam);
     }
 
     fn inc(&mut self) {
@@ -543,8 +543,8 @@ where
         self.record_rules
     }
 
-    fn scan<A: Allocator>(
-        v: &mut ParseHeap<T, Self, A>,
+    fn scan<H: ParseHolder<T, Self>>(
+        v: &mut H,
         moment: &ParseMoment,
         mut beam: Self,
         s: &Option<T>,
@@ -564,7 +564,7 @@ where
             });
         }
         beam.steps += 1;
-        v.push(beam);
+        v.add(beam);
     }
 
     fn inc(&mut self) {

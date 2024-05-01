@@ -1,4 +1,4 @@
-use allocator_api2::alloc::Allocator;
+use crate::parsing::ParseHolder;
 use burn::tensor::backend::Backend;
 use logprob::LogProb;
 
@@ -9,7 +9,7 @@ use std::{
 
 use crate::lexicon::Lexiconable;
 use crate::parsing::{beam::Beam, FutureTree, GornIndex, ParseMoment, Rule};
-use crate::{ParseHeap, ParsingConfig};
+use crate::ParsingConfig;
 use anyhow::Result;
 use petgraph::graph::NodeIndex;
 
@@ -344,8 +344,8 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
         false
     }
 
-    fn scan<A: Allocator>(
-        v: &mut ParseHeap<usize, Self, A>,
+    fn scan<H: ParseHolder<usize, Self>>(
+        v: &mut H,
         _moment: &ParseMoment,
         mut beam: Self,
         s: &Option<usize>,
@@ -379,7 +379,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
 
         beam.add_to_log_prob(child_prob);
         beam.steps += 1;
-        v.push(beam);
+        v.add(beam);
     }
 
     fn inc(&mut self) {

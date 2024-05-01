@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::hash::Hash;
-use std::marker::PhantomData;
 
 use anyhow::Result;
 use bumpalo::Bump;
@@ -8,6 +7,7 @@ use burn::tensor::backend::Backend;
 use lexicon::Lexicon;
 
 use allocator_api2::alloc::{Allocator, Global};
+use handlers::ParseHeap;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
@@ -15,6 +15,7 @@ use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbability
 use neural::parameterization::GrammarParameterization;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
+pub use parsing::ParsingConfig;
 use parsing::Rule;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -47,110 +48,6 @@ impl From<bool> for Direction {
         match value {
             false => Direction::Left,
             true => Direction::Right,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct ParsingConfig {
-    min_log_prob: Option<LogProb<f64>>,
-    move_prob: LogProb<f64>,
-    max_steps: Option<usize>,
-    max_beams: Option<usize>,
-    global_steps: Option<usize>,
-}
-
-impl ParsingConfig {
-    pub fn new(
-        min_log_prob: LogProb<f64>,
-        move_prob: LogProb<f64>,
-        max_steps: usize,
-        max_beams: usize,
-    ) -> ParsingConfig {
-        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
-        ParsingConfig {
-            min_log_prob: Some(min_log_prob),
-            move_prob,
-            max_steps: Some(max_steps),
-            max_beams: Some(max_beams),
-            global_steps: None,
-        }
-    }
-
-    pub fn new_steps_only(move_prob: LogProb<f64>, max_steps: usize) -> ParsingConfig {
-        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
-        ParsingConfig {
-            min_log_prob: None,
-            move_prob,
-            max_steps: Some(max_steps),
-            max_beams: None,
-            global_steps: None,
-        }
-    }
-
-    pub fn new_with_global_steps(
-        min_log_prob: LogProb<f64>,
-        move_prob: LogProb<f64>,
-        max_steps: usize,
-        max_beams: usize,
-        global_steps: usize,
-    ) -> ParsingConfig {
-        let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
-        ParsingConfig {
-            min_log_prob: Some(min_log_prob),
-            move_prob,
-            max_steps: Some(max_steps),
-            max_beams: Some(max_beams),
-            global_steps: Some(global_steps),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ParseHeap<'a, T, B: Beam<T>, A: Allocator = Global> {
-    parse_heap: MinMaxHeap<B, A>,
-    phantom: PhantomData<T>,
-    global_steps: usize,
-    config: &'a ParsingConfig,
-}
-
-impl<'a, T, B: Beam<T>, A: Allocator> ParseHeap<'a, T, B, A>
-where
-    B: Ord,
-{
-    fn pop(&mut self) -> Option<B> {
-        self.parse_heap.pop_max()
-    }
-
-    fn push(&mut self, v: B) {
-        self.global_steps += 1;
-        let mut pushable = true;
-        if let Some(max_steps) = self.config.global_steps {
-            pushable = self.global_steps < max_steps;
-        }
-
-        if let Some(min_log_prob) = self.config.min_log_prob {
-            if v.log_prob() < min_log_prob {
-                pushable = false;
-            }
-        }
-
-        if let Some(max_steps) = self.config.max_steps {
-            if v.n_steps() > max_steps {
-                pushable = false;
-            }
-        }
-
-        if pushable && v.pushable(self.config) {
-            if let Some(max_beams) = self.config.max_beams {
-                if self.parse_heap.len() > max_beams {
-                    self.parse_heap.push_pop_min(v);
-                } else {
-                    self.parse_heap.push(v);
-                }
-            } else {
-                self.parse_heap.push(v);
-            }
         }
     }
 }
@@ -189,12 +86,7 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -213,12 +105,7 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 }
@@ -284,12 +171,7 @@ where
             move_log_prob: config.move_prob,
             buffer: vec![],
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -311,12 +193,7 @@ where
             buffer: vec![],
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -341,12 +218,7 @@ where
             buffer: vec![],
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -371,12 +243,7 @@ where
             buffer: vec![],
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 }
@@ -446,12 +313,7 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -466,12 +328,7 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 
@@ -487,12 +344,7 @@ where
             lexicon,
             move_log_prob: config.move_prob,
             merge_log_prob: config.move_prob.opposite_prob(),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap: ParseHeap::new(parse_heap, config),
         })
     }
 }
@@ -556,12 +408,8 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
                 None,
                 config.move_prob.opposite_prob(),
             ),
-            parse_heap: ParseHeap {
-                global_steps: 0,
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+
+            parse_heap: ParseHeap::new(parse_heap, config),
         }
     }
 }
@@ -595,6 +443,7 @@ impl<B: Backend> Iterator for NeuralGenerator<'_, B> {
 }
 
 pub mod grammars;
+mod handlers;
 pub mod lexicon;
 #[allow(clippy::single_range_in_vec_init)]
 pub mod neural;

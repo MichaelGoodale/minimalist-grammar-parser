@@ -631,12 +631,12 @@ pub fn get_neural_outputs<B: Backend>(
         false,
     );
 
-    let s = softmax(string_probs, 0);
-    let p_of_s =
-        s.unsqueeze_dim(0) * (p_of_t_given_p.clone() + grammar_losses.clone().unsqueeze_dim(0));
+    let p_of_s = (n_compatible.clone() * string_probs.exp().unsqueeze_dim(0))
+        * (p_of_t_given_p.clone() + grammar_losses.clone().unsqueeze_dim(0));
 
+    let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    let loss = -log_sum_exp_dim(p_of_s, 1).sum_dim(0).reshape([1]);
-    (loss, n_compatible)
+    let loss = -p_of_s.sum_dim(0).sum_dim(1) / n;
+    (loss.reshape([1]), n_compatible)
 }

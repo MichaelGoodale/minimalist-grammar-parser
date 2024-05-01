@@ -331,7 +331,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
                         {
                             categories
                                 .entry(c.clone())
-                                .or_insert_with(|| vec![])
+                                .or_insert_with(Vec::new)
                                 .push((LogProb::new(0.0).unwrap(), new_node_index));
                         }
                         if let FeatureOrLemma::Feature(Feature::Licensee(c)) =
@@ -339,7 +339,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
                         {
                             licensees
                                 .entry(c.clone())
-                                .or_insert_with(|| vec![])
+                                .or_insert_with(Vec::new)
                                 .push((LogProb::new(0.0).unwrap(), new_node_index));
                         }
                     }

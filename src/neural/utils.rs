@@ -1,3 +1,4 @@
+use anyhow::bail;
 use burn::tensor::{backend::Backend, Tensor};
 
 use crate::lexicon::{Feature, FeatureOrLemma};
@@ -26,5 +27,17 @@ pub fn to_feature(pos: usize, category: usize) -> NeuralFeature {
             FeatureOrLemma::Feature(Feature::Selector(category, crate::Direction::Right))
         }
         _ => panic!("Invalid position!"),
+    }
+}
+
+pub fn clamp_prob(x: f64) -> anyhow::Result<f64> {
+    if x > 0.0 {
+        bail!("Clampling prob {x} to 0.0");
+    } else if x.is_nan() {
+        bail!("Probability is NaN");
+    } else if x.is_infinite() {
+        bail!("Probability is NaN or inf");
+    } else {
+        Ok(x)
     }
 }

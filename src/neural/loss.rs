@@ -1,22 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::f32::consts::LN_2;
-use std::f32::NEG_INFINITY;
 
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
-use super::neural_lexicon::{
-    GrammarParameterization, NeuralFeature, NeuralLexicon, NeuralProbabilityRecord,
-};
+use super::neural_lexicon::{NeuralFeature, NeuralLexicon, NeuralProbabilityRecord};
+use super::parameterization::GrammarParameterization;
 use super::utils::log_sum_exp_dim;
 use crate::lexicon::Lexiconable;
 use crate::lexicon::{Feature, FeatureOrLemma};
 use crate::{NeuralGenerator, ParsingConfig};
 use ahash::{HashMap, HashSet};
-use burn::tensor::activation::softmax;
 use burn::tensor::{activation::log_softmax, backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, ElementConversion, Int};
 use itertools::Itertools;
 use moka::sync::Cache;
-use rand_distr::num_traits::Zero;
 
 pub struct NeuralConfig {
     pub n_strings_per_grammar: usize,
@@ -443,7 +438,6 @@ pub fn get_grammar_with_targets<B: Backend>(
         &strings,
         &string_probs,
         &target_vec,
-        targets,
         neural_config,
         true,
     );
@@ -472,38 +466,16 @@ pub fn get_grammar_with_targets<B: Backend>(
     Ok((grammars, losses.sum_dim(0).squeeze(0), grammar_losses))
 }
 
-fn get_grammar_losses<B: Backend>(
-    g: &GrammarParameterization<B>,
-    lexicon: &NeuralLexicon<B>,
+#[allow(dead_code)]
+fn prefix_loss<B: Backend>(
     strings: &[StringPath],
-    string_probs: &[StringProbHistory],
-    target_vec: &[Vec<usize>],
     targets: Tensor<B, 2, Int>,
+    target_vec: &[Vec<usize>],
+    g: &GrammarParameterization<B>,
     neural_config: &NeuralConfig,
-    grammar_splitting: bool,
-) -> (
-    Tensor<B, 2>,
-    Tensor<B, 1>,
-    Tensor<B, 1>,
-    Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
-    Tensor<B, 2>,
-) {
+    mask_wrong_lengths: bool,
+) -> Tensor<B, 2> {
     let n_targets = targets.shape().dims[0];
-
-    let (n_compatible, compatible_loss) = compatible_strings(strings, target_vec, g);
-
-    let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
-        target_vec
-            .iter()
-            .map(|t| {
-                let l = t.len();
-                let v = strings.iter().map(|x| x.len() != l).collect::<Vec<_>>();
-                let ids = Tensor::<B, 1, Bool>::from_data(Data::from(v.as_slice()), &g.device());
-                ids
-            })
-            .collect(),
-        0,
-    );
 
     //(n_grammar_strings, padding_length, n_lemmas)
     let grammar = string_path_to_tensor(strings, g, neural_config);
@@ -516,19 +488,50 @@ fn get_grammar_losses<B: Backend>(
 
     //Probability of generating every target for each string.
     //(n_targets, n_grammar_strings, 1)
-    //let prefix_loss: Tensor<B, 2> = grammar
-    //    .gather(3, targets)
-    //    .squeeze::<3>(3)
-    //    .sum_dim(2)
-    //    .squeeze(2)
-    //    .mask_fill(target_s_ids, -999.0);
+    let prefix_loss: Tensor<B, 2> = grammar
+        .gather(3, targets)
+        .squeeze::<3>(3)
+        .sum_dim(2)
+        .squeeze(2);
+
+    if mask_wrong_lengths {
+        let target_s_ids: Tensor<B, 2, Bool> = Tensor::<B, 1, Bool>::stack(
+            target_vec
+                .iter()
+                .map(|t| {
+                    let l = t.len();
+                    let v = strings.iter().map(|x| x.len() != l).collect::<Vec<_>>();
+                    let ids =
+                        Tensor::<B, 1, Bool>::from_data(Data::from(v.as_slice()), &g.device());
+                    ids
+                })
+                .collect(),
+            0,
+        );
+        prefix_loss.mask_fill(target_s_ids, -999.0)
+    } else {
+        prefix_loss
+    }
+}
+
+fn get_grammar_losses<B: Backend>(
+    g: &GrammarParameterization<B>,
+    lexicon: &NeuralLexicon<B>,
+    strings: &[StringPath],
+    string_probs: &[StringProbHistory],
+    target_vec: &[Vec<usize>],
+    neural_config: &NeuralConfig,
+    grammar_splitting: bool,
+) -> (
+    Tensor<B, 2>,
+    Tensor<B, 1>,
+    Tensor<B, 1>,
+    Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>, Vec<LexemeTypes>)>,
+    Tensor<B, 2>,
+) {
+    let (n_compatible, compatible_loss) = compatible_strings(strings, target_vec, g);
 
     let prefix_loss = compatible_loss;
-    //let prefix_loss: Tensor<B, 2> = log_sum_exp_dim(
-    //    Tensor::<B, 2>::stack::<3>(vec![prefix_loss + LN_2, compatible_loss + LN_2], 2),
-    //    2,
-    //)
-    //.squeeze(2);
 
     if grammar_splitting {
         let (grammar_probs, grammar_idx) = get_grammar_probs(string_probs, g, lexicon);
@@ -617,7 +620,6 @@ pub fn get_neural_outputs<B: Backend>(
     strings: &[StringPath],
     string_probs: &[StringProbHistory],
     target_vec: &[Vec<usize>],
-    targets: Tensor<B, 2, Int>,
     neural_config: &NeuralConfig,
 ) -> (Tensor<B, 1>, Tensor<B, 1>) {
     let (p_of_t_given_p, string_probs, grammar_losses, _, n_compatible) = get_grammar_losses(
@@ -626,7 +628,6 @@ pub fn get_neural_outputs<B: Backend>(
         strings,
         string_probs,
         target_vec,
-        targets,
         neural_config,
         false,
     );

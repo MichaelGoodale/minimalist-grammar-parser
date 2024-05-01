@@ -15,9 +15,10 @@ use petgraph::graph::NodeIndex;
 
 use crate::neural::neural_lexicon::{NeuralLexicon, NeuralProbabilityRecord};
 
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::thin_vec;
 
-use super::neural_lexicon::{EdgeHistory, GrammarParameterization, NeuralProbability};
+use super::neural_lexicon::{EdgeHistory, NeuralProbability};
+use super::parameterization::GrammarParameterization;
 
 #[derive(Debug, Clone, Default)]
 pub struct StringPath(Vec<usize>);

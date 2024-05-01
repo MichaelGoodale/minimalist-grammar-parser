@@ -11,9 +11,8 @@ use allocator_api2::alloc::{Allocator, Global};
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use neural::neural_beam::{NeuralBeam, StringPath, StringProbHistory};
-use neural::neural_lexicon::{
-    GrammarParameterization, NeuralLexicon, NeuralProbability, NeuralProbabilityRecord,
-};
+use neural::neural_lexicon::{NeuralLexicon, NeuralProbability, NeuralProbabilityRecord};
+use neural::parameterization::GrammarParameterization;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
 use parsing::expand;
 use parsing::Rule;

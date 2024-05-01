@@ -1,6 +1,6 @@
 #![allow(unused_variables, dead_code)]
 
-use std::{collections::BTreeMap, default, time::Instant};
+use std::{collections::BTreeMap, time::Instant};
 
 use anyhow::Result;
 use burn::{
@@ -14,7 +14,8 @@ use minimalist_grammar_parser::{
     lexicon::{Lexicon, SimpleLexicalEntry},
     neural::{
         loss::{get_all_parses, NeuralConfig},
-        neural_lexicon::{GrammarParameterization, NeuralLexicon},
+        neural_lexicon::NeuralLexicon,
+        parameterization::GrammarParameterization,
         N_TYPES,
     },
     Generator, Parser, ParsingConfig,
@@ -55,7 +56,7 @@ fn main() {
             parsing_config: config,
         };
         let start = Instant::now();
-        let lexicon = NeuralLexicon::new_superimposed(&g, &mut rng, &neural_config).unwrap();
+        let lexicon = NeuralLexicon::new_superimposed(&g, &neural_config).unwrap();
         let (strings, string_probs) = get_all_parses(&g, &lexicon, None, &neural_config);
         let elapse = start.elapsed();
         let n = strings.len();
@@ -219,7 +220,7 @@ fn get_grammar_structure<B: Backend>(
     let weights = Tensor::<B, 1>::zeros([n_lexemes], &device);
 
     let silent_lemmas = Tensor::<B, 2>::zeros([n_lexemes, 2], &device);
-    let include_lemmas = Tensor::<B, 2>::zeros([n_lexemes, 2], &device);
+    let include_lemmas = Tensor::<B, 1>::zeros([n_lexemes], &device);
 
     let pad_vector =
         Tensor::<B, 1>::from_floats([10., 0., 0., 0., 0., 0., 0., 0., 0., 0.], &device);

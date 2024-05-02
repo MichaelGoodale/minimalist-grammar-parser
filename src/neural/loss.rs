@@ -584,13 +584,14 @@ pub fn get_neural_outputs<B: Backend>(
     let (grammar_probs, g_details) = get_grammar_per_string(parses, g, lexicon);
     let string_probs = parses
         .iter()
-        .zip(g_details.into_iter())
+        .zip(g_details)
         .map(|(p, cats)| get_string_prob(p, lexicon, g, &cats, neural_config))
         .collect_vec();
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let p_of_s = (n_compatible.clone() * string_probs.exp().unsqueeze_dim(0))
+    let p_of_s = (n_compatible.clone()
+        + n_compatible.clone() * string_probs.exp().unsqueeze_dim(0))
         * (compatible_loss.clone() + grammar_probs.clone().unsqueeze_dim(0));
 
     let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;

@@ -9,10 +9,11 @@ use super::{
 };
 use crate::parsing::{beam::Beam, expand, ParseHolder};
 use burn::prelude::*;
+use min_max_heap::MinMaxHeap;
 
 #[derive(Debug, Clone)]
 struct NeuralParseHolder<'a, B: Backend> {
-    upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
+    upcoming_parses: MinMaxHeap<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
     config: &'a NeuralConfig,
     global_steps: usize,
@@ -20,10 +21,20 @@ struct NeuralParseHolder<'a, B: Backend> {
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     fn pop(&mut self) -> Option<NeuralBeam<'a, B>> {
-        self.upcoming_parses.pop()
+        self.upcoming_parses.pop_max()
     }
     fn choose(&mut self) {
-        self.upcoming_parses.extend(self.parse_buffer.drain(..))
+        if let Some(max) = self.config.parsing_config.max_beams {
+            for x in self.parse_buffer.drain(..) {
+                if self.upcoming_parses.len() >= max {
+                    self.upcoming_parses.push_pop_min(x);
+                } else {
+                    self.upcoming_parses.push(x);
+                }
+            }
+        } else {
+            self.upcoming_parses.extend(self.parse_buffer.drain(..))
+        }
     }
 }
 
@@ -71,7 +82,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
         let mut parses = NeuralParseHolder {
-            upcoming_parses: BinaryHeap::new(),
+            upcoming_parses: MinMaxHeap::new(),
             parse_buffer: parses,
             global_steps: 0,
             config,

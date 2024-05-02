@@ -57,11 +57,11 @@ fn main() {
         };
         let start = Instant::now();
         let lexicon = NeuralLexicon::new_superimposed(&g, &neural_config).unwrap();
-        let (strings, string_probs) = get_all_parses(&g, &lexicon, None, &neural_config);
+        let parses = get_all_parses(&g, &lexicon, None, &neural_config);
         let elapse = start.elapsed();
-        let n = strings.len();
+        let n = parses.len();
         let mut counts = BTreeMap::default();
-        strings
+        parses
             .iter()
             .for_each(|x| *counts.entry(x.len()).or_insert(0) += 1);
 

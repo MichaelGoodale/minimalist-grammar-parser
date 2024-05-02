@@ -183,8 +183,16 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
         }))
     }
 
+    pub fn into_completed_parse(self) -> (StringPath, StringProbHistory) {
+        (self.generated_sentence, self.probability_path)
+    }
+
+    pub fn burnt(&self) -> bool {
+        self.burnt
+    }
+
     pub fn yield_good_parse(self) -> Option<(StringPath, StringProbHistory)> {
-        if self.queue.is_empty() && !self.generated_sentence.0.is_empty() {
+        if self.queue.is_empty() {
             Some((self.generated_sentence, self.probability_path))
         } else {
             None

@@ -619,8 +619,8 @@ fn test_loss() -> Result<()> {
 
         let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
-        let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
-        let val = get_neural_outputs(&g, &lexicon, &strings, &string_probs, &target_vec, &config).0;
+        let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+        let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
         val.backward();
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
@@ -724,8 +724,8 @@ fn random_neural_generation() -> Result<()> {
 
     let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
     let target_vec = target_to_vec(&targets);
-    let (strings, string_probs) = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
-    let val = get_neural_outputs(&g, &lexicon, &strings, &string_probs, &target_vec, &config);
+    let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+    let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config);
     dbg!(val);
     get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
     Ok(())

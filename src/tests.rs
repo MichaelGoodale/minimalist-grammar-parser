@@ -5,7 +5,7 @@ use crate::{
             get_grammar_with_targets, get_neural_outputs, retrieve_strings, target_to_vec,
             NeuralConfig,
         },
-        neural_lexicon::NeuralFeature,
+        neural_lexicon::{NeuralFeature, NeuralLexicon},
     },
 };
 use anyhow::Result;
@@ -19,6 +19,7 @@ use crate::{
     lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
 };
 use lazy_static::lazy_static;
+use std::collections::BTreeSet;
 use std::{collections::HashSet, f64::consts::LN_2};
 
 lazy_static! {

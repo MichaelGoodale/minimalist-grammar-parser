@@ -590,8 +590,10 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let p_of_s = (n_compatible.clone() * string_probs.exp().unsqueeze_dim(0) * 100.0)
-        * (compatible_loss.clone() + grammar_probs.clone().unsqueeze_dim(0));
+    let p_of_s = n_compatible.clone()
+        * (string_probs.unsqueeze_dim(0)
+            + compatible_loss.clone()
+            + grammar_probs.clone().unsqueeze_dim(0));
 
     let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);

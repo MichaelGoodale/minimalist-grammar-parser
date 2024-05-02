@@ -579,7 +579,7 @@ pub fn get_neural_outputs<B: Backend>(
     parses: &[CompletedParse],
     target_vec: &[Vec<usize>],
     neural_config: &NeuralConfig,
-) -> (Tensor<B, 1>, Tensor<B, 1>) {
+) -> (Tensor<B, 2>, Tensor<B, 1>) {
     let (n_compatible, compatible_loss) = compatible_strings(parses, target_vec, g);
     let (grammar_probs, g_details) = get_grammar_per_string(parses, g, lexicon);
     let string_probs = parses
@@ -590,16 +590,8 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let p_of_s = n_compatible
-        .clone()
-        .mask_fill(n_compatible.clone().equal_elem(0.0), -1.0)
-        * (string_probs.unsqueeze_dim(0)
-            + compatible_loss.clone()
-            + grammar_probs.clone().unsqueeze_dim(0));
-
-    let n: f32 = n_compatible.shape().dims.iter().sum::<usize>() as f32;
+    let p_of_s = compatible_loss.clone() + (string_probs + grammar_probs).unsqueeze_dim(0);
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
-    let loss = -p_of_s.sum_dim(0).sum_dim(1) / n;
-    (loss.reshape([1]), n_compatible)
+    (p_of_s, n_compatible)
 }

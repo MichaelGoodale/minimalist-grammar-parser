@@ -16,41 +16,32 @@ use rand_distr::{Distribution, WeightedIndex};
 
 #[derive(Debug, Clone)]
 struct NeuralParseHolder<'a, B: Backend> {
-    upcoming_parses: MinMaxHeap<NeuralBeam<'a, B>>,
+    next_parse: Option<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
+    upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
     config: &'a NeuralConfig,
     global_steps: usize,
     rng: StdRng,
-    reached_max: bool,
 }
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     fn pop(&mut self) -> Option<NeuralBeam<'a, B>> {
-        self.upcoming_parses.pop_max()
-    }
-
-    fn how_many_to_sample(&mut self) -> usize {
-        if let Some(max) = self.config.parsing_config.max_beams {
-            if self.upcoming_parses.len() >= max {
-                1
-            } else {
-                let n = max - self.upcoming_parses.len();
-                if n > 4 {
-                    4
-                } else {
-                    n
-                }
-            }
-        } else {
-            4
-        }
+        self.choose();
+        let mut n = None;
+        std::mem::swap(&mut self.next_parse, &mut n);
+        n
     }
 
     fn choose(&mut self) {
         if self.parse_buffer.is_empty() {
+            self.next_parse = self.upcoming_parses.pop();
             return;
         }
 
+        if self.parse_buffer.len() == 1 {
+            self.next_parse = self.parse_buffer.pop();
+            return;
+        }
         let mut p = self
             .parse_buffer
             .iter()
@@ -59,20 +50,18 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
         let n = p.iter().sum::<f64>();
         p.iter_mut().for_each(|x| *x /= n);
         let dist = WeightedIndex::new(&p).unwrap();
-        let mut kept_path: BTreeSet<usize> = BTreeSet::new();
-        for _ in 0..self.how_many_to_sample() {
-            kept_path.insert(dist.sample(&mut self.rng));
-        }
+        let sampled_i = dist.sample(&mut self.rng);
         self.upcoming_parses
             .extend(
                 self.parse_buffer
                     .drain(..)
                     .enumerate()
                     .filter_map(|(i, x)| {
-                        if kept_path.contains(&i) {
-                            Some(x)
-                        } else {
+                        if sampled_i == i {
+                            self.next_parse = Some(x);
                             None
+                        } else {
+                            Some(x)
                         }
                     }),
             );
@@ -124,13 +113,12 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
         let mut parses = NeuralParseHolder {
             rng: StdRng::from_entropy(),
-            upcoming_parses: MinMaxHeap::new(),
+            upcoming_parses: BinaryHeap::new(),
+            next_parse: None,
             parse_buffer: parses,
             global_steps: 0,
-            reached_max: false,
             config,
         };
-        parses.choose();
         NeuralGenerator {
             lexicon,
             move_log_prob: NeuralProbability(
@@ -162,7 +150,6 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                     self.move_log_prob,
                     self.merge_log_prob,
                 );
-                self.parses.choose();
             } else if let Some((parse, history)) = beam.yield_good_parse() {
                 return Some(CompletedParse {
                     parse,

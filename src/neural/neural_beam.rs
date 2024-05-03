@@ -407,7 +407,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
     }
     fn pushable(&self, _config: &ParsingConfig) -> bool {
         !self.burnt
-            && self.generated_sentence.len() <= self.max_string_len
-            && self.n_empties <= self.max_string_len * 2
+            && self.generated_sentence.len() < self.max_string_len
+            && self.n_empties < self.max_string_len * 2
     }
 }

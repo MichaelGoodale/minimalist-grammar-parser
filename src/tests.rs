@@ -620,6 +620,7 @@ fn test_loss() -> Result<()> {
         let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
         let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+        dbg!(parses.len());
         let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
         val.backward();
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;

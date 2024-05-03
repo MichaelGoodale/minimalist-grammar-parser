@@ -30,11 +30,8 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     }
 
     fn how_many_to_sample(&mut self) -> usize {
-        if self.reached_max {
-            1
-        } else if let Some(max) = self.config.parsing_config.max_beams {
+        if let Some(max) = self.config.parsing_config.max_beams {
             if self.upcoming_parses.len() >= max {
-                self.reached_max = true;
                 1
             } else {
                 let n = max - self.upcoming_parses.len();

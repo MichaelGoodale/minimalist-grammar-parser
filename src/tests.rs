@@ -586,6 +586,18 @@ fn test_loss() -> Result<()> {
             100,
         ),
     };
+    let output_config = NeuralConfig {
+        n_strings_per_grammar: 20,
+        padding_length: 10,
+        temperature: 1.0,
+        compatible_weight: 0.99,
+        parsing_config: ParsingConfig::new(
+            LogProb::new(-200.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            200,
+            200,
+        ),
+    };
     let silent_lemmas =
         Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
             .slice_assign(
@@ -620,11 +632,10 @@ fn test_loss() -> Result<()> {
 
         let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
-        let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
-        dbg!(parses.len());
+        let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config, true);
         let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
         val.backward();
-        let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
+        let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &output_config)?;
         let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
         let top_g: BTreeSet<_> = output.0[top_g].0.clone().into_iter().collect();
         let encoded_grammar = BTreeSet::from([vec![
@@ -726,7 +737,7 @@ fn random_neural_generation() -> Result<()> {
 
     let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
     let target_vec = target_to_vec(&targets);
-    let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+    let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config, true);
     let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config);
     dbg!(val);
     get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;

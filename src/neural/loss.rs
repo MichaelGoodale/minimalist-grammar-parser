@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::neural_beam::{NodeFeature, StringPath, StringProbHistory};
 use super::neural_lexicon::{NeuralFeature, NeuralLexicon, NeuralProbabilityRecord};
 use super::parameterization::GrammarParameterization;
-use super::pathfinder::NeuralGenerator;
+use super::pathfinder::{NeuralGenerator, NeuralGeneratorForOutput};
 use super::utils::log_sum_exp_dim;
 use super::CompletedParse;
 use crate::lexicon::Lexiconable;
@@ -29,27 +29,49 @@ pub fn retrieve_strings<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Option<&[Vec<usize>]>,
     neural_config: &NeuralConfig,
+    random_search: bool,
 ) -> Vec<CompletedParse> {
     let mut parses: Vec<_> = vec![];
     let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
 
-    for result in NeuralGenerator::new(
-        lexicon,
-        g,
-        targets,
-        neural_config.padding_length,
-        neural_config,
-    )
-    .filter(|x| {
-        if let Some(lens) = lens.as_ref() {
-            lens.contains(&x.len())
-        } else {
-            true
+    if random_search {
+        for result in NeuralGenerator::new(
+            lexicon,
+            g,
+            targets,
+            neural_config.padding_length,
+            neural_config,
+        )
+        .filter(|x| {
+            if let Some(lens) = lens.as_ref() {
+                lens.contains(&x.len())
+            } else {
+                true
+            }
+        })
+        .take(neural_config.n_strings_per_grammar)
+        {
+            parses.push(result)
         }
-    })
-    .take(neural_config.n_strings_per_grammar)
-    {
-        parses.push(result)
+    } else {
+        for result in NeuralGeneratorForOutput::new(
+            lexicon,
+            g,
+            targets,
+            neural_config.padding_length,
+            neural_config,
+        )
+        .filter(|x| {
+            if let Some(lens) = lens.as_ref() {
+                lens.contains(&x.len())
+            } else {
+                true
+            }
+        })
+        .take(neural_config.n_strings_per_grammar)
+        {
+            parses.push(result)
+        }
     }
     parses
 }
@@ -95,6 +117,7 @@ fn compatible_strings<B: Backend>(
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 2>, Tensor<B, 2>) {
+    dbg!(strings.len());
     let mut n_compatible = Vec::with_capacity(strings.len());
     let mut compatible_grammars =
         Tensor::<B, 2>::full([targets.len(), strings.len()], -999.0, &g.device());
@@ -479,7 +502,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     Tensor<B, 1>,
 )> {
     let target_vec = target_to_vec(&targets);
-    let parses = retrieve_strings(lexicon, g, Some(&target_vec), neural_config)
+    let parses = retrieve_strings(lexicon, g, Some(&target_vec), neural_config, false)
         .into_iter()
         .filter(|x| x.valid)
         .collect_vec();
@@ -580,9 +603,9 @@ pub fn get_all_parses<B: Backend>(
     match targets {
         Some(targets) => {
             let target_vec = target_to_vec(&targets);
-            retrieve_strings(lexicon, g, Some(&target_vec), neural_config)
+            retrieve_strings(lexicon, g, Some(&target_vec), neural_config, true)
         }
-        None => retrieve_strings(lexicon, g, None, neural_config),
+        None => retrieve_strings(lexicon, g, None, neural_config, true),
     }
 }
 

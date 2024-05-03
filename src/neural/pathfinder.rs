@@ -14,10 +14,33 @@ use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, WeightedIndex};
 
 #[derive(Debug, Clone)]
+struct ParseWrapper<'a, B: Backend>(NeuralBeam<'a, B>);
+
+impl<B: Backend> PartialEq for ParseWrapper<'_, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<B: Backend> Eq for ParseWrapper<'_, B> {}
+
+impl<B: Backend> PartialOrd for ParseWrapper<'_, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<B: Backend> Ord for ParseWrapper<'_, B> {
+    fn cmp(&self, other: &ParseWrapper<'_, B>) -> std::cmp::Ordering {
+        self.0
+            .current_sentence_prob()
+            .cmp(&other.0.current_sentence_prob())
+    }
+}
+
+#[derive(Debug, Clone)]
 struct NeuralParseHolder<'a, B: Backend> {
     next_parse: Option<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
-    upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
+    upcoming_parses: BinaryHeap<ParseWrapper<'a, B>>,
     config: &'a NeuralConfig,
     global_steps: usize,
     rng: StdRng,
@@ -39,7 +62,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
 
     fn choose(&mut self) {
         if self.parse_buffer.is_empty() {
-            self.next_parse = self.upcoming_parses.pop();
+            self.next_parse = self.upcoming_parses.pop().map(|x| x.0);
             return;
         }
 
@@ -66,7 +89,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
                             self.next_parse = Some(x);
                             None
                         } else {
-                            Some(x)
+                            Some(ParseWrapper(x))
                         }
                     }),
             );
@@ -112,7 +135,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
     ) -> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
-        let mut parses = NeuralParseHolder {
+        let parses = NeuralParseHolder {
             rng: StdRng::from_entropy(),
             upcoming_parses: BinaryHeap::new(),
             next_parse: None,

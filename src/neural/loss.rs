@@ -117,7 +117,6 @@ fn compatible_strings<B: Backend>(
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,
 ) -> (Tensor<B, 2>, Tensor<B, 2>) {
-    dbg!(strings.len());
     let mut n_compatible = Vec::with_capacity(strings.len());
     let mut compatible_grammars =
         Tensor::<B, 2>::full([targets.len(), strings.len()], -999.0, &g.device());

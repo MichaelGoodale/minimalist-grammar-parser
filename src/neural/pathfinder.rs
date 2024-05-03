@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::collections::{BTreeSet, BinaryHeap};
 
 use super::{
     loss::NeuralConfig,
@@ -9,7 +9,10 @@ use super::{
 };
 use crate::parsing::{beam::Beam, expand, ParseHolder};
 use burn::prelude::*;
+use itertools::Itertools;
 use min_max_heap::MinMaxHeap;
+use rand::{rngs::StdRng, SeedableRng};
+use rand_distr::{Distribution, WeightedIndex};
 
 #[derive(Debug, Clone)]
 struct NeuralParseHolder<'a, B: Backend> {
@@ -17,24 +20,65 @@ struct NeuralParseHolder<'a, B: Backend> {
     parse_buffer: Vec<NeuralBeam<'a, B>>,
     config: &'a NeuralConfig,
     global_steps: usize,
+    rng: StdRng,
+    reached_max: bool,
 }
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     fn pop(&mut self) -> Option<NeuralBeam<'a, B>> {
         self.upcoming_parses.pop_max()
     }
-    fn choose(&mut self) {
-        if let Some(max) = self.config.parsing_config.max_beams {
-            for x in self.parse_buffer.drain(..) {
-                if self.upcoming_parses.len() >= max {
-                    self.upcoming_parses.push_pop_min(x);
+
+    fn how_many_to_sample(&mut self) -> usize {
+        if self.reached_max {
+            1
+        } else if let Some(max) = self.config.parsing_config.max_beams {
+            if self.upcoming_parses.len() >= max {
+                self.reached_max = true;
+                1
+            } else {
+                let n = max - self.upcoming_parses.len();
+                if n > 4 {
+                    5
                 } else {
-                    self.upcoming_parses.push(x);
+                    n
                 }
             }
         } else {
-            self.upcoming_parses.extend(self.parse_buffer.drain(..))
+            5
         }
+    }
+
+    fn choose(&mut self) {
+        if self.parse_buffer.is_empty() {
+            return;
+        }
+
+        let mut p = self
+            .parse_buffer
+            .iter()
+            .map(|x| x.log_prob().into_inner().exp())
+            .collect_vec();
+        let n = p.iter().sum::<f64>();
+        p.iter_mut().for_each(|x| *x /= n);
+        let dist = WeightedIndex::new(&p).unwrap();
+        let mut kept_path: BTreeSet<usize> = BTreeSet::new();
+        for _ in 0..self.how_many_to_sample() {
+            kept_path.insert(dist.sample(&mut self.rng));
+        }
+        self.upcoming_parses
+            .extend(
+                self.parse_buffer
+                    .drain(..)
+                    .enumerate()
+                    .filter_map(|(i, x)| {
+                        if kept_path.contains(&i) {
+                            Some(x)
+                        } else {
+                            None
+                        }
+                    }),
+            );
     }
 }
 
@@ -76,15 +120,17 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         lexicon: &'a NeuralLexicon<B>,
         g: &'a GrammarParameterization<B>,
         targets: Option<&'a [Vec<usize>]>,
-        max_string_length: Option<usize>,
+        max_string_length: usize,
         config: &'a NeuralConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
         let mut parses = NeuralParseHolder {
+            rng: StdRng::from_entropy(),
             upcoming_parses: MinMaxHeap::new(),
             parse_buffer: parses,
             global_steps: 0,
+            reached_max: false,
             config,
         };
         parses.choose();

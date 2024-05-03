@@ -102,7 +102,7 @@ pub struct NeuralBeam<'a, B: Backend> {
     probability_path: StringProbHistory,
     top_id: usize,
     steps: usize,
-    max_string_len: Option<usize>,
+    max_string_len: usize,
     n_empties: usize,
 }
 
@@ -112,7 +112,7 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
         g: &'a GrammarParameterization<B>,
         initial_category: usize,
         sentences: Option<&'a [T]>,
-        max_string_len: Option<usize>,
+        max_string_len: usize,
     ) -> Result<impl Iterator<Item = NeuralBeam<'a, B>> + 'a>
     where
         T: AsRef<[usize]>,
@@ -407,10 +407,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
     }
     fn pushable(&self, _config: &ParsingConfig) -> bool {
         !self.burnt
-            && if let Some(max_length) = self.max_string_len {
-                self.generated_sentence.len() <= max_length && self.n_empties <= max_length * 2
-            } else {
-                true
-            }
+            && self.generated_sentence.len() <= self.max_string_len
+            && self.n_empties <= self.max_string_len * 2
     }
 }

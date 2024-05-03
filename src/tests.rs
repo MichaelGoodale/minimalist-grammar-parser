@@ -708,17 +708,17 @@ fn random_neural_generation() -> Result<()> {
         })
         .collect::<Vec<_>>();
     let targets = Tensor::stack(targets, 0);
-    dbg!(targets.shape());
     let config = NeuralConfig {
         n_strings_per_grammar: 10,
         padding_length: 11,
         temperature: 1.0,
         compatible_weight: 0.5,
-        parsing_config: ParsingConfig::new(
+        parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-500.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
+            50,
             500,
-            500,
+            50_000,
         ),
     };
 

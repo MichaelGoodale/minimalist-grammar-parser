@@ -39,13 +39,13 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             } else {
                 let n = max - self.upcoming_parses.len();
                 if n > 4 {
-                    5
+                    4
                 } else {
                     n
                 }
             }
         } else {
-            5
+            4
         }
     }
 

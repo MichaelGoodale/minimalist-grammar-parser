@@ -578,11 +578,12 @@ fn test_loss() -> Result<()> {
         padding_length: 10,
         temperature: 1.0,
         compatible_weight: 0.99,
-        parsing_config: ParsingConfig::new(
+        parsing_config: ParsingConfig::new_with_global_steps(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             200,
             200,
+            100,
         ),
     };
     let silent_lemmas =
@@ -719,7 +720,7 @@ fn random_neural_generation() -> Result<()> {
             LogProb::from_raw_prob(0.5).unwrap(),
             50,
             500,
-            50_000,
+            5000,
         ),
     };
 

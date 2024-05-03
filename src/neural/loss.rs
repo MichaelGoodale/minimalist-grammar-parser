@@ -31,14 +31,22 @@ pub fn retrieve_strings<B: Backend>(
     neural_config: &NeuralConfig,
 ) -> Vec<CompletedParse> {
     let mut parses: Vec<_> = vec![];
+    let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
 
     for result in NeuralGenerator::new(
         lexicon,
         g,
         targets,
         neural_config.padding_length,
-        &neural_config,
+        neural_config,
     )
+    .filter(|x| {
+        if let Some(lens) = lens.as_ref() {
+            lens.contains(&x.len())
+        } else {
+            true
+        }
+    })
     .take(neural_config.n_strings_per_grammar)
     {
         parses.push(result)

@@ -10,7 +10,6 @@ use super::{
 use crate::parsing::{beam::Beam, expand, ParseHolder};
 use burn::prelude::*;
 use itertools::Itertools;
-use min_max_heap::MinMaxHeap;
 use rand::{rngs::StdRng, SeedableRng};
 use rand_distr::{Distribution, WeightedIndex};
 
@@ -26,6 +25,12 @@ struct NeuralParseHolder<'a, B: Backend> {
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     fn pop(&mut self) -> Option<NeuralBeam<'a, B>> {
+        self.global_steps += 1;
+        if let Some(max_steps) = self.config.parsing_config.global_steps {
+            if self.global_steps > max_steps {
+                return None;
+            }
+        }
         self.choose();
         let mut n = None;
         std::mem::swap(&mut self.next_parse, &mut n);
@@ -70,11 +75,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
 
 impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder<'a, B> {
     fn add(&mut self, beam: NeuralBeam<'a, B>) {
-        self.global_steps += 1;
         let mut pushable = true;
-        if let Some(max_steps) = self.config.parsing_config.global_steps {
-            pushable = self.global_steps < max_steps;
-        }
 
         if let Some(min_log_prob) = self.config.parsing_config.min_log_prob {
             if beam.log_prob() < min_log_prob {

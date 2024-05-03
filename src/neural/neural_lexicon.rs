@@ -158,11 +158,7 @@ impl<B: Backend> NeuralLexicon<B> {
                             .categories()
                             .clone()
                             .slice([lexeme_idx..lexeme_idx + 1, c..c + 1])
-                            .reshape([1])
-                            + grammar_params
-                                .include_lemma()
-                                .clone()
-                                .slice([lexeme_idx..lexeme_idx + 1]),
+                            .reshape([1]),
                     )
                 }))
                 .collect();

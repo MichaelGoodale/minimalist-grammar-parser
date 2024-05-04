@@ -51,7 +51,7 @@ impl CompletedParse {
         lexicon: &NeuralLexicon<B>,
     ) -> Self {
         let mut unattested = vec![true; lexicon.n_lexemes()];
-        let grammar_details = history
+        let mut grammar_details: Vec<_> = history
             .attested_nodes()
             .iter()
             .filter_map(|n| match n {
@@ -85,7 +85,26 @@ impl CompletedParse {
                     .enumerate()
                     .filter_map(|(i, x)| if *x { Some(i) } else { None })
             {
-                lexicon.sample_lexeme(lexeme_idx, &mut history, rng);
+                let v = lexicon.sample_lexeme(lexeme_idx, &mut history, rng);
+                if let NodeFeature::NFeats {
+                    node, lexeme_idx, ..
+                } = v
+                {
+                    let x = match lexicon.get(node).unwrap() {
+                        FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
+                            licensee: false,
+                            lexeme_idx,
+                            category: *category,
+                        },
+                        FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
+                            licensee: true,
+                            lexeme_idx,
+                            category: *category,
+                        },
+                        _ => panic!("this should not happen!"),
+                    };
+                    grammar_details.push(x);
+                }
             }
         }
 

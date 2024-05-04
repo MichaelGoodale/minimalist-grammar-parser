@@ -443,7 +443,12 @@ impl<B: Backend> NeuralLexicon<B> {
             .any(|x| path.contains(&NodeFeature::Node(*x)))
     }
 
-    pub fn sample_lexeme(&self, lexeme_idx: usize, s: &mut StringProbHistory, rng: &mut impl Rng) {
+    pub fn sample_lexeme(
+        &self,
+        lexeme_idx: usize,
+        s: &mut StringProbHistory,
+        rng: &mut impl Rng,
+    ) -> NodeFeature {
         let x = self
             .licensees
             .values()
@@ -465,13 +470,13 @@ impl<B: Backend> NeuralLexicon<B> {
             ..
         } = p.0
         {
-            let n = NodeFeature::NFeats {
+            let n_feats = NodeFeature::NFeats {
                 node,
                 lexeme_idx,
                 n_licensees,
                 n_features,
             };
-            s.add_node(n);
+            s.add_node(n_feats);
             let mut children: Vec<_> = self
                 .children_of(node)
                 .filter(|(p, _)| p.1.unwrap().is_compatible(n_licensees, n_features))
@@ -487,6 +492,7 @@ impl<B: Backend> NeuralLexicon<B> {
                     .filter(|(p, _)| p.1.unwrap().is_compatible(n_licensees, n_features))
                     .collect();
             }
+            n_feats
         } else {
             panic!("This is impossible");
         }

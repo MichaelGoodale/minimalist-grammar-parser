@@ -107,18 +107,6 @@ pub struct NeuralBeam<'a, B: Backend> {
 }
 
 impl<'a, B: Backend> NeuralBeam<'a, B> {
-    pub(crate) fn current_sentence_prob(&self) -> LogProb<f64> {
-        self.sentence_guides
-            .iter()
-            .map(|(s, p)| {
-                let r = (self.generated_sentence.len() as f64) / (s.len() as f64);
-                LogProb::new(p.into_inner() * r).unwrap()
-            })
-            .max()
-            .unwrap_or_else(|| LogProb::new(0.0).unwrap())
-            + self.log_probability.2
-    }
-
     pub fn new<T>(
         lexicon: &'a NeuralLexicon<B>,
         g: &'a GrammarParameterization<B>,

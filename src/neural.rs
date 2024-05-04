@@ -1,6 +1,7 @@
 use ahash::HashSet;
 use burn::tensor::{activation::log_softmax, backend::Backend, Bool, Data, Int, Tensor};
 use itertools::Itertools;
+use rand::Rng;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 
@@ -44,10 +45,12 @@ impl CompletedParse {
 
     pub fn new<B: Backend>(
         parse: StringPath,
-        history: StringProbHistory,
+        mut history: StringProbHistory,
         valid: bool,
+        sample_unattested: Option<&mut impl Rng>,
         lexicon: &NeuralLexicon<B>,
     ) -> Self {
+        let mut unattested = vec![true; lexicon.n_lexemes()];
         let grammar_details = history
             .attested_nodes()
             .iter()
@@ -55,22 +58,36 @@ impl CompletedParse {
                 NodeFeature::Node(_) => None,
                 NodeFeature::NFeats {
                     node, lexeme_idx, ..
-                } => Some(match lexicon.get(*node).unwrap() {
-                    FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
-                        licensee: false,
-                        lexeme_idx: *lexeme_idx,
-                        category: *category,
-                    },
-                    FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
-                        licensee: true,
-                        lexeme_idx: *lexeme_idx,
-                        category: *category,
-                    },
-
-                    _ => panic!("this should not happen!"),
-                }),
+                } => {
+                    let x = match lexicon.get(*node).unwrap() {
+                        FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
+                            licensee: false,
+                            lexeme_idx: *lexeme_idx,
+                            category: *category,
+                        },
+                        FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
+                            licensee: true,
+                            lexeme_idx: *lexeme_idx,
+                            category: *category,
+                        },
+                        _ => panic!("this should not happen!"),
+                    };
+                    unattested[x.lexeme_idx] = false;
+                    Some(x)
+                }
             })
             .collect();
+
+        if let Some(rng) = sample_unattested {
+            for lexeme_idx in
+                unattested
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, x)| if *x { Some(i) } else { None })
+            {
+                lexicon.sample_lexeme(lexeme_idx, &mut history, rng);
+            }
+        }
 
         CompletedParse {
             parse,

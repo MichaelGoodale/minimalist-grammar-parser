@@ -156,7 +156,13 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                     self.merge_log_prob,
                 );
             } else if let Some((parse, history)) = beam.yield_good_parse() {
-                return Some(CompletedParse::new(parse, history, true, self.lexicon));
+                return Some(CompletedParse::new(
+                    parse,
+                    history,
+                    true,
+                    Some(&mut self.parses.rng),
+                    self.lexicon,
+                ));
             }
         }
         None
@@ -214,7 +220,13 @@ impl<'a, B: Backend> Iterator for NeuralGeneratorForOutput<'a, B> {
                     self.merge_log_prob,
                 );
             } else if let Some((parse, history)) = beam.yield_good_parse() {
-                return Some(CompletedParse::new(parse, history, true, self.lexicon));
+                return Some(CompletedParse::new(
+                    parse,
+                    history,
+                    true,
+                    None::<&mut StdRng>,
+                    self.lexicon,
+                ));
             }
         }
         None

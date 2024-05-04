@@ -76,6 +76,10 @@ impl StringProbHistory {
     pub fn attested_nodes(&self) -> &BTreeSet<NodeFeature> {
         &self.1
     }
+
+    pub(crate) fn add_node(&mut self, n: NodeFeature) {
+        self.1.insert(n);
+    }
 }
 
 impl IntoIterator for StringProbHistory {

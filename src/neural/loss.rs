@@ -374,9 +374,10 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let rewards = string_probs.clone().detach().unsqueeze_dim(0).exp() * n_compatible.clone();
+    let rewards =
+        (compatible_loss + string_probs.clone().unsqueeze_dim(0)).exp() * n_compatible.clone();
     let p_of_s = rewards.mask_fill(n_compatible.clone().equal_elem(0.0), -0.01)
-        * (compatible_loss + (grammar_probs + string_probs).unsqueeze_dim(0));
+        * grammar_probs.unsqueeze_dim(0);
     let (_, idx) = Tensor::max_dim_with_indices(p_of_s.clone(), 0);
     let p_of_s: Tensor<B, 2> = p_of_s.select(0, idx.squeeze(0));
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);

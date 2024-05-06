@@ -376,6 +376,8 @@ pub fn get_neural_outputs<B: Backend>(
 
     let p_of_s = (string_probs.clone().detach().unsqueeze_dim(0).exp() * n_compatible.clone())
         * (compatible_loss + (grammar_probs + string_probs).unsqueeze_dim(0));
+    let (_, idx) = Tensor::max_dim_with_indices(p_of_s.clone(), 0);
+    let p_of_s: Tensor<B, 2> = p_of_s.select(0, idx.squeeze(0));
     let n_compatible = n_compatible.sum_dim(1).squeeze(1);
     let n_compatible = Tensor::min_pair(Tensor::ones_like(&n_compatible), n_compatible);
     (-p_of_s.mean().reshape([1]), n_compatible)

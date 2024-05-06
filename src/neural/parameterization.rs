@@ -68,6 +68,7 @@ pub struct GrammarParameterization<B: Backend> {
     n_features: usize,
     n_licensees: usize,
     n_categories: usize,
+    temperature: f64,
     n_lemmas: usize,
     pad_vector: Tensor<B, 1>, //(n_lemmas)
     end_vector: Tensor<B, 1>, //(n_lemmas)
@@ -159,11 +160,16 @@ impl<B: Backend> GrammarParameterization<B> {
             n_licensees,
             n_lemmas,
             n_categories,
+            temperature,
             categories,
             pad_vector,
             end_vector,
             silent_probabilities,
         })
+    }
+
+    pub fn temperature(&self) -> f64 {
+        self.temperature
     }
 
     pub fn pad_vector(&self) -> &Tensor<B, 1> {

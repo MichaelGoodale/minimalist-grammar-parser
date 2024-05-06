@@ -25,6 +25,7 @@ struct NeuralParseHolder<'a, B: Backend> {
     config: &'a NeuralConfig,
     global_steps: usize,
     rng: StdRng,
+    temperature: f64,
 }
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
@@ -51,13 +52,11 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             self.next_parse = self.parse_buffer.pop();
             return;
         }
-        let mut p = self
+        let p = self
             .parse_buffer
             .iter()
-            .map(|x| x.log_prob().into_inner().exp())
+            .map(|x| x.log_prob().into_inner().exp() / self.temperature)
             .collect_vec();
-        let n = p.iter().sum::<f64>();
-        p.iter_mut().for_each(|x| *x /= n);
         let dist = WeightedIndex::new(&p).unwrap();
         let sampled_i = dist.sample(&mut self.rng);
         self.upcoming_parses
@@ -117,6 +116,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
         let parses = NeuralParseHolder {
+            temperature: g.temperature(),
             rng: StdRng::from_entropy(),
             upcoming_parses: BinaryHeap::new(),
             next_parse: None,

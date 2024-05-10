@@ -155,11 +155,12 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                     self.move_log_prob,
                     self.merge_log_prob,
                 );
-            } else if let Some((parse, history)) = beam.yield_good_parse() {
+            } else {
+                let (parse, history, valid) = beam.into_completed_parse();
                 return Some(CompletedParse::new(
                     parse,
                     history,
-                    true,
+                    valid,
                     Some(&mut self.parses.rng),
                     self.lexicon,
                 ));

@@ -103,6 +103,7 @@ pub struct NeuralGenerator<'a, B: Backend> {
     parses: NeuralParseHolder<'a, B>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
+    valid_only: bool,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
@@ -111,6 +112,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         g: &'a GrammarParameterization<B>,
         targets: Option<&'a [Vec<usize>]>,
         max_string_length: usize,
+        valid_only: bool,
         config: &'a NeuralConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
@@ -137,6 +139,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
                 config.parsing_config.move_prob.opposite_prob(),
             ),
             parses,
+            valid_only,
         }
     }
 }
@@ -157,13 +160,25 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                 );
             } else {
                 let (parse, history, valid) = beam.into_completed_parse();
-                return Some(CompletedParse::new(
-                    parse,
-                    history,
-                    valid,
-                    Some(&mut self.parses.rng),
-                    self.lexicon,
-                ));
+                if self.valid_only {
+                    if valid {
+                        return Some(CompletedParse::new(
+                            parse,
+                            history,
+                            valid,
+                            Some(&mut self.parses.rng),
+                            self.lexicon,
+                        ));
+                    }
+                } else {
+                    return Some(CompletedParse::new(
+                        parse,
+                        history,
+                        valid,
+                        Some(&mut self.parses.rng),
+                        self.lexicon,
+                    ));
+                }
             }
         }
         None

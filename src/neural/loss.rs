@@ -27,6 +27,7 @@ pub fn retrieve_strings<B: Backend>(
     g: &GrammarParameterization<B>,
     targets: Option<&[Vec<usize>]>,
     neural_config: &NeuralConfig,
+    valid_only: bool,
     random_search: bool,
 ) -> Vec<CompletedParse> {
     let mut parses: Vec<_> = vec![];
@@ -38,6 +39,7 @@ pub fn retrieve_strings<B: Backend>(
             g,
             targets,
             neural_config.padding_length,
+            valid_only,
             neural_config,
         )
         .filter(|x| {
@@ -242,7 +244,7 @@ pub fn get_grammar_with_targets<B: Backend>(
     Tensor<B, 1>,
 )> {
     let target_vec = target_to_vec(&targets);
-    let parses = retrieve_strings(lexicon, g, Some(&target_vec), neural_config, false)
+    let parses = retrieve_strings(lexicon, g, Some(&target_vec), neural_config, true, false)
         .into_iter()
         .filter(|x| x.valid)
         .collect_vec();
@@ -341,14 +343,22 @@ pub fn get_all_parses<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
     targets: Option<Tensor<B, 2, Int>>,
+    valid_only: bool,
     neural_config: &NeuralConfig,
 ) -> Vec<CompletedParse> {
     match targets {
         Some(targets) => {
             let target_vec = target_to_vec(&targets);
-            retrieve_strings(lexicon, g, Some(&target_vec), neural_config, true)
+            retrieve_strings(
+                lexicon,
+                g,
+                Some(&target_vec),
+                neural_config,
+                valid_only,
+                true,
+            )
         }
-        None => retrieve_strings(lexicon, g, None, neural_config, true),
+        None => retrieve_strings(lexicon, g, None, neural_config, valid_only, true),
     }
 }
 

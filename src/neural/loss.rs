@@ -413,5 +413,5 @@ pub fn get_neural_outputs<B: Backend>(
     //    compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0),
     //    1,
     //);
-    (-p_of_s.mean().reshape([1]), max_reward.mean())
+    (p_of_s.mean().reshape([1]), max_reward.mean())
 }

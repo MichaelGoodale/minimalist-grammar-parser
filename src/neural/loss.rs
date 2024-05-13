@@ -386,21 +386,22 @@ pub fn get_neural_outputs<B: Backend>(
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
     let rewards = (string_probs.clone().unsqueeze_dim(0)).detach().exp() * n_compatible.clone();
-    let rewards = rewards.mask_fill(
-        validity
-            .unsqueeze_dim(0)
-            .repeat(0, target_vec.len())
-            .equal_elem(-1.0),
-        -1.0,
-    );
-    let p_of_s =
-        rewards.clone() * (compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0));
-    let (_, idx) = Tensor::max_dim_with_indices(p_of_s.clone(), 0);
-    let idx = idx.squeeze(0);
-    let p_of_s: Tensor<B, 2> = p_of_s.select(0, idx.clone());
+    //let rewards = rewards.mask_fill(
+    //    validity
+    //        .unsqueeze_dim(0)
+    //        .repeat(0, target_vec.len())
+    //        .equal_elem(-1.0),
+    //    -1.0,
+    //);
+    let p_of_s = (rewards.clone()
+        - (compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0)).exp())
+    .powf_scalar(2.0);
+    let (max_reward, _idx) = Tensor::max_dim_with_indices(rewards, 0);
+    //let idx = idx.squeeze(0);
+    //let p_of_s: Tensor<B, 2> = p_of_s.select(0, idx.clone());
     //let loss = log_sum_exp_dim(
     //    compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0),
     //    1,
     //);
-    (-p_of_s.mean().reshape([1]), rewards.select(0, idx).mean())
+    (-p_of_s.mean().reshape([1]), max_reward.mean())
 }

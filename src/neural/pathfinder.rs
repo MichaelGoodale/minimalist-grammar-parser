@@ -166,8 +166,7 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                             parse,
                             history,
                             valid,
-                            None::<&mut StdRng>,
-                            //        Some(&mut self.parses.rng),
+                            Some(&mut self.parses.rng),
                             self.lexicon,
                         ));
                     }
@@ -176,8 +175,7 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                         parse,
                         history,
                         valid,
-                        None::<&mut StdRng>,
-                        //Some(&mut self.parses.rng),
+                        Some(&mut self.parses.rng),
                         self.lexicon,
                     ));
                 }

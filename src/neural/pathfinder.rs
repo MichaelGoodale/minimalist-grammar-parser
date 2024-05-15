@@ -59,10 +59,10 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
     fn choose(&mut self) {
         if self.parse_buffer.is_empty() {
             if self.only_sample {
-                self.next_parse = self.parse_buffer.pop();
-            } else {
                 let sampled_i = sample(self.starts.iter(), self.temperature, &mut self.rng);
                 self.next_parse = Some(self.starts[sampled_i].clone());
+            } else {
+                self.next_parse = self.parse_buffer.pop();
             }
             return;
         }
@@ -72,20 +72,29 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             return;
         }
         let sampled_i = sample(self.parse_buffer.iter(), self.temperature, &mut self.rng);
-        self.upcoming_parses
-            .extend(
-                self.parse_buffer
-                    .drain(..)
-                    .enumerate()
-                    .filter_map(|(i, x)| {
-                        if sampled_i == i {
-                            self.next_parse = Some(x);
-                            None
-                        } else {
-                            Some(x)
-                        }
-                    }),
-            );
+        if self.only_sample {
+            for (i, x) in self.parse_buffer.drain(..).enumerate() {
+                if sampled_i == i {
+                    self.next_parse = Some(x);
+                    break;
+                }
+            }
+        } else {
+            self.upcoming_parses
+                .extend(
+                    self.parse_buffer
+                        .drain(..)
+                        .enumerate()
+                        .filter_map(|(i, x)| {
+                            if sampled_i == i {
+                                self.next_parse = Some(x);
+                                None
+                            } else {
+                                Some(x)
+                            }
+                        }),
+                );
+        }
     }
 }
 

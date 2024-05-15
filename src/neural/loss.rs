@@ -395,7 +395,7 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let rewards = (string_probs.clone().unsqueeze_dim(0)).detach().exp() * n_compatible.clone();
+    let rewards = string_probs.clone().unsqueeze_dim(0).exp() * n_compatible.clone();
     //let rewards = rewards.mask_fill(
     //    validity
     //        .unsqueeze_dim(0)

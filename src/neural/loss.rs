@@ -377,17 +377,6 @@ pub fn get_neural_outputs<B: Backend>(
             .collect_vec(),
         0,
     );
-    let validity = Tensor::<B, 1>::from_data(
-        Data::from(
-            parses
-                .iter()
-                .map(|p| if p.valid { 0.0 } else { -1.0 })
-                .collect_vec()
-                .as_slice(),
-        )
-        .convert(),
-        &g.device(),
-    );
     let string_probs = parses
         .iter()
         .map(|p| p.string_prob(g, lexicon, neural_config, None))

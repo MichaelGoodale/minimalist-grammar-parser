@@ -14,18 +14,32 @@ use crate::{
 use burn::prelude::*;
 use itertools::Itertools;
 use min_max_heap::MinMaxHeap;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use rand_distr::{Distribution, WeightedIndex};
 
 #[derive(Debug, Clone)]
 struct NeuralParseHolder<'a, B: Backend> {
     next_parse: Option<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
+    starts: Vec<NeuralBeam<'a, B>>,
     upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
     config: &'a NeuralConfig,
     global_steps: usize,
+    only_sample: bool,
     rng: StdRng,
     temperature: f64,
+}
+
+fn sample<'a, B: Backend>(
+    v: impl Iterator<Item = &'a NeuralBeam<'a, B>>,
+    temperature: f64,
+    rng: &mut impl Rng,
+) -> usize {
+    let p = v
+        .map(|x| x.log_prob().into_inner().exp() / temperature)
+        .collect_vec();
+    let dist = WeightedIndex::new(p).unwrap();
+    dist.sample(rng)
 }
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
@@ -44,7 +58,12 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
 
     fn choose(&mut self) {
         if self.parse_buffer.is_empty() {
-            self.next_parse = self.upcoming_parses.pop();
+            if self.only_sample {
+                self.next_parse = self.parse_buffer.pop();
+            } else {
+                let sampled_i = sample(self.starts.iter(), self.temperature, &mut self.rng);
+                self.next_parse = Some(self.starts[sampled_i].clone());
+            }
             return;
         }
 
@@ -52,13 +71,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             self.next_parse = self.parse_buffer.pop();
             return;
         }
-        let p = self
-            .parse_buffer
-            .iter()
-            .map(|x| x.log_prob().into_inner().exp() / self.temperature)
-            .collect_vec();
-        let dist = WeightedIndex::new(&p).unwrap();
-        let sampled_i = dist.sample(&mut self.rng);
+        let sampled_i = sample(self.parse_buffer.iter(), self.temperature, &mut self.rng);
         self.upcoming_parses
             .extend(
                 self.parse_buffer
@@ -113,18 +126,35 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         targets: Option<&'a [Vec<usize>]>,
         max_string_length: usize,
         valid_only: bool,
+        only_sample: bool,
         config: &'a NeuralConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
         parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
-        let parses = NeuralParseHolder {
-            temperature: g.temperature(),
-            rng: StdRng::from_entropy(),
-            upcoming_parses: BinaryHeap::new(),
-            next_parse: None,
-            parse_buffer: parses,
-            global_steps: 0,
-            config,
+        let parses = if only_sample {
+            NeuralParseHolder {
+                temperature: g.temperature(),
+                rng: StdRng::from_entropy(),
+                upcoming_parses: BinaryHeap::new(),
+                next_parse: None,
+                parse_buffer: vec![],
+                starts: parses,
+                global_steps: 0,
+                only_sample: true,
+                config,
+            }
+        } else {
+            NeuralParseHolder {
+                temperature: g.temperature(),
+                rng: StdRng::from_entropy(),
+                upcoming_parses: BinaryHeap::new(),
+                next_parse: None,
+                parse_buffer: parses,
+                starts: vec![],
+                global_steps: 0,
+                only_sample: false,
+                config,
+            }
         };
         NeuralGenerator {
             lexicon,

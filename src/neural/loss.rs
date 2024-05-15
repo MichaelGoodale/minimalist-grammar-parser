@@ -378,6 +378,18 @@ pub fn get_neural_outputs<B: Backend>(
             .collect_vec(),
         0,
     );
+    let validity = Tensor::<B, 1>::from_data(
+        Data::from(
+            parses
+                .iter()
+                .map(|p| if p.valid { 1.0 } else { 0.0 })
+                .collect_vec()
+                .as_slice(),
+        )
+        .convert(),
+        &g.device(),
+    )
+    .unsqueeze_dim(0);
     let string_probs = parses
         .iter()
         .map(|p| p.string_prob(g, lexicon, neural_config, None))
@@ -385,7 +397,7 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let rewards = string_probs.clone().unsqueeze_dim(0).exp() * n_compatible.clone();
+    let rewards = string_probs.clone().unsqueeze_dim(0).exp() * validity * n_compatible.clone();
     //let rewards = rewards.mask_fill(
     //    validity
     //        .unsqueeze_dim(0)

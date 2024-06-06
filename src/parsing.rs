@@ -366,6 +366,83 @@ fn unmove<
     Ok(())
 }
 
+pub fn neural_expand_child<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
+    B: Beam<T, Probability = L::Probability> + Clone + 'a,
+    H: ParseHolder<T, B>,
+>(
+    extender: &mut H,
+    moment: ParseMoment,
+    beam: B,
+    lexicon: &'a L,
+    choice_probs: Vec<LogProb<f64>>,
+    probability_of_moving: L::Probability,
+    probability_of_merging: L::Probability,
+) {
+    let n_children = lexicon.n_children(moment.tree.node);
+}
+
+fn apply_child<
+    'a,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone,
+    L: Lexiconable<T, Category>,
+    B: Beam<T, Probability = L::Probability> + Clone + 'a,
+    H: ParseHolder<T, B>,
+>(
+    child_node: NodeIndex,
+    child_prob: L::Probability,
+    extender: &mut H,
+    moment: &ParseMoment,
+    beam: B,
+    lexicon: &'a L,
+    probability_of_moving: L::Probability,
+    probability_of_merging: L::Probability,
+) {
+    let child = lexicon.get(child_node).unwrap();
+    match &child {
+        FeatureOrLemma::Lemma(s) if moment.no_movers() => {
+            B::scan(extender, moment, beam, s, child_node, child_prob);
+        }
+        FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
+            let rule_prob = unmerge_from_mover(
+                extender,
+                lexicon,
+                moment,
+                &beam,
+                cat,
+                child_node,
+                child_prob.clone(),
+                probability_of_moving,
+                probability_of_merging,
+            );
+            let _ = unmerge(
+                extender, lexicon, moment, beam, cat, dir, child_node, child_prob, rule_prob,
+            );
+        }
+        FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
+            let rule_prob = unmove_from_mover(
+                extender,
+                lexicon,
+                moment,
+                &beam,
+                cat,
+                child_node,
+                child_prob.clone(),
+                probability_of_moving,
+                probability_of_merging,
+            );
+            let _ = unmove(
+                extender, lexicon, moment, beam, cat, child_node, child_prob, rule_prob,
+            );
+        }
+        _ => (),
+    }
+}
+
 pub fn expand<
     'a,
     T: Eq + std::fmt::Debug + Clone,
@@ -387,46 +464,16 @@ pub fn expand<
     new_beams
         .zip(lexicon.children_of(moment.tree.node))
         .for_each(|(beam, (child_prob, child_node))| {
-            let child = lexicon.get(child_node).unwrap();
-            match &child {
-                FeatureOrLemma::Lemma(s) if moment.no_movers() => {
-                    B::scan(extender, &moment, beam, s, child_node, child_prob);
-                }
-                FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                    let rule_prob = unmerge_from_mover(
-                        extender,
-                        lexicon,
-                        &moment,
-                        &beam,
-                        cat,
-                        child_node,
-                        child_prob.clone(),
-                        probability_of_moving.clone(),
-                        probability_of_merging.clone(),
-                    );
-                    let _ = unmerge(
-                        extender, lexicon, &moment, beam, cat, dir, child_node, child_prob,
-                        rule_prob,
-                    );
-                }
-                FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                    let rule_prob = unmove_from_mover(
-                        extender,
-                        lexicon,
-                        &moment,
-                        &beam,
-                        cat,
-                        child_node,
-                        child_prob.clone(),
-                        probability_of_moving.clone(),
-                        probability_of_merging.clone(),
-                    );
-                    let _ = unmove(
-                        extender, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,
-                    );
-                }
-                _ => (),
-            }
+            apply_child(
+                child_node,
+                child_prob,
+                extender,
+                &moment,
+                beam,
+                lexicon,
+                probability_of_moving.clone(),
+                probability_of_merging.clone(),
+            )
         });
 }
 

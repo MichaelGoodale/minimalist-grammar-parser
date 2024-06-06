@@ -283,7 +283,7 @@ where
 pub struct Generator<
     'a,
     T: Eq + std::fmt::Debug + Clone,
-    Category: Hash + Eq + Clone + std::fmt::Debug,
+    Category: Eq + Clone + std::fmt::Debug,
     A: Allocator = Global,
 > {
     lexicon: &'a Lexicon<T, Category>,

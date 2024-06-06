@@ -57,7 +57,7 @@ fn main() {
         };
         let start = Instant::now();
         let lexicon = NeuralLexicon::new_superimposed(&g, &neural_config).unwrap();
-        let parses = get_all_parses(&g, &lexicon, None, false, &neural_config);
+        let parses = get_all_parses(&g, &lexicon, None, &neural_config);
         let elapse = start.elapsed();
         let n = parses.len();
         let mut counts = BTreeMap::default();

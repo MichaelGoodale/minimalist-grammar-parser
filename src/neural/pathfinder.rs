@@ -37,10 +37,62 @@ fn rule_to_prob<B: Backend>(
         Rule::Start(node) => rule_logits[0] + lexeme_logits[lexicon.node_to_id(node)],
         Rule::Scan { .. } => rule_logits[1],
         Rule::Unmerge { target, .. } => rule_logits[2] + lexeme_logits[lexicon.node_to_id(target)],
-        Rule::UnmergeFromMover { .. } => rule_logits[2],
-        Rule::Unmove { target, .. } => rule_logits[3] + lexeme_logits[lexicon.node_to_id(target)],
-        Rule::UnmoveFromMover { .. } => rule_logits[4],
+        Rule::UnmergeFromMover { .. } => rule_logits[3],
+        Rule::Unmove { target, .. } => rule_logits[4] + lexeme_logits[lexicon.node_to_id(target)],
+        Rule::UnmoveFromMover { .. } => rule_logits[5],
     }
+}
+
+///The differentiable log probability of sampling some sequence of rules
+pub(crate) fn rules_to_prob<B: Backend>(
+    rules: &[Rule],
+    rule_logits: Tensor<B, 2>,
+    lexeme_logits: Tensor<B, 2>,
+    lexicon: &NeuralLexicon<B>,
+) -> Tensor<B, 1> {
+    let mut rule_ids: Vec<u32> = vec![];
+    let mut lexeme_used: Vec<u32> = vec![];
+    let mut lexeme_ids: Vec<u32> = vec![];
+    for (i, rule) in rules.iter().enumerate() {
+        match rule {
+            Rule::Start(node) => {
+                lexeme_used.push(i as u32);
+                lexeme_ids.push(lexicon.node_to_id(node) as u32);
+                rule_ids.push(0);
+            }
+            Rule::Scan { .. } => rule_ids.push(1),
+            Rule::Unmerge { target, .. } => {
+                lexeme_used.push(i as u32);
+                lexeme_ids.push(lexicon.node_to_id(target) as u32);
+                rule_ids.push(2);
+            }
+            Rule::UnmergeFromMover { .. } => rule_ids.push(3),
+            Rule::Unmove { target, .. } => {
+                lexeme_used.push(i as u32);
+                lexeme_ids.push(lexicon.node_to_id(target) as u32);
+                rule_ids.push(4);
+            }
+            Rule::UnmoveFromMover { .. } => rule_ids.push(5),
+        }
+    }
+    let rule_ids =
+        Tensor::<B, 1, Int>::from_data(Data::from(rule_ids.as_slice()).convert(), lexicon.device());
+    let lexeme_used = Tensor::<B, 1, Int>::from_data(
+        Data::from(lexeme_used.as_slice()).convert(),
+        lexicon.device(),
+    );
+    let lexeme_ids = Tensor::<B, 1, Int>::from_data(
+        Data::from(lexeme_ids.as_slice()).convert(),
+        lexicon.device(),
+    );
+    Tensor::zeros([1], lexicon.device())
+    //THESE ARE THE WRONG SELECT OPTIONS!!!
+    //rule_logits.select(0, rule_ids).sum_dim(0)
+    //    + lexeme_logits
+    //        .select(0, lexeme_used)
+    //        .squeeze(0)
+    //        .select(0, lexeme_ids)
+    //        .sum_dim(0)
 }
 
 fn sample<'a, B: Backend>(
@@ -89,7 +141,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             self.next_parse = self.parse_buffer.pop();
             return;
         }
-        let rule_logits = [0.0; 5];
+        let rule_logits = [0.0; 6];
         let lexeme_logits = [0.0; 50];
         let rules = self
             .parse_buffer
@@ -148,6 +200,8 @@ impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parses: NeuralParseHolder<'a, B>,
+    rule_logits: Tensor<B, 2>,
+    lexeme_logits: Tensor<B, 2>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
     valid_only: bool,
@@ -158,6 +212,8 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         lexicon: &'a NeuralLexicon<B>,
         g: &'a GrammarParameterization<B>,
         targets: Option<&'a [Vec<usize>]>,
+        rule_logits: Tensor<B, 2>,
+        lexeme_logits: Tensor<B, 2>,
         max_string_length: usize,
         valid_only: bool,
         config: &'a NeuralConfig,
@@ -176,6 +232,8 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         };
         NeuralGenerator {
             lexicon,
+            rule_logits,
+            lexeme_logits,
             move_log_prob: NeuralProbability(
                 NeuralProbabilityRecord::MoveRuleProb,
                 None,
@@ -193,7 +251,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
 }
 
 impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
-    type Item = CompletedParse;
+    type Item = (CompletedParse, Tensor<B, 1>);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parses.pop() {
@@ -207,13 +265,25 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                     self.merge_log_prob,
                 );
             } else {
-                let (parse, history, valid) = beam.into_completed_parse();
+                let (parse, history, valid, rules) = beam.into_completed_parse();
+                let rule_prob = rules_to_prob(
+                    &rules,
+                    self.rule_logits.clone(),
+                    self.lexeme_logits.clone(),
+                    self.lexicon,
+                );
                 if self.valid_only {
                     if valid {
-                        return Some(CompletedParse::new(parse, history, valid, self.lexicon));
+                        return Some((
+                            CompletedParse::new(parse, history, valid, self.lexicon),
+                            rule_prob,
+                        ));
                     }
                 } else {
-                    return Some(CompletedParse::new(parse, history, valid, self.lexicon));
+                    return Some((
+                        CompletedParse::new(parse, history, valid, self.lexicon),
+                        rule_prob,
+                    ));
                 }
             }
         }

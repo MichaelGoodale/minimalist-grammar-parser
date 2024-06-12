@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::neural_beam::{StringPath, StringProbHistory};
 use super::neural_lexicon::{NeuralFeature, NeuralLexicon};
 use super::parameterization::GrammarParameterization;
-use super::pathfinder::NeuralGenerator;
+use super::pathfinder::{rules_to_prob, NeuralGenerator};
 use super::utils::log_sum_exp_dim;
 use super::CompletedParse;
 use crate::ParsingConfig;
@@ -31,15 +31,17 @@ pub fn retrieve_strings<B: Backend>(
     let mut parses: Vec<_> = vec![];
     let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
 
-    for result in NeuralGenerator::new(
+    for (result, rule_prob) in NeuralGenerator::new(
         lexicon,
         g,
         targets,
+        todo!(),
+        todo!(),
         neural_config.padding_length,
         true,
         neural_config,
     )
-    .filter(|x| {
+    .filter(|(x, _)| {
         if let Some(lens) = lens.as_ref() {
             lens.contains(&x.len())
         } else {
@@ -48,7 +50,7 @@ pub fn retrieve_strings<B: Backend>(
     })
     .take(neural_config.n_strings_per_grammar)
     {
-        parses.push(result)
+        parses.push(result);
     }
     parses
 }

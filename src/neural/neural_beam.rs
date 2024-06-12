@@ -189,11 +189,12 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
         }))
     }
 
-    pub fn into_completed_parse(self) -> (StringPath, StringProbHistory, bool) {
+    pub fn into_completed_parse(self) -> (StringPath, StringProbHistory, bool, Vec<Rule>) {
         (
             self.generated_sentence,
             self.probability_path,
             self.queue.is_empty(),
+            self.rules,
         )
     }
 

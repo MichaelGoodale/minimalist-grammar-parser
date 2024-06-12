@@ -37,7 +37,6 @@ pub fn retrieve_strings<B: Backend>(
         targets,
         neural_config.padding_length,
         true,
-        true,
         neural_config,
     )
     .filter(|x| {

@@ -633,6 +633,7 @@ fn test_loss() -> Result<()> {
         let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
         let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
+        dbg!(&parses);
         let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
         val.backward();
         let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &output_config)?;
@@ -646,6 +647,8 @@ fn test_loss() -> Result<()> {
         //assert_eq!(top_g, encoded_grammar);
         loss.push(val.into_scalar().elem::<f32>());
     }
+
+    panic!("AAAH");
 
     let stored_losses = [26.346354, 26.346354, 26.346354, 26.346354, 26.346355];
     dbg!(&loss);

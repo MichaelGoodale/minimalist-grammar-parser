@@ -78,6 +78,7 @@ pub enum Rule {
     },
     Unmerge {
         child: NodeIndex,
+        target: NodeIndex,
         parent: usize,
         child_id: usize,
         complement_id: usize,
@@ -90,6 +91,7 @@ pub enum Rule {
         storage: usize,
     },
     Unmove {
+        target: NodeIndex,
         child_id: usize,
         stored_id: usize,
         parent: usize,
@@ -231,6 +233,7 @@ fn unmerge<
         beam.add_to_log_prob(rule_prob.clone());
         if beam.record_rules() {
             beam.push_rule(Rule::Unmerge {
+                target: *complement,
                 child: child_node,
                 parent: moment.tree.id,
                 child_id: beam.top_id() + 2,
@@ -354,6 +357,7 @@ fn unmove<
 
         if beam.record_rules() {
             beam.push_rule(Rule::Unmove {
+                target: *stored,
                 child_id: beam.top_id() + 1,
                 stored_id: beam.top_id() + 2,
                 parent: moment.tree.id,

@@ -15,9 +15,6 @@ use petgraph::{
     graph::DiGraph,
     graph::{EdgeIndex, NodeIndex},
 };
-use rand::Rng;
-use rand_distr::Distribution;
-use rand_distr::WeightedIndex;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum EdgeHistory {
@@ -63,22 +60,10 @@ impl EdgeHistory {
 
     pub fn is_compatible(&self, max_n_licensees: usize, max_n_features: usize) -> bool {
         match self {
-            EdgeHistory::AtLeastNLicenseses {
-                lexeme_idx,
-                n_licensees,
-            } => *n_licensees <= max_n_licensees,
-            EdgeHistory::AtLeastNCategories {
-                lexeme_idx,
-                n_categories,
-            } => *n_categories <= max_n_features,
-            EdgeHistory::AtMostNLicenseses {
-                lexeme_idx,
-                n_licensees,
-            } => max_n_licensees == *n_licensees,
-            EdgeHistory::AtMostNCategories {
-                lexeme_idx,
-                n_categories,
-            } => max_n_features == *n_categories,
+            EdgeHistory::AtLeastNLicenseses { n_licensees, .. } => *n_licensees <= max_n_licensees,
+            EdgeHistory::AtLeastNCategories { n_categories, .. } => *n_categories <= max_n_features,
+            EdgeHistory::AtMostNLicenseses { n_licensees, .. } => max_n_licensees == *n_licensees,
+            EdgeHistory::AtMostNCategories { n_categories, .. } => max_n_features == *n_categories,
         }
     }
 }
@@ -110,6 +95,7 @@ type NeuralGraph = DiGraph<(NeuralFeature, LogProb<f64>), EdgeHistory>;
 #[derive(Debug, Clone)]
 pub struct NeuralLexicon<B: Backend> {
     weights: HashMap<NeuralProbabilityRecord, Tensor<B, 1>>,
+    index_to_id: HashMap<NodeIndex, usize>,
     categories: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     licensees: HashMap<usize, Vec<(NeuralProbability, NodeIndex)>>,
     alternatives: HashMap<NodeIndex, Vec<NodeIndex>>,
@@ -135,6 +121,13 @@ fn add_alternatives(map: &mut HashMap<NodeIndex, Vec<NodeIndex>>, nodes: &[NodeI
 }
 
 impl<B: Backend> NeuralLexicon<B> {
+    pub fn node_to_id(&self, nx: &NodeIndex) -> usize {
+        *self
+            .index_to_id
+            .get(nx)
+            .expect("Passing a node which is not a child of a root should be impossible")
+    }
+
     pub fn get_weight(&self, n: &NeuralProbabilityRecord) -> Option<&Tensor<B, 1>> {
         self.weights.get(n)
     }
@@ -157,6 +150,7 @@ impl<B: Backend> NeuralLexicon<B> {
         let mut categories_map = HashMap::default();
         let mut weights_map = HashMap::default();
         let mut alternative_map = HashMap::default();
+        let mut index_to_id = HashMap::default();
 
         let mut graph: NeuralGraph = DiGraph::new();
 
@@ -193,6 +187,7 @@ impl<B: Backend> NeuralLexicon<B> {
                 let log_prob = tensor_to_log_prob(&lexeme_p)?;
 
                 let node = graph.add_node((feature, log_prob));
+                index_to_id.insert(node, lexeme_idx);
                 let edge_history = match n_licensees {
                     0 => EdgeHistory::AtMostNLicenseses {
                         lexeme_idx,
@@ -422,6 +417,7 @@ impl<B: Backend> NeuralLexicon<B> {
 
         Ok(NeuralLexicon {
             graph,
+            index_to_id,
             licensees: licensees_map,
             categories: categories_map,
             weights: weights_map,
@@ -441,61 +437,6 @@ impl<B: Backend> NeuralLexicon<B> {
             .unwrap_or(&vec![])
             .iter()
             .any(|x| path.contains(&NodeFeature::Node(*x)))
-    }
-
-    pub fn sample_lexeme(
-        &self,
-        lexeme_idx: usize,
-        s: &mut StringProbHistory,
-        rng: &mut impl Rng,
-    ) -> NodeFeature {
-        let x = self
-            .licensees
-            .values()
-            .chain(self.categories.values())
-            .flat_map(|x| {
-                x.iter().filter(|(p, _)| match p.0 {
-                    NeuralProbabilityRecord::Lexeme { id, .. } => id == lexeme_idx,
-                    _ => panic!("should be impossible!"),
-                })
-            })
-            .collect_vec();
-        let dist = WeightedIndex::new(x.iter().map(|(p, _)| p.2.into_inner().exp())).unwrap();
-        let i = dist.sample(rng);
-        let (p, _) = x[i];
-        if let NeuralProbabilityRecord::Lexeme {
-            node,
-            n_features,
-            n_licensees,
-            ..
-        } = p.0
-        {
-            let n_feats = NodeFeature::NFeats {
-                node,
-                lexeme_idx,
-                n_licensees,
-                n_features,
-            };
-            s.add_node(n_feats);
-            let mut children: Vec<_> = self
-                .children_of(node)
-                .filter(|(p, _)| p.1.unwrap().is_compatible(n_licensees, n_features))
-                .collect();
-            while !children.is_empty() {
-                let dist = WeightedIndex::new(children.iter().map(|(p, _)| p.2.into_inner().exp()))
-                    .unwrap();
-                let i = dist.sample(rng);
-                let n = children[i].1;
-                s.add_node(NodeFeature::Node(n));
-                children = self
-                    .children_of(n)
-                    .filter(|(p, _)| p.1.unwrap().is_compatible(n_licensees, n_features))
-                    .collect();
-            }
-            n_feats
-        } else {
-            panic!("This is impossible");
-        }
     }
 
     pub fn grammar_features(&self, s: &StringProbHistory) -> Vec<Vec<NeuralFeature>> {

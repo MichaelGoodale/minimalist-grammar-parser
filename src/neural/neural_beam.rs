@@ -104,6 +104,7 @@ pub struct NeuralBeam<'a, B: Backend> {
     n_features: Vec<Option<(usize, usize)>>,
     burnt: bool,
     probability_path: StringProbHistory,
+    rules: Vec<Rule>,
     top_id: usize,
     steps: usize,
     max_string_len: usize,
@@ -173,6 +174,7 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 n_features,
                 g,
                 queue,
+                rules: vec![Rule::Start(*node)],
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
                 sentence_guides: sentences
@@ -230,6 +232,14 @@ impl<B: Backend> Ord for NeuralBeam<'_, B> {
     }
 }
 
+impl<B: Backend> NeuralBeam<'_, B> {
+    pub fn latest_rule(&self) -> &Rule {
+        self.rules
+            .last()
+            .expect("A neural beam should never be made which doesn't have at least one rule")
+    }
+}
+
 impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
     type Probability = NeuralProbability;
 
@@ -276,6 +286,8 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
             | NeuralProbabilityRecord::MergeRuleProb => match self.probability_path.0.entry(record)
             {
                 Entry::Occupied(entry) => {
+                    /* LogProb solely means the prob of grammar + strings given grammar, not the
+                    * prob of string.
                     match entry.key() {
                         NeuralProbabilityRecord::MergeRuleProb
                         | NeuralProbabilityRecord::MoveRuleProb => {
@@ -288,7 +300,7 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
                             self.max_log_prob += w;
                         }
                         _ => (),
-                    }
+                    }*/
                     *entry.into_mut() += 1;
                 }
                 Entry::Vacant(entry) => {
@@ -354,18 +366,20 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
         self.queue.push(Reverse(x))
     }
 
-    fn push_rule(&mut self, _: Rule) {}
+    fn push_rule(&mut self, r: Rule) {
+        self.rules.push(r);
+    }
 
     fn record_rules(&self) -> bool {
-        false
+        true
     }
 
     fn scan<H: ParseHolder<usize, Self>>(
         v: &mut H,
-        _moment: &ParseMoment,
+        moment: &ParseMoment,
         mut beam: Self,
         s: &Option<usize>,
-        _child_node: NodeIndex,
+        child_node: NodeIndex,
         child_prob: Self::Probability,
     ) {
         beam.queue.shrink_to_fit();
@@ -395,6 +409,10 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
 
         beam.add_to_log_prob(child_prob);
         beam.steps += 1;
+        beam.push_rule(Rule::Scan {
+            node: child_node,
+            parent: moment.tree.id,
+        });
         v.add(beam);
     }
 

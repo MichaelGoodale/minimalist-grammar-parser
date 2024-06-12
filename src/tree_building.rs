@@ -33,6 +33,7 @@ where
                 child_id,
                 complement_id,
                 child,
+                ..
             } => {
                 let child = lexicon.get_category(*child).unwrap().to_string();
                 let parent_cat = &g[id2node[parent]];
@@ -59,6 +60,7 @@ where
                 parent,
                 child_id,
                 stored_id,
+                ..
             } => {
                 let child = lexicon.get_category(*child).unwrap().to_string();
                 let parent_cat = &g[id2node[parent]];
@@ -96,6 +98,7 @@ where
                 child_id,
                 stored_id,
                 parent,
+                ..
             } => {
                 id2node.insert(*child_id, id2node[parent]);
                 let temp = g.add_node("temp".to_string());

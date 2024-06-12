@@ -47,7 +47,6 @@ impl CompletedParse {
         parse: StringPath,
         mut history: StringProbHistory,
         valid: bool,
-        sample_unattested: Option<&mut impl Rng>,
         lexicon: &NeuralLexicon<B>,
     ) -> Self {
         let mut unattested = vec![true; lexicon.n_lexemes()];
@@ -77,36 +76,6 @@ impl CompletedParse {
                 }
             })
             .collect();
-
-        if let Some(rng) = sample_unattested {
-            for lexeme_idx in
-                unattested
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, x)| if *x { Some(i) } else { None })
-            {
-                let v = lexicon.sample_lexeme(lexeme_idx, &mut history, rng);
-                if let NodeFeature::NFeats {
-                    node, lexeme_idx, ..
-                } = v
-                {
-                    let x = match lexicon.get(node).unwrap() {
-                        FeatureOrLemma::Feature(Feature::Category(category)) => LexemeTypes {
-                            licensee: false,
-                            lexeme_idx,
-                            category: *category,
-                        },
-                        FeatureOrLemma::Feature(Feature::Licensee(category)) => LexemeTypes {
-                            licensee: true,
-                            lexeme_idx,
-                            category: *category,
-                        },
-                        _ => panic!("this should not happen!"),
-                    };
-                    grammar_details.push(x);
-                }
-            }
-        }
 
         CompletedParse {
             parse,

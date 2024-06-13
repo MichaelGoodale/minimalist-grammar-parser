@@ -18,6 +18,9 @@ struct NeuralParseHolder<'a, B: Backend> {
     next_parse: Option<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
     upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
+    position: usize,
+    rule_logits: Tensor<B, 2>,
+    lexeme_logits: Tensor<B, 2>,
     config: &'a NeuralConfig,
     global_steps: usize,
     rng: StdRng,
@@ -134,6 +137,9 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
         self.choose();
         let mut n = None;
         std::mem::swap(&mut self.next_parse, &mut n);
+        if let Some(x) = &n {
+            self.position = x.n_steps();
+        }
         n
     }
 
@@ -147,13 +153,23 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             self.next_parse = self.parse_buffer.pop();
             return;
         }
-        let rule_logits = [0.0; 6];
-        let lexeme_logits = [0.0; 50];
-        let rules = self
-            .parse_buffer
-            .iter()
-            .map(|x| x.latest_rule())
-            .collect_vec();
+        let rule_logits = self
+            .rule_logits
+            .clone()
+            .slice([self.position..self.position + 1, 0..6])
+            .to_data()
+            .convert::<f64>()
+            .value;
+        let lexeme_logits = self
+            .rule_logits
+            .clone()
+            .slice([
+                self.position..self.position + 1,
+                0..self.lexicon.n_lexemes(),
+            ])
+            .to_data()
+            .convert::<f64>()
+            .value;
 
         let sampled_i = sample(
             self.parse_buffer.iter(),
@@ -205,8 +221,6 @@ impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder
 pub struct NeuralGenerator<'a, B: Backend> {
     lexicon: &'a NeuralLexicon<B>,
     parses: NeuralParseHolder<'a, B>,
-    rule_logits: Tensor<B, 2>,
-    lexeme_logits: Tensor<B, 2>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
     valid_only: bool,
@@ -231,14 +245,15 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
             upcoming_parses: BinaryHeap::new(),
             next_parse: None,
             parse_buffer: parses,
+            position: 0,
             global_steps: 0,
             lexicon,
             config,
+            rule_logits,
+            lexeme_logits,
         };
         NeuralGenerator {
             lexicon,
-            rule_logits,
-            lexeme_logits,
             move_log_prob: NeuralProbability(
                 NeuralProbabilityRecord::MoveRuleProb,
                 None,
@@ -273,8 +288,8 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
                 let (parse, history, valid, rules) = beam.into_completed_parse();
                 let rule_prob = rules_to_prob(
                     &rules,
-                    self.rule_logits.clone(),
-                    self.lexeme_logits.clone(),
+                    self.parses.rule_logits.clone(),
+                    self.parses.lexeme_logits.clone(),
                     self.lexicon,
                 );
                 if self.valid_only {

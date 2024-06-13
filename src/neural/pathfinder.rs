@@ -135,7 +135,6 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             }
         }
         self.choose();
-        dbg!(self.next_parse.is_some());
         let mut n = None;
         std::mem::swap(&mut self.next_parse, &mut n);
         if let Some(x) = &n {

@@ -93,7 +93,7 @@ fn string_path_to_tensor<B: Backend>(
 
 ///Returns (n_targets, n_strings), (n_targets, n_strings)
 ///Left has if it is a compatible string, and right has its prob of being generated.
-fn compatible_strings<B: Backend>(
+pub fn compatible_strings<B: Backend>(
     strings: &[CompletedParse],
     targets: &[Vec<usize>],
     g: &GrammarParameterization<B>,

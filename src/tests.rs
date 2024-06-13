@@ -639,7 +639,15 @@ fn test_loss() -> Result<()> {
             lexeme_logits.clone(),
             &config,
         );
-        let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
+        let val = get_neural_outputs(
+            &g,
+            &lexicon,
+            &parses,
+            rule_prob.unwrap(),
+            &target_vec,
+            &config,
+        )
+        .0;
         val.backward();
 
         //assert_eq!(top_g, encoded_grammar);
@@ -733,7 +741,7 @@ fn random_neural_generation() -> Result<()> {
 
     let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
     let target_vec = target_to_vec(&targets);
-    let (parses, rules) = retrieve_strings(
+    let (parses, rule_prob) = retrieve_strings(
         &lexicon,
         &g,
         Some(&target_vec),
@@ -741,8 +749,15 @@ fn random_neural_generation() -> Result<()> {
         lexeme_logits,
         &config,
     );
-    if rules.is_some() {
-        let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config);
+    if !parses.is_empty() {
+        let val = get_neural_outputs(
+            &g,
+            &lexicon,
+            &parses,
+            rule_prob.unwrap(),
+            &target_vec,
+            &config,
+        );
     }
     Ok(())
 }

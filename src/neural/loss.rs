@@ -282,13 +282,13 @@ pub fn get_neural_outputs<B: Backend>(
 
     let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
 
-    let rewards = string_probs.clone().unsqueeze_dim(0).exp() * n_compatible.clone();
+    let rewards = n_compatible.clone();
     let rewards = rewards.mask_fill(
         validity
             .unsqueeze_dim(0)
             .repeat(0, target_vec.len())
             .equal_elem(-1.0),
-        -1.0,
+        -0.0001,
     );
     let p_of_s =
         rewards.clone() * (compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0));

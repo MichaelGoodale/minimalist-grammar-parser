@@ -120,7 +120,7 @@ impl CompletedParse {
         .sum_dim(0)
     }
 
-    fn string_prob<B: Backend>(
+    pub fn string_prob<B: Backend>(
         &self,
         g: &GrammarParameterization<B>,
         lexicon: &NeuralLexicon<B>,

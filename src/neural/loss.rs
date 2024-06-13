@@ -30,7 +30,6 @@ pub fn retrieve_strings<B: Backend>(
     valid_only: bool,
 ) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
     let mut parses: Vec<_> = vec![];
-    let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
 
     let mut rules = vec![];
     for (result, rule_prob) in NeuralGenerator::new(
@@ -43,13 +42,6 @@ pub fn retrieve_strings<B: Backend>(
         valid_only,
         neural_config,
     )
-    .filter(|(x, _)| {
-        if let Some(lens) = lens.as_ref() {
-            lens.contains(&x.len())
-        } else {
-            true
-        }
-    })
     .take(neural_config.n_strings_per_grammar)
     {
         parses.push(result);

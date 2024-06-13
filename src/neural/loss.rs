@@ -260,7 +260,7 @@ pub fn get_neural_outputs<B: Backend>(
             .collect_vec(),
         0,
     ) + rule_probs;
-    let validity: Tensor<B, 1> = Tensor::<B, 1>::from_data(
+    let validity = Tensor::<B, 1>::from_data(
         Data::from(
             parses
                 .iter()
@@ -270,8 +270,7 @@ pub fn get_neural_outputs<B: Backend>(
         )
         .convert(),
         &g.device(),
-    )
-    .unsqueeze_dim(0);
+    );
 
     let string_probs = parses
         .iter()

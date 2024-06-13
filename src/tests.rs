@@ -1,10 +1,7 @@
 use crate::{
     lexicon::Feature,
     neural::{
-        loss::{
-            get_grammar_with_targets, get_neural_outputs, retrieve_strings, target_to_vec,
-            NeuralConfig,
-        },
+        loss::{get_neural_outputs, retrieve_strings, target_to_vec, NeuralConfig},
         neural_lexicon::{NeuralFeature, NeuralLexicon},
     },
 };
@@ -578,14 +575,16 @@ fn test_loss() -> Result<()> {
         padding_length: 10,
         temperature: 1.0,
         compatible_weight: 0.99,
-        parsing_config: ParsingConfig::new_with_global_steps(
+        parsing_config: ParsingConfig::new(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
+            50,
             200,
-            200,
-            100,
         ),
     };
+
+    let rule_logits = Tensor::zeros([50, 6], &NdArrayDevice::default());
+    let lexeme_logits = Tensor::zeros([50, n_lexemes], &NdArrayDevice::default());
     let output_config = NeuralConfig {
         n_strings_per_grammar: 20,
         padding_length: 10,
@@ -594,7 +593,7 @@ fn test_loss() -> Result<()> {
         parsing_config: ParsingConfig::new(
             LogProb::new(-200.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            200,
+            50,
             200,
         ),
     };
@@ -632,29 +631,21 @@ fn test_loss() -> Result<()> {
 
         let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
         let target_vec = target_to_vec(&targets);
-        let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
-        dbg!(&parses);
+        let (parses, rule_prob) = retrieve_strings(
+            &lexicon,
+            &g,
+            Some(&target_vec),
+            rule_logits.clone(),
+            lexeme_logits.clone(),
+            &config,
+        );
         let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config).0;
         val.backward();
-        let output = get_grammar_with_targets(&g, &lexicon, targets.clone(), &output_config)?;
-        let top_g: usize = output.2.clone().argmax(0).into_scalar() as usize;
-        let top_g: BTreeSet<_> = output.0[top_g].0.clone().into_iter().collect();
-        let encoded_grammar = BTreeSet::from([vec![
-            NeuralFeature::Feature(Feature::Category(0)),
-            NeuralFeature::Lemma(Some(0)),
-        ]]);
 
         //assert_eq!(top_g, encoded_grammar);
         loss.push(val.into_scalar().elem::<f32>());
     }
 
-    panic!("AAAH");
-
-    let stored_losses = [26.346354, 26.346354, 26.346354, 26.346354, 26.346355];
-    dbg!(&loss);
-    //for (loss, stored_loss) in loss.into_iter().zip(stored_losses) {
-    //    approx::assert_relative_eq!(loss, stored_loss, epsilon = 1e-1);
-    //}
     Ok(())
 }
 
@@ -698,6 +689,8 @@ fn random_neural_generation() -> Result<()> {
     );
     let mut rng = rand::rngs::StdRng::seed_from_u64(0);
 
+    let rule_logits = Tensor::zeros([50, 6], &NdArrayDevice::default());
+    let lexeme_logits = Tensor::zeros([50, n_lexemes], &NdArrayDevice::default());
     let g = GrammarParameterization::new(
         types.clone(),
         type_categories.clone(),
@@ -740,9 +733,16 @@ fn random_neural_generation() -> Result<()> {
 
     let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
     let target_vec = target_to_vec(&targets);
-    let parses = retrieve_strings(&lexicon, &g, Some(&target_vec), &config);
-    let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config);
-    dbg!(val);
-    get_grammar_with_targets(&g, &lexicon, targets.clone(), &config)?;
+    let (parses, rules) = retrieve_strings(
+        &lexicon,
+        &g,
+        Some(&target_vec),
+        rule_logits,
+        lexeme_logits,
+        &config,
+    );
+    if rules.is_some() {
+        let val = get_neural_outputs(&g, &lexicon, &parses, &target_vec, &config);
+    }
     Ok(())
 }

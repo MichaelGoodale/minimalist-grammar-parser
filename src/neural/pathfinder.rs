@@ -76,23 +76,29 @@ pub(crate) fn rules_to_prob<B: Backend>(
         }
     }
     let rule_ids =
-        Tensor::<B, 1, Int>::from_data(Data::from(rule_ids.as_slice()).convert(), lexicon.device());
+        Tensor::<B, 1, Int>::from_data(Data::from(rule_ids.as_slice()).convert(), lexicon.device())
+            .unsqueeze_dim(1);
     let lexeme_used = Tensor::<B, 1, Int>::from_data(
         Data::from(lexeme_used.as_slice()).convert(),
         lexicon.device(),
     );
-    let lexeme_ids = Tensor::<B, 1, Int>::from_data(
+    let lexeme_ids: Tensor<B, 2, _> = Tensor::<B, 1, Int>::from_data(
         Data::from(lexeme_ids.as_slice()).convert(),
         lexicon.device(),
-    );
-    Tensor::zeros([1], lexicon.device())
-    //THESE ARE THE WRONG SELECT OPTIONS!!!
-    //rule_logits.select(0, rule_ids).sum_dim(0)
-    //    + lexeme_logits
-    //        .select(0, lexeme_used)
-    //        .squeeze(0)
-    //        .select(0, lexeme_ids)
-    //        .sum_dim(0)
+    )
+    .unsqueeze_dim(1);
+
+    let arange = Tensor::arange(0..(rules.len() as i64), &rule_logits.device());
+    rule_logits
+        .select(0, arange)
+        .gather(1, rule_ids)
+        .squeeze(1)
+        .sum_dim(0)
+        + lexeme_logits
+            .select(0, lexeme_used)
+            .gather(1, lexeme_ids)
+            .squeeze(1)
+            .sum_dim(0)
 }
 
 fn sample<'a, B: Backend>(
@@ -148,7 +154,6 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             .iter()
             .map(|x| x.latest_rule())
             .collect_vec();
-        dbg!(rules);
 
         let sampled_i = sample(
             self.parse_buffer.iter(),

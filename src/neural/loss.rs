@@ -4,10 +4,8 @@ use super::neural_beam::{StringPath, StringProbHistory};
 use super::neural_lexicon::{NeuralFeature, NeuralLexicon};
 use super::parameterization::GrammarParameterization;
 use super::pathfinder::{rules_to_prob, NeuralGenerator};
-use super::utils::log_sum_exp_dim;
 use super::CompletedParse;
 use crate::ParsingConfig;
-use ahash::HashMap;
 use burn::tensor::{backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, ElementConversion, Int};
 use itertools::Itertools;
@@ -26,17 +24,20 @@ pub fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     g: &GrammarParameterization<B>,
     targets: Option<&[Vec<usize>]>,
+    rule_logits: Tensor<B, 2>,
+    lexeme_logits: Tensor<B, 2>,
     neural_config: &NeuralConfig,
-) -> Vec<CompletedParse> {
+) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
     let mut parses: Vec<_> = vec![];
     let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
 
+    let mut rules = vec![];
     for (result, rule_prob) in NeuralGenerator::new(
         lexicon,
         g,
         targets,
-        todo!(),
-        todo!(),
+        rule_logits,
+        lexeme_logits,
         neural_config.padding_length,
         true,
         neural_config,
@@ -51,8 +52,16 @@ pub fn retrieve_strings<B: Backend>(
     .take(neural_config.n_strings_per_grammar)
     {
         parses.push(result);
+        rules.push(rule_prob);
     }
-    parses
+    (
+        parses,
+        if rules.is_empty() {
+            None
+        } else {
+            Some(Tensor::cat(rules, 0))
+        },
+    )
 }
 
 fn string_path_to_tensor<B: Backend>(
@@ -143,58 +152,6 @@ fn compatible_strings<B: Backend>(
     (Tensor::stack(n_compatible, 1), compatible_grammars)
 }
 
-fn split_into_grammars<B: Backend>(
-    string_paths: &[CompletedParse],
-    g: &GrammarParameterization<B>,
-    lexicon: &NeuralLexicon<B>,
-) -> (
-    Tensor<B, 1>,
-    Vec<(usize, Tensor<B, 1, Int>, BTreeSet<usize>)>,
-) {
-    let mut grammar_sets = HashMap::default();
-    for (i, string_path) in string_paths.iter().enumerate().filter(|(_, x)| x.valid) {
-        grammar_sets
-            .entry(string_path.history.attested_nodes().clone())
-            .or_insert(BTreeSet::default())
-            .insert(i as u32);
-    }
-
-    let mut output = vec![];
-    let mut grammar_probs = Tensor::<B, 1>::full([grammar_sets.len()], 0.0, &g.device());
-    for (i, (key, ids)) in grammar_sets.iter().enumerate() {
-        let key_id = *ids.first().unwrap() as usize;
-        let mut all_valid_strings = ids.clone();
-        for (key2, ids) in grammar_sets
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != i)
-            .map(|(_, x)| x)
-        {
-            if key2.is_subset(key) {
-                all_valid_strings.extend(ids);
-            }
-        }
-        let mut all_valid_strings = all_valid_strings.into_iter().collect_vec();
-        all_valid_strings.sort();
-        let string_idx = Tensor::<B, 1, Int>::from_data(
-            Data::from(all_valid_strings.as_slice()).convert(),
-            &g.device(),
-        );
-        let p = string_paths[key_id].grammar_prob(g, lexicon);
-        grammar_probs = grammar_probs.slice_assign([i..i + 1], p);
-
-        output.push((
-            key_id,
-            string_idx,
-            all_valid_strings
-                .iter()
-                .map(|x| (*x).try_into().unwrap())
-                .collect(),
-        ));
-    }
-    (grammar_probs, output)
-}
-
 pub type NeuralGrammarCache =
     Cache<Vec<Vec<NeuralFeature>>, (Vec<StringPath>, Vec<StringProbHistory>)>;
 
@@ -210,61 +167,6 @@ pub fn target_to_vec<B: Backend>(targets: &Tensor<B, 2, Int>) -> Vec<Vec<usize>>
                 .collect()
         })
         .collect()
-}
-
-pub fn get_grammar_with_targets<B: Backend>(
-    g: &GrammarParameterization<B>,
-    lexicon: &NeuralLexicon<B>,
-    targets: Tensor<B, 2, Int>,
-    neural_config: &NeuralConfig,
-) -> anyhow::Result<(
-    Vec<(Vec<Vec<NeuralFeature>>, Tensor<B, 3>, Tensor<B, 1>)>,
-    Tensor<B, 1>,
-    Tensor<B, 1>,
-)> {
-    let target_vec = target_to_vec(&targets);
-    let parses = retrieve_strings(lexicon, g, Some(&target_vec), neural_config)
-        .into_iter()
-        .filter(|x| x.valid)
-        .collect_vec();
-
-    let (_, compatible_loss) = compatible_strings(&parses, &target_vec, g);
-    let (grammar_probs, grammar_idx) = split_into_grammars(&parses, g, lexicon);
-    let string_tensor = string_path_to_tensor(&parses, g, neural_config);
-    let mut grammars = vec![];
-    let mut loss = vec![];
-    for (full_grammar_string_id, grammar_id, grammar_set) in grammar_idx {
-        loss.push(log_sum_exp_dim(
-            compatible_loss.clone().select(1, grammar_id.clone()),
-            1,
-        ));
-        let parse = &parses[full_grammar_string_id];
-        let grammar = lexicon.grammar_features(&parse.history);
-        //(1, n_grammar_strings)
-        let slice: Vec<&CompletedParse> = parses
-            .iter()
-            .enumerate()
-            .filter_map(|(i, p)| {
-                if grammar_set.contains(&i) {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        grammars.push((
-            grammar,
-            string_tensor.clone().select(0, grammar_id.clone()),
-            parse.string_prob(g, lexicon, neural_config, Some(&slice)),
-        ));
-    }
-
-    //(n_grammar_strings, padding_length, n_lemmas)
-    Ok((
-        grammars,
-        Tensor::cat(loss, 1).sum_dim(0).squeeze(0),
-        grammar_probs,
-    ))
 }
 
 #[allow(dead_code)]
@@ -322,14 +224,23 @@ pub fn get_all_parses<B: Backend>(
     g: &GrammarParameterization<B>,
     lexicon: &NeuralLexicon<B>,
     targets: Option<Tensor<B, 2, Int>>,
+    rule_logits: Tensor<B, 2>,
+    lexeme_logits: Tensor<B, 2>,
     neural_config: &NeuralConfig,
-) -> Vec<CompletedParse> {
+) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
     match targets {
         Some(targets) => {
             let target_vec = target_to_vec(&targets);
-            retrieve_strings(lexicon, g, Some(&target_vec), neural_config)
+            retrieve_strings(
+                lexicon,
+                g,
+                Some(&target_vec),
+                rule_logits,
+                lexeme_logits,
+                neural_config,
+            )
         }
-        None => retrieve_strings(lexicon, g, None, neural_config),
+        None => retrieve_strings(lexicon, g, None, rule_logits, lexeme_logits, neural_config),
     }
 }
 

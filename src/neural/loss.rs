@@ -262,7 +262,7 @@ pub fn get_neural_outputs<B: Backend>(
             .map(|p| p.grammar_prob(g, lexicon))
             .collect_vec(),
         0,
-    ) + rule_probs;
+    )
     let validity = Tensor::<B, 1>::from_data(
         Data::from(
             parses

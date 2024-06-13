@@ -19,6 +19,7 @@ struct NeuralParseHolder<'a, B: Backend> {
     parse_buffer: Vec<NeuralBeam<'a, B>>,
     upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
     position: usize,
+    valid_only: bool,
     rule_logits: Tensor<B, 2>,
     lexeme_logits: Tensor<B, 2>,
     config: &'a NeuralConfig,
@@ -209,7 +210,7 @@ impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder
                 return;
             }
         }
-        if beam.pushable(&self.config.parsing_config) {
+        if beam.pushable(&self.config.parsing_config) && (!beam.burnt() || !self.valid_only)  {
             self.parse_buffer.push(beam);
         }
     }
@@ -221,7 +222,7 @@ pub struct NeuralGenerator<'a, B: Backend> {
     parses: NeuralParseHolder<'a, B>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
-    valid_only: bool,
+    valid_only: bool,,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B> {
@@ -246,6 +247,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
             position: 0,
             global_steps: 0,
             lexicon,
+            valid_only,
             config,
             rule_logits,
             lexeme_logits,

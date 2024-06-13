@@ -198,20 +198,18 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
 
 impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder<'a, B> {
     fn add(&mut self, beam: NeuralBeam<'a, B>) {
-        let mut pushable = true;
-
         if let Some(min_log_prob) = self.config.parsing_config.min_log_prob {
             if beam.log_prob() < min_log_prob {
-                pushable = false;
+                return;
             }
         }
 
         if let Some(max_steps) = self.config.parsing_config.max_steps {
             if beam.n_steps() > max_steps {
-                pushable = false;
+                return;
             }
         }
-        if pushable && beam.pushable(&self.config.parsing_config) {
+        if beam.pushable(&self.config.parsing_config) {
             self.parse_buffer.push(beam);
         }
     }
@@ -275,6 +273,24 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parses.pop() {
+            if beam.burnt() {
+                if !self.valid_only {
+                    let (parse, history, valid, rules) = beam.into_completed_parse();
+                    let rule_prob = rules_to_prob(
+                        &rules,
+                        self.parses.rule_logits.clone(),
+                        self.parses.lexeme_logits.clone(),
+                        self.lexicon,
+                    );
+                    return Some((
+                        CompletedParse::new(parse, history, valid, self.lexicon),
+                        rule_prob,
+                    ));
+                } else {
+                    continue;
+                }
+            }
+
             if let Some(moment) = beam.pop_moment() {
                 expand(
                     &mut self.parses,

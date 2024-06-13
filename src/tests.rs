@@ -640,6 +640,7 @@ fn test_loss() -> Result<()> {
             &config,
             false,
         );
+        dbg!(parses.len());
         let val = get_neural_outputs(
             &g,
             &lexicon,

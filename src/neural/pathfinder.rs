@@ -210,7 +210,7 @@ impl<'a, B: Backend> ParseHolder<usize, NeuralBeam<'a, B>> for NeuralParseHolder
                 return;
             }
         }
-        if beam.pushable(&self.config.parsing_config) && (!beam.burnt() || !self.valid_only)  {
+        if beam.pushable(&self.config.parsing_config) && (!beam.burnt() || !self.valid_only) {
             self.parse_buffer.push(beam);
         }
     }
@@ -222,7 +222,7 @@ pub struct NeuralGenerator<'a, B: Backend> {
     parses: NeuralParseHolder<'a, B>,
     move_log_prob: NeuralProbability,
     merge_log_prob: NeuralProbability,
-    valid_only: bool,,
+    valid_only: bool,
 }
 
 impl<'a, B: Backend> NeuralGenerator<'a, B> {

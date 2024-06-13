@@ -27,6 +27,7 @@ pub fn retrieve_strings<B: Backend>(
     rule_logits: Tensor<B, 2>,
     lexeme_logits: Tensor<B, 2>,
     neural_config: &NeuralConfig,
+    valid_only: bool,
 ) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
     let mut parses: Vec<_> = vec![];
     let lens: Option<BTreeSet<usize>> = targets.map(|x| x.iter().map(|x| x.len()).collect());
@@ -39,7 +40,7 @@ pub fn retrieve_strings<B: Backend>(
         rule_logits,
         lexeme_logits,
         neural_config.padding_length,
-        true,
+        valid_only,
         neural_config,
     )
     .filter(|(x, _)| {
@@ -227,6 +228,7 @@ pub fn get_all_parses<B: Backend>(
     rule_logits: Tensor<B, 2>,
     lexeme_logits: Tensor<B, 2>,
     neural_config: &NeuralConfig,
+    valid_only: bool,
 ) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
     match targets {
         Some(targets) => {
@@ -238,9 +240,18 @@ pub fn get_all_parses<B: Backend>(
                 rule_logits,
                 lexeme_logits,
                 neural_config,
+                valid_only,
             )
         }
-        None => retrieve_strings(lexicon, g, None, rule_logits, lexeme_logits, neural_config),
+        None => retrieve_strings(
+            lexicon,
+            g,
+            None,
+            rule_logits,
+            lexeme_logits,
+            neural_config,
+            valid_only,
+        ),
     }
 }
 

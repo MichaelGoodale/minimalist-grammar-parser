@@ -638,6 +638,7 @@ fn test_loss() -> Result<()> {
             rule_logits.clone(),
             lexeme_logits.clone(),
             &config,
+            false,
         );
         let val = get_neural_outputs(
             &g,
@@ -748,6 +749,7 @@ fn random_neural_generation() -> Result<()> {
         rule_logits,
         lexeme_logits,
         &config,
+        false,
     );
     if !parses.is_empty() {
         let val = get_neural_outputs(

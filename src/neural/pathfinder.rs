@@ -105,7 +105,7 @@ pub(crate) fn rules_to_prob<B: Backend>(
             .sum_dim(0)
 }
 
-fn sample<'a, B: Backend>(
+fn softmax_sample<'a, B: Backend>(
     v: impl Iterator<Item = &'a NeuralBeam<'a, B>>,
     rule_logits: &[f64],
     lexeme_logits: &[f64],
@@ -125,6 +125,30 @@ fn sample<'a, B: Backend>(
     p.iter_mut().for_each(|x| *x /= s);
     let dist = WeightedIndex::new(p).unwrap();
     dist.sample(rng)
+}
+
+fn sample<B: Backend>(
+    v: &[NeuralBeam<B>],
+    rule_logits: &[f64],
+    lexeme_logits: &[f64],
+    epsilon: f64,
+    lexicon: &NeuralLexicon<B>,
+    rng: &mut impl Rng,
+) -> usize {
+    let (i, _) = v
+        .iter()
+        .map(|x| {
+            rule_to_prob(rule_logits, lexeme_logits, x.latest_rule(), lexicon)
+                + x.log_prob().into_inner()
+        })
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+        .unwrap();
+    if rng.gen::<f64>() < epsilon {
+        rng.gen_range(0..v.len())
+    } else {
+        i
+    }
 }
 
 impl<'a, B: Backend> NeuralParseHolder<'a, B> {
@@ -173,7 +197,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
             .value;
 
         let sampled_i = sample(
-            self.parse_buffer.iter(),
+            &self.parse_buffer,
             &rule_logits,
             &lexeme_logits,
             self.temperature,

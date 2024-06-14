@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 
 use crate::neural::parameterization::GrammarParameterization;
 
@@ -486,8 +486,14 @@ use burn::{
 };
 use neural::N_TYPES;
 
-#[test]
-fn test_loss() -> Result<()> {
+pub fn get_a_n_lexicon(
+    config: &NeuralConfig,
+    t: f64,
+    rng: &mut impl Rng,
+) -> Result<(
+    GrammarParameterization<Autodiff<NdArray>>,
+    NeuralLexicon<Autodiff<NdArray>>,
+)> {
     let n_lexemes = 2;
     let n_pos = 3;
     let n_categories = 2;
@@ -554,21 +560,47 @@ fn test_loss() -> Result<()> {
     )
     .slice_assign([1..2, 1..2], Tensor::full([1, 1], 10, &dev))
     .slice_assign([0..1, 0..1], Tensor::full([1, 1], 10, &dev));
+    let silent_lemmas =
+        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
+            .slice_assign(
+                [0..n_lexemes, 1..2],
+                Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
+            );
+    let include_lemmas =
+        Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], 10.0, &NdArrayDevice::default());
+    let pad_vector =
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
+    let end_vector =
+        Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 50., 0., 0.], &NdArrayDevice::default());
 
-    let targets = (1..9)
-        .map(|i| {
-            let mut s: [u32; 10] = [0; 10];
-            s.iter_mut().take(i).for_each(|x| *x = 3);
-            s[i] = 1;
-            Tensor::<Autodiff<NdArray>, 1, Int>::from_data(
-                Data::from(s).convert(),
-                &NdArrayDevice::default(),
-            )
-        })
-        .collect::<Vec<_>>();
+    let g = GrammarParameterization::new(
+        types.clone(),
+        type_categories.clone(),
+        licensee_categories.clone(),
+        included_features.clone(),
+        included_licensees.clone(),
+        lemmas.clone(),
+        silent_lemmas.clone(),
+        categories.clone(),
+        weights.clone(),
+        include_lemmas.clone(),
+        pad_vector.clone(),
+        end_vector.clone(),
+        t,
+        false,
+        rng,
+    )?;
+    let lexicon = NeuralLexicon::new_superimposed(&g, config)?;
 
-    let targets = Tensor::stack(targets, 0);
+    Ok((g, lexicon))
+}
+
+#[test]
+fn test_loss() -> Result<()> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+    let mut loss: Vec<f32> = vec![];
+    let rule_logits = Tensor::zeros([50, 6], &NdArrayDevice::default());
+    let lexeme_logits = Tensor::zeros([50, 2], &NdArrayDevice::default());
 
     let config = NeuralConfig {
         n_strings_per_grammar: 20,
@@ -583,53 +615,22 @@ fn test_loss() -> Result<()> {
         ),
     };
 
-    let rule_logits = Tensor::zeros([50, 6], &NdArrayDevice::default());
-    let lexeme_logits = Tensor::zeros([50, n_lexemes], &NdArrayDevice::default());
-    let output_config = NeuralConfig {
-        n_strings_per_grammar: 20,
-        padding_length: 10,
-        temperature: 1.0,
-        compatible_weight: 0.99,
-        parsing_config: ParsingConfig::new(
-            LogProb::new(-200.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            50,
-            200,
-        ),
-    };
-    let silent_lemmas =
-        Tensor::<Autodiff<NdArray>, 2>::full([n_lexemes, 2], -20.0, &NdArrayDevice::default())
-            .slice_assign(
-                [0..n_lexemes, 1..2],
-                Tensor::full([n_lexemes, 1], 50.0, &NdArrayDevice::default()),
-            );
-    let include_lemmas =
-        Tensor::<Autodiff<NdArray>, 1>::full([n_lexemes], 10.0, &NdArrayDevice::default());
-    let pad_vector =
-        Tensor::<Autodiff<NdArray>, 1>::from_floats([50., 0., 0., 0.], &NdArrayDevice::default());
-    let end_vector =
-        Tensor::<Autodiff<NdArray>, 1>::from_floats([0., 50., 0., 0.], &NdArrayDevice::default());
-    let mut loss: Vec<f32> = vec![];
-    for t in [0.1, 0.25, 0.5, 1.0, 5.0] {
-        let g = GrammarParameterization::new(
-            types.clone(),
-            type_categories.clone(),
-            licensee_categories.clone(),
-            included_features.clone(),
-            included_licensees.clone(),
-            lemmas.clone(),
-            silent_lemmas.clone(),
-            categories.clone(),
-            weights.clone(),
-            include_lemmas.clone(),
-            pad_vector.clone(),
-            end_vector.clone(),
-            t,
-            false,
-            &mut rng,
-        )?;
+    let targets = (1..9)
+        .map(|i| {
+            let mut s: [u32; 10] = [0; 10];
+            s.iter_mut().take(i).for_each(|x| *x = 3);
+            s[i] = 1;
+            Tensor::<Autodiff<NdArray>, 1, Int>::from_data(
+                Data::from(s).convert(),
+                &NdArrayDevice::default(),
+            )
+        })
+        .collect::<Vec<_>>();
 
-        let lexicon = NeuralLexicon::new_superimposed(&g, &config)?;
+    let targets = Tensor::stack(targets, 0);
+
+    for t in [0.1, 0.25, 0.5, 1.0, 5.0] {
+        let (g, lexicon) = get_a_n_lexicon(&config, t, &mut rng)?;
         let target_vec = target_to_vec(&targets);
         let (parses, rule_prob) = retrieve_strings(
             &lexicon,

@@ -328,3 +328,116 @@ impl<'a, B: Backend> Iterator for NeuralGenerator<'a, B> {
         None
     }
 }
+
+#[cfg(test)]
+mod test {
+    use burn::backend::{ndarray::NdArrayDevice, Autodiff, NdArray};
+    use logprob::LogProb;
+
+    use super::*;
+    use crate::{lexicon::Lexiconable, tests::get_a_n_lexicon, ParsingConfig};
+
+    #[test]
+    fn check_rule_loss() -> anyhow::Result<()> {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(1);
+        let config = NeuralConfig {
+            n_strings_per_grammar: 20,
+            padding_length: 10,
+            temperature: 1.0,
+            compatible_weight: 0.99,
+            parsing_config: ParsingConfig::new(
+                LogProb::new(-200.0).unwrap(),
+                LogProb::from_raw_prob(0.5).unwrap(),
+                50,
+                200,
+            ),
+        };
+
+        let (_, lexicon) = get_a_n_lexicon(&config, 1.0, &mut rng)?;
+        let mut rules = vec![];
+        for cat in [0, 1] {
+            for (_, j) in lexicon
+                .find_category(&cat)?
+                .iter()
+                .chain(lexicon.find_licensee(&cat)?.iter())
+            {
+                rules.push(Rule::Start(*j));
+                rules.push(Rule::Unmerge {
+                    child: *j,
+                    target: *j,
+                    parent: 0,
+                    child_id: 0,
+                    complement_id: 0,
+                });
+                rules.push(Rule::Scan {
+                    node: *j,
+                    parent: 0,
+                });
+                rules.push(Rule::Unmerge {
+                    child: *j,
+                    target: *j,
+                    parent: 0,
+                    child_id: 0,
+                    complement_id: 0,
+                });
+                rules.push(Rule::UnmergeFromMover {
+                    child: *j,
+                    storage: 0,
+                    parent: 0,
+                    child_id: 0,
+                    stored_id: 0,
+                });
+                rules.push(Rule::UnmoveFromMover {
+                    parent: 0,
+                    storage: 0,
+                    child_id: 0,
+                    stored_id: 0,
+                });
+                rules.push(Rule::Unmove {
+                    target: *j,
+                    child_id: 0,
+                    stored_id: 0,
+                    parent: 0,
+                });
+            }
+        }
+        let rule_logits = Tensor::<Autodiff<NdArray>, 2>::random(
+            [rules.len(), 6],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let lexeme_logits = Tensor::<Autodiff<NdArray>, 2>::random(
+            [rules.len(), 2],
+            burn::tensor::Distribution::Default,
+            &NdArrayDevice::default(),
+        );
+        let rule_prob_slow = rules
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                rule_to_prob(
+                    &rule_logits
+                        .clone()
+                        .slice([i..i + 1, 0..6])
+                        .to_data()
+                        .convert()
+                        .value,
+                    &lexeme_logits
+                        .clone()
+                        .slice([i..i + 1, 0..2])
+                        .to_data()
+                        .convert()
+                        .value,
+                    r,
+                    &lexicon,
+                )
+            })
+            .sum::<f64>() as f32;
+
+        let a: f32 = rules_to_prob(&rules, rule_logits, lexeme_logits, &lexicon)
+            .into_scalar()
+            .elem();
+        approx::assert_relative_eq!(a, rule_prob_slow);
+        Ok(())
+    }
+}

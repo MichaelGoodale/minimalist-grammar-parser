@@ -13,10 +13,8 @@ use minimalist_grammar_parser::{
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
     neural::{
-        loss::{get_all_parses, NeuralConfig},
-        neural_lexicon::NeuralLexicon,
-        parameterization::GrammarParameterization,
-        N_TYPES,
+        loss::NeuralConfig, neural_lexicon::NeuralLexicon,
+        parameterization::GrammarParameterization, N_TYPES,
     },
     Generator, Parser, ParsingConfig,
 };

@@ -370,25 +370,6 @@ fn unmove<
     Ok(())
 }
 
-pub fn neural_expand_child<
-    'a,
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone,
-    L: Lexiconable<T, Category>,
-    B: Beam<T, Probability = L::Probability> + Clone + 'a,
-    H: ParseHolder<T, B>,
->(
-    extender: &mut H,
-    moment: ParseMoment,
-    beam: B,
-    lexicon: &'a L,
-    choice_probs: Vec<LogProb<f64>>,
-    probability_of_moving: L::Probability,
-    probability_of_merging: L::Probability,
-) {
-    let n_children = lexicon.n_children(moment.tree.node);
-}
-
 fn apply_child<
     'a,
     T: Eq + std::fmt::Debug + Clone,

@@ -1,7 +1,7 @@
 use crate::{
     lexicon::Feature,
     neural::{
-        loss::{get_neural_outputs, retrieve_strings, target_to_vec, NeuralConfig},
+        loss::{retrieve_strings, target_to_vec, NeuralConfig},
         neural_lexicon::{NeuralFeature, NeuralLexicon},
     },
 };
@@ -642,19 +642,6 @@ fn test_loss() -> Result<()> {
             false,
         );
         dbg!(parses.len());
-        let val = get_neural_outputs(
-            &g,
-            &lexicon,
-            &parses,
-            rule_prob.unwrap(),
-            &target_vec,
-            &config,
-        )
-        .0;
-        val.backward();
-
-        //assert_eq!(top_g, encoded_grammar);
-        loss.push(val.into_scalar().elem::<f32>());
     }
 
     Ok(())
@@ -753,15 +740,5 @@ fn random_neural_generation() -> Result<()> {
         &config,
         false,
     );
-    if !parses.is_empty() {
-        let val = get_neural_outputs(
-            &g,
-            &lexicon,
-            &parses,
-            rule_prob.unwrap(),
-            &target_vec,
-            &config,
-        );
-    }
     Ok(())
 }

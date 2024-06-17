@@ -1,7 +1,6 @@
 use ahash::HashSet;
 use burn::tensor::{activation::log_softmax, backend::Backend, Bool, Data, Int, Tensor};
 use itertools::Itertools;
-use rand::Rng;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexiconable};
 
@@ -45,12 +44,12 @@ impl CompletedParse {
 
     pub fn new<B: Backend>(
         parse: StringPath,
-        mut history: StringProbHistory,
+        history: StringProbHistory,
         valid: bool,
         lexicon: &NeuralLexicon<B>,
     ) -> Self {
         let mut unattested = vec![true; lexicon.n_lexemes()];
-        let mut grammar_details: Vec<_> = history
+        let grammar_details: Vec<_> = history
             .attested_nodes()
             .iter()
             .filter_map(|n| match n {

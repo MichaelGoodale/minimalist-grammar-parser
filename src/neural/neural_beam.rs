@@ -95,10 +95,9 @@ impl IntoIterator for StringProbHistory {
 #[derive(Debug, Clone)]
 pub struct NeuralBeam<'a, B: Backend> {
     log_probability: NeuralProbability,
-    max_log_prob: LogProb<f64>,
     pub queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentence: StringPath,
-    sentence_guides: Vec<(&'a [usize], LogProb<f64>)>,
+    target: Option<&'a [usize]>,
     lexicon: &'a NeuralLexicon<B>,
     g: &'a GrammarParameterization<B>,
     n_features: Vec<Option<(usize, usize)>>,
@@ -112,16 +111,13 @@ pub struct NeuralBeam<'a, B: Backend> {
 }
 
 impl<'a, B: Backend> NeuralBeam<'a, B> {
-    pub fn new<T>(
+    pub fn new(
         lexicon: &'a NeuralLexicon<B>,
         g: &'a GrammarParameterization<B>,
         initial_category: usize,
-        sentences: Option<&'a [T]>,
+        target: Option<&'a [usize]>,
         max_string_len: usize,
-    ) -> Result<impl Iterator<Item = NeuralBeam<'a, B>> + 'a>
-    where
-        T: AsRef<[usize]>,
-    {
+    ) -> Result<impl Iterator<Item = NeuralBeam<'a, B>> + 'a> {
         let category_indexes = lexicon.find_category(&initial_category)?;
         Ok(category_indexes.iter().map(move |(log_probability, node)| {
             let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
@@ -165,11 +161,8 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 })
                 .collect();
 
-            let log_one = LogProb::new(0.0).unwrap();
-
             NeuralBeam {
                 lexicon,
-                max_log_prob: log_probability.2,
                 log_probability: *log_probability,
                 n_features,
                 g,
@@ -177,9 +170,7 @@ impl<'a, B: Backend> NeuralBeam<'a, B> {
                 rules: vec![Rule::Start(*node)],
                 burnt: false,
                 generated_sentence: StringPath(vec![]),
-                sentence_guides: sentences
-                    .map(|x| x.iter().map(|x| (x.as_ref(), log_one)).collect())
-                    .unwrap_or_default(),
+                target,
                 probability_path: history,
                 top_id: 0,
                 steps: 0,
@@ -229,7 +220,7 @@ impl<B: Backend> Eq for NeuralBeam<'_, B> {}
 
 impl<B: Backend> Ord for NeuralBeam<'_, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.max_log_prob.cmp(&other.max_log_prob)
+        self.log_probability.2.cmp(&other.log_probability.2)
     }
 }
 
@@ -287,34 +278,17 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
             | NeuralProbabilityRecord::MergeRuleProb => match self.probability_path.0.entry(record)
             {
                 Entry::Occupied(entry) => {
-                    /* LogProb solely means the prob of grammar + strings given grammar, not the
-                    * prob of string.
-                    match entry.key() {
-                        NeuralProbabilityRecord::MergeRuleProb
-                        | NeuralProbabilityRecord::MoveRuleProb => {
-                            self.log_probability.2 += new_prob;
-                            self.max_log_prob += new_prob;
-                        }
-                        NeuralProbabilityRecord::Lexeme { .. } => {
-                            let w = LogProb::new(-(self.lexicon.n_lexemes() as f64).ln()).unwrap();
-                            self.log_probability.2 += w;
-                            self.max_log_prob += w;
-                        }
-                        _ => (),
-                    }*/
                     *entry.into_mut() += 1;
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(1);
                     self.log_probability.2 += new_prob;
-                    self.max_log_prob += new_prob;
                 }
             },
             NeuralProbabilityRecord::Node(n) => {
                 let nf = NodeFeature::Node(n);
                 if !self.probability_path.1.contains(&nf) {
                     self.log_probability.2 += new_prob;
-                    self.max_log_prob += new_prob;
                 }
                 self.burnt |= self.lexicon.has_alternative(&n, &self.probability_path.1);
                 self.probability_path.1.insert(nf);
@@ -386,24 +360,13 @@ impl<B: Backend> Beam<usize> for NeuralBeam<'_, B> {
         beam.queue.shrink_to_fit();
         if let Some(x) = s {
             let position = beam.generated_sentence.0.len();
-            beam.sentence_guides
-                .iter_mut()
-                .for_each(|(sentence, mut prob)| {
-                    let lemma: usize = *sentence.get(position).unwrap_or(&0);
-                    prob += match lemma {
-                        0 => LogProb::new(-1000.0).unwrap(),
-                        _ => *beam.g.lemma_lookups().get(&(*x, lemma)).unwrap(),
-                    }
-                });
-            beam.generated_sentence.0.push(*x);
-
-            beam.max_log_prob = beam.log_probability.2
-                + beam
-                    .sentence_guides
-                    .iter()
-                    .map(|(_, p)| *p)
-                    .max()
-                    .unwrap_or_else(|| LogProb::new(0.0).unwrap());
+            if let Some(lemma) = beam.target.map(|x| x.get(position).unwrap_or(&0)) {
+                beam.generated_sentence.0.push(*x);
+                beam.log_probability.2 += match lemma {
+                    0 => LogProb::new(-1000.0).unwrap(),
+                    _ => *beam.g.lemma_lookups().get(&(*x, *lemma)).unwrap(),
+                }
+            }
         } else {
             beam.n_empties += 1;
         }

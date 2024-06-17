@@ -1,14 +1,13 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::neural_beam::{StringPath, StringProbHistory};
 use super::neural_lexicon::{NeuralFeature, NeuralLexicon};
 use super::parameterization::GrammarParameterization;
-use super::pathfinder::{rules_to_prob, NeuralGenerator};
+use super::pathfinder::NeuralGenerator;
 use super::CompletedParse;
 use crate::ParsingConfig;
 use burn::tensor::{backend::Backend, Tensor};
 use burn::tensor::{Bool, Data, ElementConversion, Int};
-use itertools::Itertools;
 use moka::sync::Cache;
 
 #[derive(Clone, Debug)]
@@ -23,7 +22,7 @@ pub struct NeuralConfig {
 pub fn retrieve_strings<B: Backend>(
     lexicon: &NeuralLexicon<B>,
     g: &GrammarParameterization<B>,
-    targets: Option<&[Vec<usize>]>,
+    target: Option<&[usize]>,
     rule_logits: Tensor<B, 2>,
     lexeme_logits: Tensor<B, 2>,
     neural_config: &NeuralConfig,
@@ -35,7 +34,7 @@ pub fn retrieve_strings<B: Backend>(
     for (result, rule_prob) in NeuralGenerator::new(
         lexicon,
         g,
-        targets,
+        target,
         rule_logits,
         lexeme_logits,
         neural_config.padding_length,
@@ -162,8 +161,7 @@ pub fn target_to_vec<B: Backend>(targets: &Tensor<B, 2, Int>) -> Vec<Vec<usize>>
         .collect()
 }
 
-#[allow(dead_code)]
-fn prefix_loss<B: Backend>(
+pub fn prefix_loss<B: Backend>(
     strings: &[CompletedParse],
     targets: Tensor<B, 2, Int>,
     target_vec: &[Vec<usize>],
@@ -211,94 +209,4 @@ fn prefix_loss<B: Backend>(
     } else {
         prefix_loss
     }
-}
-
-pub fn get_all_parses<B: Backend>(
-    g: &GrammarParameterization<B>,
-    lexicon: &NeuralLexicon<B>,
-    targets: Option<Tensor<B, 2, Int>>,
-    rule_logits: Tensor<B, 2>,
-    lexeme_logits: Tensor<B, 2>,
-    neural_config: &NeuralConfig,
-    valid_only: bool,
-) -> (Vec<CompletedParse>, Option<Tensor<B, 1>>) {
-    match targets {
-        Some(targets) => {
-            let target_vec = target_to_vec(&targets);
-            retrieve_strings(
-                lexicon,
-                g,
-                Some(&target_vec),
-                rule_logits,
-                lexeme_logits,
-                neural_config,
-                valid_only,
-            )
-        }
-        None => retrieve_strings(
-            lexicon,
-            g,
-            None,
-            rule_logits,
-            lexeme_logits,
-            neural_config,
-            valid_only,
-        ),
-    }
-}
-
-pub fn get_neural_outputs<B: Backend>(
-    g: &GrammarParameterization<B>,
-    lexicon: &NeuralLexicon<B>,
-    parses: &[CompletedParse],
-    rule_probs: Tensor<B, 1>,
-    target_vec: &[Vec<usize>],
-    neural_config: &NeuralConfig,
-) -> (Tensor<B, 1>, Tensor<B, 1>) {
-    let (n_compatible, compatible_loss) = compatible_strings(parses, target_vec, g);
-    let grammar_probs = Tensor::cat(
-        parses
-            .iter()
-            .map(|p| p.grammar_prob(g, lexicon))
-            .collect_vec(),
-        0,
-    );
-    let validity = Tensor::<B, 1>::from_data(
-        Data::from(
-            parses
-                .iter()
-                .map(|p| if p.valid { 1.0 } else { 0.0 })
-                .collect_vec()
-                .as_slice(),
-        )
-        .convert(),
-        &g.device(),
-    );
-
-    let string_probs = parses
-        .iter()
-        .map(|p| p.string_prob(g, lexicon, neural_config, None))
-        .collect_vec();
-
-    let string_probs: Tensor<B, 1> = Tensor::cat(string_probs, 0);
-
-    let rewards = n_compatible.clone();
-    let rewards = rewards.mask_fill(
-        validity
-            .unsqueeze_dim(0)
-            .repeat(0, target_vec.len())
-            .equal_elem(-1.0),
-        -0.0001,
-    );
-    let p_of_s =
-        rewards.clone() * (compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0));
-
-    let (max_reward, _idx) = Tensor::max_dim_with_indices(rewards, 0);
-    //let idx = idx.squeeze(0);
-    //let p_of_s: Tensor<B, 2> = p_of_s.select(0, idx.clone());
-    //let loss = log_sum_exp_dim(
-    //    compatible_loss + (string_probs + grammar_probs).unsqueeze_dim(0),
-    //    1,
-    //);
-    (p_of_s.mean().reshape([1]), max_reward.mean())
 }

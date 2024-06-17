@@ -229,7 +229,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
     pub fn new(
         lexicon: &'a NeuralLexicon<B>,
         g: &'a GrammarParameterization<B>,
-        targets: Option<&'a [Vec<usize>]>,
+        target: Option<&'a [usize]>,
         rule_logits: Tensor<B, 2>,
         lexeme_logits: Tensor<B, 2>,
         max_string_length: usize,
@@ -237,7 +237,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         config: &'a NeuralConfig,
     ) -> NeuralGenerator<'a, B> {
         let mut parses = Vec::with_capacity(config.parsing_config.max_beams.unwrap_or(100000));
-        parses.extend(NeuralBeam::new(lexicon, g, 0, targets, max_string_length).unwrap());
+        parses.extend(NeuralBeam::new(lexicon, g, 0, target, max_string_length).unwrap());
         let parses = NeuralParseHolder {
             temperature: g.temperature(),
             rng: StdRng::from_entropy(),

@@ -10,6 +10,7 @@ use super::{
 use crate::parsing::{beam::Beam, expand, ParseHolder, Rule};
 use burn::prelude::*;
 use itertools::Itertools;
+use min_max_heap::MinMaxHeap;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use rand_distr::{Distribution, WeightedIndex};
 
@@ -17,7 +18,7 @@ use rand_distr::{Distribution, WeightedIndex};
 struct NeuralParseHolder<'a, B: Backend> {
     next_parse: Option<NeuralBeam<'a, B>>,
     parse_buffer: Vec<NeuralBeam<'a, B>>,
-    upcoming_parses: BinaryHeap<NeuralBeam<'a, B>>,
+    upcoming_parses: MinMaxHeap<NeuralBeam<'a, B>>,
     position: usize,
     valid_only: bool,
     rule_logits: Tensor<B, 2>,
@@ -146,7 +147,7 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
 
     fn choose(&mut self) {
         if self.parse_buffer.is_empty() {
-            self.next_parse = self.upcoming_parses.pop();
+            self.next_parse = self.upcoming_parses.pop_max();
             return;
         }
 
@@ -194,6 +195,11 @@ impl<'a, B: Backend> NeuralParseHolder<'a, B> {
                         }
                     }),
             );
+        if let Some(max_beams) = self.config.parsing_config.max_beams {
+            while self.upcoming_parses.len() > max_beams {
+                self.upcoming_parses.pop_min();
+            }
+        }
     }
 }
 
@@ -241,7 +247,7 @@ impl<'a, B: Backend> NeuralGenerator<'a, B> {
         let parses = NeuralParseHolder {
             temperature: g.temperature(),
             rng: StdRng::from_entropy(),
-            upcoming_parses: BinaryHeap::new(),
+            upcoming_parses: MinMaxHeap::new(),
             next_parse: None,
             parse_buffer: parses,
             position: 0,

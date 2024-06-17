@@ -41,6 +41,14 @@ pub fn retrieve_strings<B: Backend>(
         valid_only,
         neural_config,
     )
+    .filter(|(p, _)| {
+        if let Some(l) = target {
+            let l = l.len();
+            p.len() == l
+        } else {
+            true
+        }
+    })
     .take(neural_config.n_strings_per_grammar)
     {
         parses.push(result);

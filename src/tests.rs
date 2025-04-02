@@ -238,8 +238,40 @@ fn generation() -> Result<()> {
     }
     Ok(())
 }
-use grammars::COPY_LANGUAGE;
+use grammars::{ALT_COPY_LANGUAGE, COPY_LANGUAGE};
 use itertools::{self, Itertools};
+
+#[test]
+fn clear_copy_language() -> anyhow::Result<()> {
+    let v: Vec<_> = ALT_COPY_LANGUAGE
+        .split('\n')
+        .map(SimpleLexicalEntry::parse)
+        .collect::<Result<Vec<_>>>()?;
+    let lex = Lexicon::new(v);
+    let mut strings = HashSet::<Vec<&str>>::new();
+    strings.insert(vec!["S", "E"]);
+
+    for i in 1..=5 {
+        strings.extend(
+            itertools::repeat_n(vec!["a", "b"].into_iter(), i)
+                .multi_cartesian_product()
+                .map(|mut x| {
+                    x.append(&mut x.clone());
+                    x.insert(0, "S");
+                    x.push("E");
+                    x
+                }),
+        );
+    }
+
+    let generated: HashSet<_> = Generator::new(&lex, 'T', &CONFIG)?
+        .take(strings.len())
+        .map(|(_, s, _)| s)
+        .collect();
+
+    assert_eq!(generated, strings);
+    Ok(())
+}
 
 #[test]
 fn copy_language() -> anyhow::Result<()> {

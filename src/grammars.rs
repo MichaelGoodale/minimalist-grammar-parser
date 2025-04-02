@@ -25,3 +25,10 @@ a::=A +l T -l
 a::=T +r A -r
 b::=B +l T -l
 b::=T +r B -r";
+
+pub const ALT_COPY_LANGUAGE: &str = "E::=T +r +l T
+S::T -r -l
+a::=A +l T -l
+a::=T +r A -r
+b::=B +l T -l
+b::=T +r B -r";

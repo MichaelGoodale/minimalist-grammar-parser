@@ -47,6 +47,7 @@ impl From<bool> for Direction {
 pub struct ParsingConfig {
     min_log_prob: LogProb<f64>,
     move_prob: LogProb<f64>,
+    dont_move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
 }
@@ -59,9 +60,11 @@ impl ParsingConfig {
         max_beams: usize,
     ) -> ParsingConfig {
         let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
+        let merge_prob = move_prob.opposite_prob();
         ParsingConfig {
             min_log_prob,
             move_prob,
+            dont_move_prob: merge_prob,
             max_steps,
             max_beams,
         }
@@ -101,8 +104,7 @@ pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone
 {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, FuzzyBeam<'a, T>>,
-    move_log_prob: LogProb<f64>,
-    merge_log_prob: LogProb<f64>,
+    config: &'a ParsingConfig,
 }
 
 impl<'a, T, Category> FuzzyParser<'a, T, Category>
@@ -123,8 +125,7 @@ where
         parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, true)?);
         Ok(FuzzyParser {
             lexicon,
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -146,8 +147,7 @@ where
         parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, false)?);
         Ok(FuzzyParser {
             lexicon,
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -171,8 +171,7 @@ where
                     moment,
                     beam,
                     self.lexicon,
-                    self.move_log_prob,
-                    self.merge_log_prob,
+                    self.config,
                 );
             } else if let Some(x) = beam.yield_good_parse() {
                 return Some(x);
@@ -186,8 +185,7 @@ where
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, ParseBeam<'a, T>>,
-    move_log_prob: LogProb<f64>,
-    merge_log_prob: LogProb<f64>,
+    config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
 }
 
@@ -211,9 +209,8 @@ where
         )?);
         Ok(Parser {
             lexicon,
-            move_log_prob: config.move_prob,
+            config,
             buffer: vec![],
-            merge_log_prob: config.move_prob.opposite_prob(),
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -238,8 +235,7 @@ where
         Ok(Parser {
             lexicon,
             buffer: vec![],
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -267,8 +263,7 @@ where
         Ok(Parser {
             lexicon,
             buffer: vec![],
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -296,8 +291,7 @@ where
         Ok(Parser {
             lexicon,
             buffer: vec![],
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -323,8 +317,7 @@ where
                         moment,
                         beam,
                         self.lexicon,
-                        self.move_log_prob,
-                        self.merge_log_prob,
+                        self.config,
                     );
                 } else if let Some((mut good_parses, p, rules)) = beam.yield_good_parse() {
                     if let Some(next_sentence) = good_parses.next() {
@@ -347,8 +340,7 @@ where
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<'a, T, GeneratorBeam<T>>,
-    move_log_prob: LogProb<f64>,
-    merge_log_prob: LogProb<f64>,
+    config: &'a ParsingConfig,
 }
 
 impl<'a, T, Category> Generator<'a, T, Category>
@@ -365,8 +357,7 @@ where
         parse_heap.push(GeneratorBeam::new(lexicon, initial_category, true)?);
         Ok(Generator {
             lexicon,
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -384,8 +375,7 @@ where
         parse_heap.push(GeneratorBeam::new(lexicon, initial_category, false)?);
         Ok(Generator {
             lexicon,
-            move_log_prob: config.move_prob,
-            merge_log_prob: config.move_prob.opposite_prob(),
+            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -410,8 +400,7 @@ where
                     moment,
                     beam,
                     self.lexicon,
-                    self.move_log_prob,
-                    self.merge_log_prob,
+                    self.config,
                 );
             } else if beam.queue.is_empty() {
                 return Some((beam.log_probability, beam.sentence, beam.rules.to_vec()));

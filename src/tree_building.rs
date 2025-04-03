@@ -142,6 +142,7 @@ mod tests {
         static ref CONFIG: ParsingConfig = ParsingConfig {
             min_log_prob: LogProb::new(-128.0).unwrap(),
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
+            dont_move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 10000,
             max_beams: 100,
         };

@@ -1,5 +1,5 @@
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
-use crate::{Direction, ParseHeap};
+use crate::{Direction, ParseHeap, ParsingConfig};
 use anyhow::Result;
 use beam::Beam;
 use logprob::LogProb;
@@ -61,10 +61,9 @@ fn unmerge_from_mover<
     cat: &Category,
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
-    inverse_rule_prob: LogProb<f64>,
-) -> LogProb<f64> {
-    let mut output = LogProb::new(0.0).unwrap();
+    config: &ParsingConfig,
+) -> bool {
+    let mut new_beam = false;
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -93,7 +92,7 @@ fn unmerge_from_mover<
                             .collect(),
                     ));
 
-                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    *beam.log_probability_mut() += stored_prob + child_prob + config.move_prob;
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmergeFromMover {
                             child: child_node,
@@ -106,13 +105,13 @@ fn unmerge_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
-                    output = inverse_rule_prob;
+                    new_beam = true;
                 }
                 _ => (),
             }
         }
     }
-    output
+    new_beam
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -187,10 +186,9 @@ fn unmove_from_mover<
     cat: &Category,
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
-    rule_prob: LogProb<f64>,
-    inverse_rule_prob: LogProb<f64>,
-) -> LogProb<f64> {
-    let mut output = LogProb::new(0.0).unwrap();
+    config: &ParsingConfig,
+) -> bool {
+    let mut new_beam_found = false;
     for mover in moment.movers.iter() {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
@@ -215,7 +213,7 @@ fn unmove_from_mover<
                             }))
                             .collect(),
                     ));
-                    *beam.log_probability_mut() += stored_prob + child_prob + rule_prob;
+                    *beam.log_probability_mut() += stored_prob + child_prob + config.move_prob;
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmoveFromMover {
                             parent: moment.tree.id,
@@ -227,13 +225,13 @@ fn unmove_from_mover<
                     *beam.top_id_mut() += 2;
                     beam.inc();
                     v.push(beam);
-                    output = inverse_rule_prob;
+                    new_beam_found = true;
                 }
                 _ => (),
             }
         }
     }
-    output
+    new_beam_found
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -295,65 +293,60 @@ pub fn expand<
     moment: ParseMoment,
     beam: B,
     lexicon: &'a Lexicon<T, Category>,
-    probability_of_moving: LogProb<f64>,
-    probability_of_merging: LogProb<f64>,
+    config: &ParsingConfig,
 ) {
-    #[cfg(test)]
-    {
-        assert_eq!(
-            probability_of_moving
-                .add_log_prob(probability_of_merging)
-                .unwrap(),
-            LogProb::new(0.0).unwrap()
-        )
-    }
     let n_children = lexicon.n_children(moment.tree.node);
     let new_beams = itertools::repeat_n(beam, n_children);
 
     new_beams
         .zip(lexicon.children_of(moment.tree.node))
-        .for_each(|(beam, child_node)| {
-            let (child, child_prob) = lexicon.get(child_node).unwrap();
-            match &child {
-                FeatureOrLemma::Lemma(s) if moment.no_movers() => {
-                    B::scan(extender, &moment, beam, s, child_node, child_prob);
+        .for_each(
+            |(beam, child_node)| match lexicon.get(child_node).unwrap() {
+                (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
+                    B::scan(extender, &moment, beam, s, child_node, p);
                 }
-                FeatureOrLemma::Feature(Feature::Selector(cat, dir)) => {
-                    let rule_prob = unmerge_from_mover(
-                        extender,
-                        lexicon,
-                        &moment,
-                        &beam,
-                        cat,
-                        child_node,
-                        child_prob,
-                        probability_of_moving,
-                        probability_of_merging,
+                (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {
+                    let new_beam_found = unmerge_from_mover(
+                        extender, lexicon, &moment, &beam, cat, child_node, p, config,
                     );
                     let _ = unmerge(
-                        extender, lexicon, &moment, beam, cat, dir, child_node, child_prob,
-                        rule_prob,
-                    );
-                }
-                FeatureOrLemma::Feature(Feature::Licensor(cat)) => {
-                    let rule_prob = unmove_from_mover(
                         extender,
                         lexicon,
                         &moment,
-                        &beam,
+                        beam,
                         cat,
+                        dir,
                         child_node,
-                        child_prob,
-                        probability_of_moving,
-                        probability_of_merging,
+                        p,
+                        if new_beam_found {
+                            config.dont_move_prob
+                        } else {
+                            LogProb::new(0.0).unwrap()
+                        },
+                    );
+                }
+                (FeatureOrLemma::Feature(Feature::Licensor(cat)), p) => {
+                    let new_beam_found = unmove_from_mover(
+                        extender, lexicon, &moment, &beam, cat, child_node, p, config,
                     );
                     let _ = unmove(
-                        extender, lexicon, &moment, beam, cat, child_node, child_prob, rule_prob,
+                        extender,
+                        lexicon,
+                        &moment,
+                        beam,
+                        cat,
+                        child_node,
+                        p,
+                        if new_beam_found {
+                            config.dont_move_prob
+                        } else {
+                            LogProb::new(0.0).unwrap()
+                        },
                     );
                 }
                 _ => (),
-            }
-        });
+            },
+        );
 }
 
 pub mod beam;

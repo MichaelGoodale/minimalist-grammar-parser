@@ -150,6 +150,7 @@ fn generation() -> Result<()> {
         &ParsingConfig {
             min_log_prob: LogProb::new(-64.0).unwrap(),
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
+            dont_move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams: 1000,
         },

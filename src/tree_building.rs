@@ -157,7 +157,7 @@ mod tests {
         let lex = Lexicon::new(v);
         let rules = Parser::new(
             &lex,
-            'C',
+            "C",
             &"which queen prefers the wine"
                 .split(' ')
                 .collect::<Vec<_>>(),

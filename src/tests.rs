@@ -23,7 +23,7 @@ fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
     let lexicon = Lexicon::new(v);
     let s: Vec<_> = vec!["hello"];
-    Parser::new(&lexicon, 'h', &s, &CONFIG)?.next().unwrap();
+    Parser::new(&lexicon, "h", &s, &CONFIG)?.next().unwrap();
     Ok(())
 }
 
@@ -36,12 +36,12 @@ fn simple_merge() -> Result<()> {
         SimpleLexicalEntry::parse("beer::n")?,
     ];
     let lexicon = Lexicon::new(v);
-    Parser::new(&lexicon, 'd', &["the", "man"], &CONFIG)?
+    Parser::new(&lexicon, "d", &["the", "man"], &CONFIG)?
         .next()
         .unwrap();
     Parser::new(
         &lexicon,
-        'v',
+        "v",
         &"the man drinks the beer".split(' ').collect::<Vec<_>>(),
         &CONFIG,
     )?
@@ -49,7 +49,7 @@ fn simple_merge() -> Result<()> {
     .unwrap();
     assert!(Parser::new(
         &lexicon,
-        'd',
+        "d",
         &"drinks the man the beer".split(' ').collect::<Vec<_>>(),
         &CONFIG
     )?
@@ -75,7 +75,7 @@ fn moving_parse() -> anyhow::Result<()> {
     ]
     .into_iter()
     {
-        Parser::new(&lex, 'C', &sentence.split(' ').collect::<Vec<_>>(), &CONFIG)?
+        Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &CONFIG)?
             .next()
             .unwrap();
     }
@@ -138,7 +138,7 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(Parser::new(&lex, 'C', &bad_sentence, &CONFIG)?
+        assert!(Parser::new(&lex, "C", &bad_sentence, &CONFIG)?
             .next()
             .is_none());
     }
@@ -154,7 +154,7 @@ fn generation() -> Result<()> {
     let lex = Lexicon::new(v);
     let mut v: Vec<_> = Generator::new(
         &lex,
-        'C',
+        "C",
         &ParsingConfig {
             min_log_prob: LogProb::new(-64.0).unwrap(),
             move_prob: LogProb::from_raw_prob(0.5).unwrap(),
@@ -219,13 +219,13 @@ fn generation() -> Result<()> {
     x.sort_by(|a, b| a.1.cmp(&b.1));
     v.sort_by(|a, b| a.1.cmp(&b.1));
     let strings: Vec<_> = x.iter().map(|(_, s)| s.as_slice()).collect();
-    let mut outputs: Vec<_> = Parser::new_multiple(&lex, 'C', &strings, &CONFIG)?
+    let mut outputs: Vec<_> = Parser::new_multiple(&lex, "C", &strings, &CONFIG)?
         .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
         .collect();
     outputs.sort_by(|a, b| a.1.cmp(&b.1));
     assert_eq!(outputs, x);
 
-    let mut outputs: Vec<_> = FuzzyParser::new(&lex, 'C', &strings, &CONFIG)?
+    let mut outputs: Vec<_> = FuzzyParser::new(&lex, "C", &strings, &CONFIG)?
         .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
         .collect();
     outputs.sort_by(|a, b| a.1.cmp(&b.1));
@@ -234,7 +234,7 @@ fn generation() -> Result<()> {
     for ((p, sentence, _), (correct_p, correct_sentence)) in v.into_iter().zip(x) {
         let correct_sentence = correct_sentence.into_iter().collect();
         assert_eq!((p.into_inner(), &sentence), (correct_p, &correct_sentence));
-        Parser::new(&lex, 'C', &sentence, &CONFIG)?.next().unwrap();
+        Parser::new(&lex, "C", &sentence, &CONFIG)?.next().unwrap();
     }
     Ok(())
 }
@@ -264,7 +264,7 @@ fn clear_copy_language() -> anyhow::Result<()> {
         );
     }
 
-    let generated: HashSet<_> = Generator::new(&lex, 'T', &CONFIG)?
+    let generated: HashSet<_> = Generator::new(&lex, "T", &CONFIG)?
         .take(strings.len())
         .map(|(_, s, _)| s)
         .collect();
@@ -294,13 +294,13 @@ fn copy_language() -> anyhow::Result<()> {
         );
     }
 
-    let generated: HashSet<_> = Generator::new(&lex, 'T', &CONFIG)?
+    let generated: HashSet<_> = Generator::new(&lex, "T", &CONFIG)?
         .take(strings.len())
         .map(|(_, s, _)| s)
         .collect();
 
     let ordered_strings: Vec<_> = strings.iter().collect();
-    let generated_guided: HashSet<_> = FuzzyParser::new(&lex, 'T', &ordered_strings, &CONFIG)?
+    let generated_guided: HashSet<_> = FuzzyParser::new(&lex, "T", &ordered_strings, &CONFIG)?
         .take(strings.len())
         .map(|(_, s, _)| s)
         .collect();
@@ -308,9 +308,9 @@ fn copy_language() -> anyhow::Result<()> {
     assert_eq!(generated, strings);
     assert_eq!(generated_guided, strings);
     for s in strings.iter() {
-        Parser::new(&lex, 'T', s, &CONFIG)?.next().unwrap();
+        Parser::new(&lex, "T", s, &CONFIG)?.next().unwrap();
     }
-    let rules = Generator::new(&lex, 'T', &CONFIG)?
+    let rules = Generator::new(&lex, "T", &CONFIG)?
         .take(1)
         .last()
         .unwrap()
@@ -347,7 +347,7 @@ fn copy_language() -> anyhow::Result<()> {
 #[test]
 fn degenerate_grammar() -> Result<()> {
     let lexicon = Lexicon::new(vec![LexicalEntry::parse("a::=c c")?]);
-    let x: Vec<_> = Generator::new(&lexicon, 'c', &CONFIG)?.take(50).collect();
+    let x: Vec<_> = Generator::new(&lexicon, "c", &CONFIG)?.take(50).collect();
     assert_eq!(x, vec![]);
     Ok(())
 }
@@ -364,7 +364,7 @@ f::+g c";
         .map(LexicalEntry::parse)
         .collect::<Result<Vec<_>>>()?;
     let lexicon = Lexicon::new(s);
-    let x: Vec<_> = Generator::new(&lexicon, 'c', &CONFIG)?
+    let x: Vec<_> = Generator::new(&lexicon, "c", &CONFIG)?
         .take(50)
         .map(|(_, x, _)| x)
         .collect();
@@ -383,7 +383,7 @@ fn capped_beams() -> Result<()> {
     let max_beams = 12;
     let g: Vec<_> = Generator::new(
         &lexicon,
-        'c',
+        "c",
         &ParsingConfig::new(
             LogProb::new(-128.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -411,14 +411,14 @@ fn simple_movement() -> Result<()> {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>>>()?,
     );
-    let v: Vec<_> = Generator::new(&lexicon, 't', &CONFIG)?
+    let v: Vec<_> = Generator::new(&lexicon, "t", &CONFIG)?
         .take(50)
         .map(|(_, s, _)| s)
         .collect();
     assert_eq!(v, vec![["john", "will", "eat", "the", "cake"]]);
     Parser::new(
         &lexicon,
-        't',
+        "t",
         &["john", "will", "eat", "the", "cake"],
         &CONFIG,
     )?
@@ -453,7 +453,7 @@ fn proper_distributions() -> Result<()> {
     for (prob, s) in v.iter() {
         let (p, _, _) = Parser::new(
             &lexicon,
-            '0',
+            "0",
             s,
             &ParsingConfig::new(
                 LogProb::new(-128.0).unwrap(),
@@ -469,7 +469,7 @@ fn proper_distributions() -> Result<()> {
 
     let g: Vec<_> = Generator::new(
         &lexicon,
-        '0',
+        "0",
         &ParsingConfig::new(
             LogProb::new(-128.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -484,7 +484,7 @@ fn proper_distributions() -> Result<()> {
 
     let parse: Vec<_> = Parser::new_multiple(
         &lexicon,
-        '0',
+        "0",
         &generated_sentences,
         &ParsingConfig::new(
             LogProb::new(-128.0).unwrap(),

@@ -1,6 +1,7 @@
 use crate::Direction;
 use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
+use chumsky::{prelude::*, text::inline_whitespace};
 use logprob::{LogProb, Softmax};
 use petgraph::{
     graph::DiGraph,
@@ -17,37 +18,63 @@ pub enum Feature<Category: Eq> {
     Licensee(Category),
 }
 
-impl Feature<char> {
-    fn parse(s: &str) -> Result<Feature<char>> {
-        if s.chars().nth(2).is_some() {
-            bail!("This feature has too many characters!")
-        } else if s.starts_with('+') {
-            Ok(Feature::Licensor(
-                s.chars().nth(1).context("No character!")?,
-            ))
-        } else if s.starts_with('-') {
-            Ok(Feature::Licensee(
-                s.chars().nth(1).context("No character!")?,
-            ))
-        } else if s.starts_with('=') {
-            Ok(Feature::Selector(
-                s.chars().nth(1).context("No character!")?,
-                Direction::Left,
-            ))
-        } else if s.ends_with('=') {
-            Ok(Feature::Selector(
-                s.chars().next().context("No character!")?,
-                Direction::Right,
-            ))
-        } else {
-            if s.chars().nth(1).is_some() {
-                bail!("This feature has too many characters!");
-            }
-            Ok(Feature::Category(
-                s.chars().next().context("No character!")?,
-            ))
-        }
-    }
+fn parser<'src>(
+) -> impl Parser<'src, &'src str, LexicalEntry<&'src str, &'src str>, extra::Err<Rich<'src, char>>>
+{
+    let feature_name = any()
+        .and_is(none_of(['\t', '\n', ' ', '+', '-', '=', ':', '\r']))
+        .repeated()
+        .at_least(1)
+        .labelled("feature name")
+        .to_slice();
+
+    let pre_category_features = choice((
+        feature_name
+            .then_ignore(just("="))
+            .map(|x| Feature::Selector(x, Direction::Right))
+            .labelled("right selector"),
+        just("=")
+            .ignore_then(feature_name)
+            .map(|x| Feature::Selector(x, Direction::Left))
+            .labelled("left selector"),
+        just("+")
+            .ignore_then(feature_name)
+            .map(Feature::Licensor)
+            .labelled("licensor"),
+    ));
+
+    choice((just("ε").to(None), text::ident().or_not()))
+        .labelled("lemma")
+        .then_ignore(just("::").padded().labelled("lemma feature seperator"))
+        .then(
+            pre_category_features
+                .separated_by(inline_whitespace())
+                .allow_trailing()
+                .collect::<Vec<_>>()
+                .labelled("pre category features"),
+        )
+        .then(
+            feature_name
+                .map(Feature::Category)
+                .labelled("category feature"),
+        )
+        .then(
+            just('-')
+                .ignore_then(feature_name)
+                .map(Feature::Licensee)
+                .labelled("licensee")
+                .separated_by(inline_whitespace())
+                .allow_leading()
+                .allow_trailing()
+                .collect::<Vec<_>>()
+                .labelled("licensees"),
+        )
+        .then_ignore(end())
+        .map(|(((lemma, mut features), category), mut licensees)| {
+            features.push(category);
+            features.append(&mut licensees);
+            LexicalEntry::new(lemma, features)
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -442,29 +469,23 @@ where
     }
 }
 
-pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, char>;
+pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
-impl LexicalEntry<&str, char> {
-    pub fn parse(s: &str) -> Result<LexicalEntry<&str, char>> {
-        if let Some((lemma, features)) = s.split_once("::") {
-            Ok(LexicalEntry {
-                lemma: if lemma == "ε" || lemma.is_empty() {
-                    None
-                } else {
-                    Some(lemma)
-                },
-                features: features
-                    .split(' ')
-                    .map(Feature::<char>::parse)
-                    .collect::<Result<Vec<_>>>()?,
-            })
-        } else {
-            bail!("No :: divider!");
-        }
+impl LexicalEntry<&str, &str> {
+    pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>> {
+        dbg!(s);
+        parser().parse(s).into_result().map_err(|x| {
+            anyhow::Error::msg(
+                x.into_iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        })
     }
 }
 
-impl std::fmt::Display for FeatureOrLemma<&str, char> {
+impl std::fmt::Display for FeatureOrLemma<&str, &str> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FeatureOrLemma::Root => write!(f, "root"),
@@ -502,10 +523,10 @@ mod tests {
             .collect::<Result<Vec<_>>>()?;
         let lex = Lexicon::new(v);
 
-        assert_eq!(vec![&'C'], lex.categories().collect::<Vec<_>>());
+        assert_eq!(vec![&"C"], lex.categories().collect::<Vec<_>>());
         let mut lice = lex.licensor_types().collect::<Vec<_>>();
         lice.sort();
-        assert_eq!(vec![&'W', &'Z'], lice);
+        assert_eq!(vec![&"W", &"Z"], lice);
         Ok(())
     }
 
@@ -515,7 +536,7 @@ mod tests {
             SimpleLexicalEntry::parse("John::d").unwrap(),
             SimpleLexicalEntry {
                 lemma: Some("John"),
-                features: vec![Feature::Category('d')]
+                features: vec![Feature::Category("d")]
             }
         );
         assert_eq!(
@@ -523,9 +544,9 @@ mod tests {
             SimpleLexicalEntry {
                 lemma: Some("eats"),
                 features: vec![
-                    Feature::Selector('d', Direction::Right),
-                    Feature::Selector('d', Direction::Left),
-                    Feature::Category('V')
+                    Feature::Selector("d", Direction::Right),
+                    Feature::Selector("d", Direction::Left),
+                    Feature::Category("V")
                 ]
             }
         );
@@ -534,9 +555,9 @@ mod tests {
             SimpleLexicalEntry::new(
                 None,
                 vec![
-                    Feature::Selector('d', Direction::Right),
-                    Feature::Selector('d', Direction::Left),
-                    Feature::Category('V')
+                    Feature::Selector("d", Direction::Right),
+                    Feature::Selector("d", Direction::Left),
+                    Feature::Category("V")
                 ]
             )
         );
@@ -545,9 +566,9 @@ mod tests {
             SimpleLexicalEntry {
                 lemma: None,
                 features: vec![
-                    Feature::Selector('d', Direction::Right),
-                    Feature::Selector('d', Direction::Left),
-                    Feature::Category('V')
+                    Feature::Selector("d", Direction::Right),
+                    Feature::Selector("d", Direction::Left),
+                    Feature::Category("V")
                 ]
             }
         );
@@ -561,9 +582,9 @@ mod tests {
             x,
             vec![
                 FeatureOrLemma::Lemma(Some("eats")),
-                FeatureOrLemma::Feature(Feature::Selector('d', Direction::Right)),
-                FeatureOrLemma::Feature(Feature::Selector('d', Direction::Left)),
-                FeatureOrLemma::Feature(Feature::Category('V')),
+                FeatureOrLemma::Feature(Feature::Selector("d", Direction::Right)),
+                FeatureOrLemma::Feature(Feature::Selector("d", Direction::Left)),
+                FeatureOrLemma::Feature(Feature::Category("V")),
             ]
         );
     }

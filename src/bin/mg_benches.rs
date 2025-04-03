@@ -24,7 +24,7 @@ fn main() {
     println!("DONE");
 }
 
-fn get_grammar() -> Lexicon<&'static str, char> {
+fn get_grammar() -> Lexicon<&'static str, &'static str> {
     let v: Vec<_> = STABLER2011
         .split('\n')
         .map(SimpleLexicalEntry::parse)
@@ -62,7 +62,7 @@ fn parse_copy_language_together(config: &ParsingConfig, record_rules: bool) {
         Parser::new_multiple
     } else {
         Parser::new_skip_rules_multiple
-    })(&lex, 'T', &strings, config)
+    })(&lex, "T", &strings, config)
     .unwrap()
     .take(strings.len())
     .for_each(|_| ());
@@ -78,7 +78,7 @@ fn parse_long_sentence(config: &ParsingConfig, record_rules: bool) {
         Parser::new
     } else {
         Parser::new_skip_rules
-    })(&g, 'C', &sentence, config)
+    })(&g, "C", &sentence, config)
     .unwrap()
     .next()
     .unwrap();
@@ -90,7 +90,7 @@ fn generate_sentence(config: &ParsingConfig, record_rules: bool) {
         Generator::new
     } else {
         Generator::new_skip_rules
-    })(&g, 'C', config)
+    })(&g, "C", config)
     .unwrap()
     .take(100)
     .count();
@@ -123,7 +123,7 @@ fn parse_copy_language(config: &ParsingConfig, record_rules: bool) {
             Parser::new
         } else {
             Parser::new_skip_rules
-        })(&lex, 'T', s, config)
+        })(&lex, "T", s, config)
         .unwrap()
         .next()
         .unwrap();
@@ -141,7 +141,7 @@ fn generate_copy_language(config: &ParsingConfig, record_rules: bool) {
         Generator::new
     } else {
         Generator::new_skip_rules
-    })(&lex, 'T', config)
+    })(&lex, "T", config)
     .unwrap()
     .take(100)
     .count();

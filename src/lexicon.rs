@@ -473,7 +473,6 @@ pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
 impl LexicalEntry<&str, &str> {
     pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>> {
-        dbg!(s);
         parser().parse(s).into_result().map_err(|x| {
             anyhow::Error::msg(
                 x.into_iter()

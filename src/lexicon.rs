@@ -1,7 +1,10 @@
 use crate::Direction;
 use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
-use chumsky::{prelude::*, text::inline_whitespace};
+use chumsky::{
+    prelude::*,
+    text::{inline_whitespace, newline},
+};
 use logprob::{LogProb, Softmax};
 use petgraph::{
     graph::DiGraph,
@@ -17,8 +20,16 @@ pub enum Feature<Category: Eq> {
     Licensor(Category),
     Licensee(Category),
 }
+fn grammar_parser<'src>(
+) -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
+    entry_parser()
+        .separated_by(newline())
+        .collect::<Vec<_>>()
+        .map(Lexicon::new)
+        .then_ignore(end())
+}
 
-fn parser<'src>(
+fn entry_parser<'src>(
 ) -> impl Parser<'src, &'src str, LexicalEntry<&'src str, &'src str>, extra::Err<Rich<'src, char>>>
 {
     let feature_name = any()
@@ -69,7 +80,6 @@ fn parser<'src>(
                 .collect::<Vec<_>>()
                 .labelled("licensees"),
         )
-        .then_ignore(end())
         .map(|(((lemma, mut features), category), mut licensees)| {
             features.push(category);
             features.append(&mut licensees);
@@ -468,12 +478,28 @@ where
         writeln!(f, "{}", petgraph::dot::Dot::new(&self.graph))
     }
 }
+impl<'src> Lexicon<&'src str, &'src str> {
+    pub fn parse(s: &'src str) -> Result<Self> {
+        grammar_parser()
+            .then_ignore(end())
+            .parse(s)
+            .into_result()
+            .map_err(|x| {
+                anyhow::Error::msg(
+                    x.into_iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            })
+    }
+}
 
 pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
 impl LexicalEntry<&str, &str> {
     pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>> {
-        parser().parse(s).into_result().map_err(|x| {
+        entry_parser().parse(s).into_result().map_err(|x| {
             anyhow::Error::msg(
                 x.into_iter()
                     .map(|x| x.to_string())
@@ -512,15 +538,7 @@ mod tests {
 
     #[test]
     fn categories() -> Result<()> {
-        let g: &str = "::V= +Z C -W";
-
-        let strings: Vec<&str> = g.split('\n').collect();
-        let v: Vec<_> = strings
-            .iter()
-            .copied()
-            .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?;
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::parse("::V= +Z C -W")?;
 
         assert_eq!(vec![&"C"], lex.categories().collect::<Vec<_>>());
         let mut lice = lex.licensor_types().collect::<Vec<_>>();
@@ -594,13 +612,8 @@ mod tests {
     #[test]
     fn initialize_lexicon() -> anyhow::Result<()> {
         let strings: Vec<&str> = STABLER2011.split('\n').collect();
-        let v: Vec<_> = strings
-            .iter()
-            .copied()
-            .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?;
 
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::parse(STABLER2011)?;
         for (lex, weight) in lex.lexemes()? {
             assert_eq!(weight, 1.0);
             assert!(
@@ -699,11 +712,7 @@ mod tests {
             ]
         );
 
-        let v: Vec<_> = COPY_LANGUAGE
-            .split('\n')
-            .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?;
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::parse(COPY_LANGUAGE)?;
         assert_ne!(lex, lex_2);
         assert_eq!(
             "digraph {
@@ -782,13 +791,7 @@ ed::=v +k t";
         for (g, n_categories, string_size, feature_size) in
             [(ga, 3, 28_f64, 14_f64), (gb, 4, 16_f64, 12_f64)]
         {
-            let strings: Vec<&str> = g.split('\n').collect();
-            let v: Vec<_> = strings
-                .iter()
-                .copied()
-                .map(SimpleLexicalEntry::parse)
-                .collect::<Result<Vec<_>>>()?;
-            let lex = Lexicon::new(v);
+            let lex = Lexicon::parse(g)?;
             for alphabet_size in [26, 32, 37] {
                 let bits_per_symbol: f64 = (MG_TYPES * n_categories).into();
                 let bits_per_phoneme: f64 = alphabet_size.into();

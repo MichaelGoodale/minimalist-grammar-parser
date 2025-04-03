@@ -61,11 +61,7 @@ fn simple_merge() -> Result<()> {
 use crate::grammars::STABLER2011;
 #[test]
 fn moving_parse() -> anyhow::Result<()> {
-    let v: Vec<_> = STABLER2011
-        .split('\n')
-        .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()?;
-    let lex = Lexicon::new(v);
+    let lex = Lexicon::parse(STABLER2011)?;
     for sentence in vec![
         "the king drinks the beer",
         "which wine the queen prefers",
@@ -147,11 +143,7 @@ fn moving_parse() -> anyhow::Result<()> {
 
 #[test]
 fn generation() -> Result<()> {
-    let v: Vec<_> = SIMPLESTABLER2011
-        .split('\n')
-        .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()?;
-    let lex = Lexicon::new(v);
+    let lex = Lexicon::parse(SIMPLESTABLER2011)?;
     let mut v: Vec<_> = Generator::new(
         &lex,
         "C",
@@ -243,11 +235,7 @@ use itertools::{self, Itertools};
 
 #[test]
 fn clear_copy_language() -> anyhow::Result<()> {
-    let v: Vec<_> = ALT_COPY_LANGUAGE
-        .split('\n')
-        .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()?;
-    let lex = Lexicon::new(v);
+    let lex = Lexicon::parse(ALT_COPY_LANGUAGE)?;
     let mut strings = HashSet::<Vec<&str>>::new();
     strings.insert(vec!["S", "E"]);
 
@@ -275,11 +263,7 @@ fn clear_copy_language() -> anyhow::Result<()> {
 
 #[test]
 fn copy_language() -> anyhow::Result<()> {
-    let v: Vec<_> = COPY_LANGUAGE
-        .split('\n')
-        .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()?;
-    let lex = Lexicon::new(v);
+    let lex = Lexicon::parse(COPY_LANGUAGE)?;
     let mut strings = HashSet::<Vec<&str>>::new();
     strings.insert(vec![]);
 
@@ -346,7 +330,7 @@ fn copy_language() -> anyhow::Result<()> {
 
 #[test]
 fn degenerate_grammar() -> Result<()> {
-    let lexicon = Lexicon::new(vec![LexicalEntry::parse("a::=c c")?]);
+    let lexicon = Lexicon::parse("a::=c c")?;
     let x: Vec<_> = Generator::new(&lexicon, "c", &CONFIG)?.take(50).collect();
     assert_eq!(x, vec![]);
     Ok(())
@@ -359,11 +343,7 @@ b::c
 d::a= c
 e::c -d
 f::+g c";
-    let s = s
-        .split('\n')
-        .map(LexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()?;
-    let lexicon = Lexicon::new(s);
+    let lexicon = Lexicon::parse(s)?;
     let x: Vec<_> = Generator::new(&lexicon, "c", &CONFIG)?
         .take(50)
         .map(|(_, x, _)| x)

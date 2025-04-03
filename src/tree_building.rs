@@ -132,7 +132,6 @@ mod tests {
     use super::*;
     use crate::grammars::STABLER2011;
     use crate::lexicon::Lexicon;
-    use crate::lexicon::SimpleLexicalEntry;
     use crate::{Parser, ParsingConfig};
     use anyhow::Result;
     use lazy_static::lazy_static;
@@ -150,11 +149,7 @@ mod tests {
 
     #[test]
     fn tree_building() -> Result<()> {
-        let v: Vec<_> = STABLER2011
-            .split('\n')
-            .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?;
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::parse(STABLER2011)?;
         let rules = Parser::new(
             &lex,
             "C",

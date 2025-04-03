@@ -75,7 +75,7 @@ struct ParseHeap<'a, T, B: Beam<T>> {
     config: &'a ParsingConfig,
 }
 
-impl<'a, T, B: Beam<T>> ParseHeap<'a, T, B>
+impl<T, B: Beam<T>> ParseHeap<'_, T, B>
 where
     B: Ord,
 {
@@ -156,7 +156,7 @@ where
         })
     }
 }
-impl<'a, T, Category> Iterator for FuzzyParser<'a, T, Category>
+impl<T, Category> Iterator for FuzzyParser<'_, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,

@@ -187,8 +187,7 @@ impl<
     ///Returns the MDL Score of the lexicon
     ///
     /// # Arguments
-    /// * `n_phonemes` - The size of required to encode a symbol of the phonology. E.g.
-    /// in English orthography, it would be 26.
+    /// * `n_phonemes` - The size of required to encode a symbol of the phonology. e.g in English orthography, it would be 26.
     pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64> {
         self.mdl_inner(n_phonemes, None)
     }

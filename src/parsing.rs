@@ -321,7 +321,7 @@ pub fn expand<
                         if new_beam_found {
                             config.dont_move_prob
                         } else {
-                            LogProb::new(0.0).unwrap()
+                            LogProb::prob_of_one()
                         },
                     );
                 }
@@ -340,7 +340,7 @@ pub fn expand<
                         if new_beam_found {
                             config.dont_move_prob
                         } else {
-                            LogProb::new(0.0).unwrap()
+                            LogProb::prob_of_one()
                         },
                     );
                 }

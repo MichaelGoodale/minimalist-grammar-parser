@@ -289,8 +289,9 @@ checksum = "fe7db12097d22ec582439daf8618b8fdd1a7bef6270e9af3b1ebcd30893cf413"
 
 [[package]]
 name = "logprob"
-version = "0.2.0"
-source = "git+https://github.com/michaelgoodale/logprob.git#498f8fc1ac78a5ad26d1b562ed71ebf6dd82ecaf"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcb4b9149607fe8e30ad47128b4092f46d79130c1a2d5b33f768d23f337d98d5"
 dependencies = [
  "num-traits",
  "serde",

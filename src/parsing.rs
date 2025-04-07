@@ -48,6 +48,8 @@ pub enum Rule {
 pub struct BeamWrapper<T, B: Beam<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
+    rules: ThinVec<Rule>,
+    record_rules: bool,
     pub beam: B,
     phantom: PhantomData<T>,
 }
@@ -91,13 +93,14 @@ impl<T, B: Beam<T>> BeamWrapper<T, B> {
         self.beam.top_id_mut()
     }
 
-    fn record_rules(&self) -> bool {
-        self.beam.record_rules()
+    fn push_rule(&mut self, r: Rule) {
+        self.rules.push(r)
     }
 
-    fn push_rule(&mut self, r: Rule) {
-        self.beam.push_rule(r)
+    fn record_rules(&self) -> bool {
+        self.record_rules
     }
+
     fn inc(&mut self) {
         self.beam.inc()
     }

@@ -400,12 +400,8 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if beam.is_empty() {
-                return Some((
-                    beam.log_prob(),
-                    beam.beam.sentence,
-                    beam.beam.rules.to_vec(),
-                ));
+            } else if let Some(x) = GeneratorBeam::yield_good_parse(beam) {
+                return Some(x);
             }
         }
         None

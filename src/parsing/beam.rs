@@ -9,13 +9,9 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::thin_vec;
 
 pub trait Beam<T>: Sized {
-    fn push_rule(&mut self, x: Rule);
-
-    fn record_rules(&self) -> bool;
-
     fn scan(
         v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
@@ -37,24 +33,14 @@ pub trait Beam<T>: Sized {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseBeam<'a, T> {
     pub sentence: Vec<(&'a [T], usize)>,
-    pub rules: ThinVec<Rule>,
     pub top_id: usize,
     pub steps: usize,
-    pub record_rules: bool,
 }
 
 impl<T> Beam<T> for ParseBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn push_rule(&mut self, x: Rule) {
-        self.rules.push(x)
-    }
-
-    fn record_rules(&self) -> bool {
-        self.record_rules
-    }
-
     fn scan(
         v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
@@ -83,7 +69,7 @@ where
         if !beam.beam.sentence.is_empty() {
             beam.log_prob += child_prob;
             if beam.record_rules() {
-                beam.beam.rules.push(Rule::Scan {
+                beam.rules.push(Rule::Scan {
                     node: child_node,
                     parent: moment.tree.id,
                 });
@@ -135,18 +121,18 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         Ok(BeamWrapper {
             beam: ParseBeam {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
-                rules: if record_rules {
-                    thin_vec![Rule::Start(category_index)]
-                } else {
-                    thin_vec![]
-                },
                 top_id: 0,
                 steps: 0,
-                record_rules,
             },
             queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
+            record_rules,
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
         })
     }
 
@@ -171,18 +157,18 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         Ok(BeamWrapper {
             beam: ParseBeam {
                 sentence: vec![(sentence, 0)],
-                rules: if record_rules {
-                    thin_vec![Rule::Start(category_index)]
-                } else {
-                    thin_vec![]
-                },
                 top_id: 0,
                 steps: 0,
-                record_rules,
             },
             queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
+            record_rules,
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
         })
     }
 
@@ -197,7 +183,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
                     .filter(|(s, pos)| s.len() == *pos)
                     .map(|(s, _)| s),
                 b.log_prob,
-                b.beam.rules.to_vec(),
+                b.rules.to_vec(),
             ))
         } else {
             None
@@ -209,10 +195,8 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 pub struct FuzzyBeam<'a, T> {
     generated_sentences: Vec<T>,
     sentence_guides: Vec<(&'a [T], usize)>,
-    rules: ThinVec<Rule>,
     top_id: usize,
     steps: usize,
-    record_rules: bool,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -241,19 +225,19 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             beam: FuzzyBeam {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
-                rules: if record_rules {
-                    thin_vec![Rule::Start(category_index)]
-                } else {
-                    thin_vec![]
-                },
                 top_id: 0,
                 steps: 0,
                 //           n_sentences: (sentences.len() + 1) as f64,
-                record_rules,
             },
+            record_rules,
             queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
         })
     }
 
@@ -262,7 +246,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             Some((
                 b.log_prob,
                 b.beam.generated_sentences.to_vec(),
-                b.beam.rules.to_vec(),
+                b.rules.to_vec(),
             ))
         } else {
             None
@@ -274,14 +258,6 @@ impl<T> Beam<T> for FuzzyBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
-    fn push_rule(&mut self, x: Rule) {
-        self.rules.push(x)
-    }
-
-    fn record_rules(&self) -> bool {
-        self.record_rules
-    }
-
     fn scan(
         v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
@@ -312,7 +288,7 @@ where
             });
         beam.log_prob += child_prob;
         if beam.record_rules() {
-            beam.beam.rules.push(Rule::Scan {
+            beam.rules.push(Rule::Scan {
                 node: child_node,
                 parent: moment.tree.id,
             });
@@ -341,24 +317,14 @@ where
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GeneratorBeam<T> {
     pub sentence: Vec<T>,
-    pub rules: ThinVec<Rule>,
     pub top_id: usize,
     pub steps: usize,
-    pub record_rules: bool,
 }
 
 impl<T: Clone> Beam<T> for GeneratorBeam<T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn push_rule(&mut self, x: Rule) {
-        self.rules.push(x)
-    }
-
-    fn record_rules(&self) -> bool {
-        self.record_rules
-    }
-
     fn scan(
         v: &mut ParseHeap<T, Self>,
         moment: &ParseMoment,
@@ -372,8 +338,8 @@ where
             beam.beam.sentence.push(s.clone());
         }
         beam.log_prob += child_prob;
-        if beam.beam.record_rules {
-            beam.beam.rules.push(Rule::Scan {
+        if beam.record_rules {
+            beam.rules.push(Rule::Scan {
                 node: child_node,
                 parent: moment.tree.id,
             });
@@ -420,18 +386,26 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         Ok(BeamWrapper {
             beam: GeneratorBeam {
                 sentence: vec![],
-                rules: if record_rules {
-                    thin_vec![Rule::Start(category_index)]
-                } else {
-                    thin_vec![]
-                },
                 top_id: 0,
                 steps: 0,
-                record_rules,
             },
             queue,
+            record_rules,
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
         })
+    }
+
+    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
+        if b.is_empty() {
+            Some((b.log_prob, b.beam.sentence.to_vec(), b.rules.to_vec()))
+        } else {
+            None
+        }
     }
 }

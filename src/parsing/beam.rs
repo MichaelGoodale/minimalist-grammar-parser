@@ -46,7 +46,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
-        record_rules: bool,
     ) -> Result<BeamWrapper<T, ParseScan<'a, T>>>
     where
         U: AsRef<[T]>,
@@ -57,7 +56,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
             ParseScan {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             },
-            record_rules,
             category_index,
         ))
     }
@@ -66,7 +64,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentence: &'a [T],
-        record_rules: bool,
     ) -> Result<BeamWrapper<T, ParseScan<'a, T>>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
@@ -84,7 +81,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
             ParseScan {
                 sentence: vec![(sentence, 0)],
             },
-            record_rules,
             category_index,
         ))
     }
@@ -119,7 +115,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
-        record_rules: bool,
     ) -> Result<BeamWrapper<T, FuzzyScan<'a, T>>>
     where
         U: AsRef<[T]>,
@@ -131,7 +126,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
                 generated_sentences: vec![],
                 //           n_sentences: (sentences.len() + 1) as f64,
             },
-            record_rules,
             category_index,
         ))
     }
@@ -199,13 +193,11 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
-        record_rules: bool,
     ) -> Result<BeamWrapper<T, GeneratorScan<T>>> {
         let category_index = lexicon.find_category(&initial_category)?;
 
         Ok(BeamWrapper::new(
             GeneratorScan { sentence: vec![] },
-            record_rules,
             category_index,
         ))
     }

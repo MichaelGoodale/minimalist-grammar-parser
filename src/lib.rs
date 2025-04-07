@@ -119,29 +119,7 @@ where
         U: AsRef<[T]>,
     {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences, true)?);
-        Ok(FuzzyParser {
-            lexicon,
-            config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
-        })
-    }
-
-    pub fn new_skip_rules<U>(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentences: &'a [U],
-        config: &'a ParsingConfig,
-    ) -> Result<Self>
-    where
-        U: AsRef<[T]>,
-    {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences, false)?);
+        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences)?);
         Ok(FuzzyParser {
             lexicon,
             config,
@@ -198,41 +176,11 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseScan::new_single(
-            lexicon,
-            initial_category,
-            sentence,
-            true,
-        )?);
+        parse_heap.push(ParseScan::new_single(lexicon, initial_category, sentence)?);
         Ok(Parser {
             lexicon,
             config,
             buffer: vec![],
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
-        })
-    }
-
-    pub fn new_skip_rules(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentence: &'a [T],
-        config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseScan::new_single(
-            lexicon,
-            initial_category,
-            sentence,
-            false,
-        )?);
-        Ok(Parser {
-            lexicon,
-            buffer: vec![],
-            config,
             parse_heap: ParseHeap {
                 parse_heap,
                 config,
@@ -255,35 +203,6 @@ where
             lexicon,
             initial_category,
             sentences,
-            true,
-        )?);
-        Ok(Parser {
-            lexicon,
-            buffer: vec![],
-            config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
-        })
-    }
-
-    pub fn new_skip_rules_multiple<U>(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentences: &'a [U],
-        config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>>
-    where
-        U: AsRef<[T]>,
-    {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseScan::new_multiple(
-            lexicon,
-            initial_category,
-            sentences,
-            false,
         )?);
         Ok(Parser {
             lexicon,
@@ -352,25 +271,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorScan::new(lexicon, initial_category, true)?);
-        Ok(Generator {
-            lexicon,
-            config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
-        })
-    }
-
-    pub fn new_skip_rules(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        config: &'a ParsingConfig,
-    ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorScan::new(lexicon, initial_category, false)?);
+        parse_heap.push(GeneratorScan::new(lexicon, initial_category)?);
         Ok(Generator {
             lexicon,
             config,

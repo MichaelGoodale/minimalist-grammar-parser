@@ -49,11 +49,9 @@ pub struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
     rules: ThinVec<Rule>,
-    record_rules: bool,
     pub beam: B,
     phantom: PhantomData<T>,
     top_id: usize,
-    n_steps: usize,
 }
 
 impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialEq for BeamWrapper<T, B> {
@@ -89,13 +87,10 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     ) {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
-            if self.record_rules {
-                self.rules.push(Rule::Scan {
-                    node: child_node,
-                    parent: moment.tree.id,
-                });
-            }
-            self.n_steps += 1;
+            self.rules.push(Rule::Scan {
+                node: child_node,
+                parent: moment.tree.id,
+            });
             v.push(self);
         }
     }
@@ -104,7 +99,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         self.queue.push(Reverse(moment))
     }
 
-    fn new(beam: B, record_rules: bool, category_index: NodeIndex) -> Self {
+    fn new(beam: B, category_index: NodeIndex) -> Self {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
@@ -117,15 +112,9 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         BeamWrapper {
             beam,
             queue,
-            record_rules,
             log_prob: LogProb::prob_of_one(),
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
+            rules: thin_vec![Rule::Start(category_index)],
             top_id: 0,
-            n_steps: 0,
             phantom: PhantomData,
         }
     }
@@ -138,12 +127,8 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         self.rules.push(r)
     }
 
-    fn record_rules(&self) -> bool {
-        self.record_rules
-    }
-
     pub fn n_steps(&self) -> usize {
-        self.n_steps
+        self.rules.len()
     }
 
     pub fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -212,17 +197,14 @@ fn unmerge_from_mover<
                     ));
 
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    if beam.record_rules() {
-                        beam.push_rule(Rule::UnmergeFromMover {
-                            child: child_node,
-                            child_id: beam.top_id + 1,
-                            stored_id: beam.top_id + 2,
-                            parent: moment.tree.id,
-                            storage: mover.id,
-                        });
-                    }
+                    beam.push_rule(Rule::UnmergeFromMover {
+                        child: child_node,
+                        child_id: beam.top_id + 1,
+                        stored_id: beam.top_id + 2,
+                        parent: moment.tree.id,
+                        storage: mover.id,
+                    });
                     beam.top_id += 2;
-                    beam.n_steps += 1;
                     v.push(beam);
                     new_beam = true;
                 }
@@ -276,16 +258,13 @@ fn unmerge<
     ));
 
     beam.log_prob += child_prob + rule_prob;
-    if beam.record_rules() {
-        beam.push_rule(Rule::Unmerge {
-            child: child_node,
-            parent: moment.tree.id,
-            child_id: beam.top_id + 2,
-            complement_id: beam.top_id + 1,
-        });
-    }
+    beam.push_rule(Rule::Unmerge {
+        child: child_node,
+        parent: moment.tree.id,
+        child_id: beam.top_id + 2,
+        complement_id: beam.top_id + 1,
+    });
     beam.top_id += 2;
-    beam.n_steps += 1;
     v.push(beam);
     Ok(())
 }
@@ -333,16 +312,13 @@ fn unmove_from_mover<
                             .collect(),
                     ));
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    if beam.record_rules() {
-                        beam.push_rule(Rule::UnmoveFromMover {
-                            parent: moment.tree.id,
-                            child_id: beam.top_id + 1,
-                            stored_id: beam.top_id + 2,
-                            storage: mover.id,
-                        });
-                    }
+                    beam.push_rule(Rule::UnmoveFromMover {
+                        parent: moment.tree.id,
+                        child_id: beam.top_id + 1,
+                        stored_id: beam.top_id + 2,
+                        storage: mover.id,
+                    });
                     beam.top_id += 2;
-                    beam.n_steps += 1;
                     v.push(beam);
                     new_beam_found = true;
                 }
@@ -389,15 +365,12 @@ fn unmove<
     ));
 
     beam.log_prob += child_prob + rule_prob;
-    if beam.record_rules() {
-        beam.push_rule(Rule::Unmove {
-            child_id: beam.top_id + 1,
-            stored_id: beam.top_id + 2,
-            parent: moment.tree.id,
-        });
-    }
+    beam.push_rule(Rule::Unmove {
+        child_id: beam.top_id + 1,
+        stored_id: beam.top_id + 2,
+        parent: moment.tree.id,
+    });
     beam.top_id += 2;
-    beam.n_steps += 1;
     v.push(beam);
     Ok(())
 }

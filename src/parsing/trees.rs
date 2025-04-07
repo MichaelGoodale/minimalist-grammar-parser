@@ -6,6 +6,8 @@ use crate::Direction;
 use bitvec::prelude::*;
 use thin_vec::ThinVec;
 
+use super::RuleIndex;
+
 type IndexArray = BitArray<[u64; 2], Lsb0>;
 
 pub const MAX_STEPS: usize = 128;
@@ -64,11 +66,11 @@ impl GornIndex {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FutureTree {
     pub node: NodeIndex,
     pub index: GornIndex,
-    pub id: usize,
+    pub id: RuleIndex,
 }
 
 impl PartialOrd for FutureTree {

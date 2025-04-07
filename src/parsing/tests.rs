@@ -1,5 +1,5 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
-use crate::Direction;
+use crate::{parsing::RuleIndex, Direction};
 use anyhow::Result;
 use petgraph::graph::NodeIndex;
 use thin_vec::thin_vec;
@@ -19,12 +19,12 @@ fn index_order() -> Result<()> {
     let a = ParseMoment::new(
         FutureTree {
             node: NodeIndex::new(0),
-            id: 0,
+            id: RuleIndex(0),
             index: [Direction::Left, Direction::Right].into(),
         },
         thin_vec![FutureTree {
             node: NodeIndex::new(0),
-            id: 0,
+            id: RuleIndex(0),
             index: [Direction::Right].into(),
         }],
     );

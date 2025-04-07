@@ -19,6 +19,8 @@ where
     T: Eq + std::fmt::Debug + std::clone::Clone,
     C: Eq + std::fmt::Debug + std::clone::Clone,
 {
+    todo!();
+    /*
     let mut g = DiGraph::<String, Empty>::new();
     let mut id2node = HashMap::new();
     for rule in rules.iter() {
@@ -128,7 +130,7 @@ where
             Rule::UnmoveTrace => todo!(),
         }
     }
-    g
+    g*/
 }
 
 #[cfg(test)]

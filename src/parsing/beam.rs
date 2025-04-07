@@ -1,12 +1,8 @@
-use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::{BeamWrapper, Rule};
 use crate::lexicon::Lexicon;
 use anyhow::Result;
 use logprob::LogProb;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 use std::fmt::Debug;
-use thin_vec::thin_vec;
 
 pub trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
@@ -65,18 +61,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
         initial_category: Category,
         sentence: &'a [T],
     ) -> Result<BeamWrapper<T, ParseScan<'a, T>>> {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
-
-        queue.push(Reverse(ParseMoment::new(
-            FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            thin_vec![],
-        )));
-
         Ok(BeamWrapper::new(
             ParseScan {
                 sentence: vec![(sentence, 0)],

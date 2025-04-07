@@ -11,55 +11,39 @@ use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct RuleIndex(usize);
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Rule {
     Start {
         node: NodeIndex,
-        child: usize,
+        child: RuleIndex,
     },
     UnmoveTrace,
     Scan {
         node: NodeIndex,
-        parent: usize,
     },
     Unmerge {
         child: NodeIndex,
-        parent: usize,
-        child_id: usize,
-        complement_id: usize,
+        child_id: RuleIndex,
+        complement_id: RuleIndex,
     },
     UnmergeFromMover {
         child: NodeIndex,
-        child_id: usize,
-        stored_id: usize,
-        parent: usize,
-        storage: usize,
+        child_id: RuleIndex,
+        stored_id: RuleIndex,
+        storage: RuleIndex,
     },
     Unmove {
-        child_id: usize,
-        stored_id: usize,
-        parent: usize,
+        child_id: RuleIndex,
+        stored_id: RuleIndex,
     },
     UnmoveFromMover {
-        child_id: usize,
-        stored_id: usize,
-        parent: usize,
-        storage: usize,
+        child_id: RuleIndex,
+        stored_id: RuleIndex,
+        storage: RuleIndex,
     },
-}
-
-impl Rule {
-    fn parent_id(&self) -> usize {
-        match self {
-            Rule::Start { .. } => 1,
-            Rule::Scan { parent, .. }
-            | Rule::Unmerge { parent, .. }
-            | Rule::UnmergeFromMover { parent, .. }
-            | Rule::Unmove { parent, .. }
-            | Rule::UnmoveFromMover { parent, .. } => *parent,
-            Rule::UnmoveTrace => panic!("NO"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -104,16 +88,13 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     ) {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
-            self.push_rule(Rule::Scan {
-                node: child_node,
-                parent: moment.tree.id,
-            });
+            self.push_rule(Rule::Scan { node: child_node }, moment.tree.id);
             v.push(self);
         }
     }
 
-    fn new_future_tree(&mut self, node: NodeIndex, index: GornIndex) -> (FutureTree, usize) {
-        let id = self.rules.len(); //Get fresh ID
+    fn new_future_tree(&mut self, node: NodeIndex, index: GornIndex) -> (FutureTree, RuleIndex) {
+        let id = RuleIndex(self.rules.len()); //Get fresh ID
         self.rules.push(None);
         (FutureTree { node, index, id }, id)
     }
@@ -123,7 +104,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         node: NodeIndex,
         index: GornIndex,
         movers: ThinVec<FutureTree>,
-    ) -> usize {
+    ) -> RuleIndex {
         let (tree, id) = self.new_future_tree(node, index);
         self.queue.push(Reverse(ParseMoment { tree, movers }));
         id
@@ -135,7 +116,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
-                id: 1,
+                id: RuleIndex(1),
             },
             thin_vec![],
         )));
@@ -146,7 +127,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             rules: thin_vec![
                 Some(Rule::Start {
                     node: category_index,
-                    child: 1
+                    child: RuleIndex(1)
                 }),
                 None
             ],
@@ -158,15 +139,14 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         self.log_prob
     }
 
-    fn push_rule(&mut self, r: Rule) {
-        let i = r.parent_id();
+    fn push_rule(&mut self, r: Rule, r_i: RuleIndex) {
         match r {
             Rule::UnmergeFromMover { storage, .. } | Rule::UnmoveFromMover { storage, .. } => {
-                self.rules[storage] = Some(Rule::UnmoveTrace)
+                self.rules[storage.0] = Some(Rule::UnmoveTrace)
             }
             _ => (),
         }
-        self.rules[i] = Some(r);
+        self.rules[r_i.0] = Some(r);
     }
 
     pub fn n_steps(&self) -> usize {
@@ -186,7 +166,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     }
 }
 
-fn clone_push<T: Clone + Default>(v: &[T], x: T) -> ThinVec<T> {
+fn clone_push<T: Clone>(v: &[T], x: T) -> ThinVec<T> {
     let mut v: ThinVec<T> = ThinVec::from(v);
     v.push(x);
     v
@@ -229,13 +209,15 @@ fn unmerge_from_mover<
                     );
 
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    beam.push_rule(Rule::UnmergeFromMover {
-                        child: child_node,
-                        child_id,
-                        stored_id,
-                        parent: moment.tree.id,
-                        storage: mover.id,
-                    });
+                    beam.push_rule(
+                        Rule::UnmergeFromMover {
+                            child: child_node,
+                            child_id,
+                            stored_id,
+                            storage: mover.id,
+                        },
+                        moment.tree.id,
+                    );
                     v.push(beam);
                     new_beam = true;
                 }
@@ -283,12 +265,14 @@ fn unmerge<
     );
 
     beam.log_prob += child_prob + rule_prob;
-    beam.push_rule(Rule::Unmerge {
-        child: child_node,
-        parent: moment.tree.id,
-        child_id,
-        complement_id,
-    });
+    beam.push_rule(
+        Rule::Unmerge {
+            child: child_node,
+            child_id,
+            complement_id,
+        },
+        moment.tree.id,
+    );
     v.push(beam);
     Ok(())
 }
@@ -330,12 +314,14 @@ fn unmove_from_mover<
 
                     let child_id = beam.push_moment(child_node, moment.tree.index, movers);
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    beam.push_rule(Rule::UnmoveFromMover {
-                        parent: moment.tree.id,
-                        child_id,
-                        stored_id,
-                        storage: mover.id,
-                    });
+                    beam.push_rule(
+                        Rule::UnmoveFromMover {
+                            child_id,
+                            stored_id,
+                            storage: mover.id,
+                        },
+                        moment.tree.id,
+                    );
                     v.push(beam);
                     new_beam_found = true;
                 }
@@ -374,11 +360,13 @@ fn unmove<
     );
 
     beam.log_prob += child_prob + rule_prob;
-    beam.push_rule(Rule::Unmove {
-        child_id,
-        stored_id,
-        parent: moment.tree.id,
-    });
+    beam.push_rule(
+        Rule::Unmove {
+            child_id,
+            stored_id,
+        },
+        moment.tree.id,
+    );
     v.push(beam);
     Ok(())
 }

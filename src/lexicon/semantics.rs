@@ -103,4 +103,37 @@ mod test {
         );
         Ok(())
     }
+
+    #[test]
+    fn moving_montague() -> anyhow::Result<()> {
+        let config: ParsingConfig = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda <e,<e,t>> x ((lambda <e,t> y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e)))))";
+        let lexicon = format!(
+            "{}\n::=v c::lambda <t,t> x (x)\n::v= +wh c::lambda <t,t> x (x)\nknows::c= =d v::lambda <<e,t>,<e,t>> P (lambda <e,t> x (P(x)))\nwho::d -wh::lambda <<e,t>,<e,t>> P (P)",
+            lexicon
+        );
+        let (semantic, _scenario) = SemanticLexicon::parse(&lexicon)?;
+
+        let (_, _, rules) = Parser::new(
+            &semantic.lexicon,
+            "c",
+            &["john", "knows", "who", "likes", "mary"],
+            &config,
+        )?
+        .next()
+        .unwrap();
+        dbg!(&rules);
+        let interpretation = rules.to_interpretation(&semantic)?;
+        let interpretation = interpretation.into_pool()?;
+        assert_eq!(
+            "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
+            interpretation.to_string()
+        );
+        Ok(())
+    }
 }

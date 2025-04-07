@@ -19,12 +19,12 @@ fn index_order() -> Result<()> {
     let a = ParseMoment::new(
         FutureTree {
             node: NodeIndex::new(0),
-            id: RuleIndex(0),
+            id: RuleIndex::one(),
             index: [Direction::Left, Direction::Right].into(),
         },
         thin_vec![FutureTree {
             node: NodeIndex::new(0),
-            id: RuleIndex(0),
+            id: RuleIndex::one(),
             index: [Direction::Right].into(),
         }],
     );

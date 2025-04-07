@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use crate::lexicon::{FeatureOrLemma, Lexicon};
-use crate::parsing::Rule;
+use crate::parsing::{Rule, RulePool};
 
 use petgraph::graph::DiGraph;
 
@@ -13,7 +13,7 @@ impl Display for Empty {
     }
 }
 
-pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &[Rule]) -> DiGraph<String, Empty>
+pub fn build_tree<T, C>(lexicon: &Lexicon<T, C>, rules: &RulePool) -> DiGraph<String, Empty>
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone,

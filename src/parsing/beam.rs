@@ -1,4 +1,4 @@
-use super::{BeamWrapper, Rule};
+use super::{rules::RulePool, BeamWrapper};
 use crate::lexicon::Lexicon;
 use anyhow::Result;
 use logprob::LogProb;
@@ -72,7 +72,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
 
     pub fn yield_good_parse(
         b: BeamWrapper<T, Self>,
-    ) -> Option<(impl Iterator<Item = &'a [T]> + 'a, LogProb<f64>, Vec<Rule>)> {
+    ) -> Option<(impl Iterator<Item = &'a [T]> + 'a, LogProb<f64>, RulePool)> {
         if b.is_empty() {
             Some((
                 b.beam
@@ -81,7 +81,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
                     .filter(|(s, pos)| s.len() == *pos)
                     .map(|(s, _)| s),
                 b.log_prob,
-                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
+                b.rules.into_rule_pool(),
             ))
         } else {
             None
@@ -115,12 +115,12 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
         ))
     }
 
-    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
+    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
         if b.is_empty() {
             Some((
                 b.log_prob,
                 b.beam.generated_sentences.to_vec(),
-                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
+                b.rules.into_rule_pool(),
             ))
         } else {
             None
@@ -187,13 +187,9 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
         ))
     }
 
-    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
+    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
         if b.is_empty() {
-            Some((
-                b.log_prob,
-                b.beam.sentence.to_vec(),
-                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
-            ))
+            Some((b.log_prob, b.beam.sentence.to_vec(), b.rules.into_rule_pool()))
         } else {
             None
         }

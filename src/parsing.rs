@@ -8,49 +8,17 @@ use anyhow::Result;
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
+use rules::{PartialRulePool, RuleIndex};
 use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct RuleIndex(usize);
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum Rule {
-    Start {
-        node: NodeIndex,
-        child: RuleIndex,
-    },
-    UnmoveTrace,
-    Scan {
-        node: NodeIndex,
-    },
-    Unmerge {
-        child: NodeIndex,
-        child_id: RuleIndex,
-        complement_id: RuleIndex,
-    },
-    UnmergeFromMover {
-        child: NodeIndex,
-        child_id: RuleIndex,
-        stored_id: RuleIndex,
-        storage: RuleIndex,
-    },
-    Unmove {
-        child_id: RuleIndex,
-        stored_id: RuleIndex,
-    },
-    UnmoveFromMover {
-        child_id: RuleIndex,
-        stored_id: RuleIndex,
-        storage: RuleIndex,
-    },
-}
+pub use rules::{Rule, RulePool};
 
 #[derive(Debug, Clone)]
 pub struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    rules: ThinVec<Option<Rule>>,
+    rules: PartialRulePool,
     pub beam: B,
     phantom: PhantomData<T>,
 }
@@ -88,14 +56,14 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     ) {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
-            self.push_rule(Rule::Scan { node: child_node }, moment.tree.id);
+            self.rules
+                .push_rule(Rule::Scan { node: child_node }, moment.tree.id, None);
             v.push(self);
         }
     }
 
     fn new_future_tree(&mut self, node: NodeIndex, index: GornIndex) -> (FutureTree, RuleIndex) {
-        let id = RuleIndex(self.rules.len()); //Get fresh ID
-        self.rules.push(None);
+        let id = self.rules.fresh();
         (FutureTree { node, index, id }, id)
     }
 
@@ -116,7 +84,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
-                id: RuleIndex(1),
+                id: RuleIndex::one(),
             },
             thin_vec![],
         )));
@@ -124,13 +92,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             beam,
             queue,
             log_prob: LogProb::prob_of_one(),
-            rules: thin_vec![
-                Some(Rule::Start {
-                    node: category_index,
-                    child: RuleIndex(1)
-                }),
-                None
-            ],
+            rules: PartialRulePool::start_from_category(category_index),
             phantom: PhantomData,
         }
     }
@@ -139,18 +101,8 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         self.log_prob
     }
 
-    fn push_rule(&mut self, r: Rule, r_i: RuleIndex) {
-        match r {
-            Rule::UnmergeFromMover { storage, .. } | Rule::UnmoveFromMover { storage, .. } => {
-                self.rules[storage.0] = Some(Rule::UnmoveTrace)
-            }
-            _ => (),
-        }
-        self.rules[r_i.0] = Some(r);
-    }
-
     pub fn n_steps(&self) -> usize {
-        self.rules.len()
+        self.rules.n_steps()
     }
 
     pub fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -209,14 +161,17 @@ fn unmerge_from_mover<
                     );
 
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    beam.push_rule(
+
+                    let trace_id = beam.rules.fresh_trace();
+                    beam.rules.push_rule(
                         Rule::UnmergeFromMover {
                             child: child_node,
                             child_id,
                             stored_id,
-                            storage: mover.id,
+                            trace_id,
                         },
                         moment.tree.id,
+                        Some((trace_id, mover.id)),
                     );
                     v.push(beam);
                     new_beam = true;
@@ -265,13 +220,14 @@ fn unmerge<
     );
 
     beam.log_prob += child_prob + rule_prob;
-    beam.push_rule(
+    beam.rules.push_rule(
         Rule::Unmerge {
             child: child_node,
             child_id,
             complement_id,
         },
         moment.tree.id,
+        None,
     );
     v.push(beam);
     Ok(())
@@ -314,13 +270,16 @@ fn unmove_from_mover<
 
                     let child_id = beam.push_moment(child_node, moment.tree.index, movers);
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
-                    beam.push_rule(
+
+                    let trace_id = beam.rules.fresh_trace();
+                    beam.rules.push_rule(
                         Rule::UnmoveFromMover {
                             child_id,
                             stored_id,
-                            storage: mover.id,
+                            trace_id,
                         },
                         moment.tree.id,
+                        Some((trace_id, mover.id)),
                     );
                     v.push(beam);
                     new_beam_found = true;
@@ -360,12 +319,13 @@ fn unmove<
     );
 
     beam.log_prob += child_prob + rule_prob;
-    beam.push_rule(
+    beam.rules.push_rule(
         Rule::Unmove {
             child_id,
             stored_id,
         },
         moment.tree.id,
+        None,
     );
     v.push(beam);
     Ok(())
@@ -438,6 +398,7 @@ pub fn expand<
 }
 
 pub mod beam;
+mod rules;
 #[cfg(test)]
 mod tests;
 mod trees;

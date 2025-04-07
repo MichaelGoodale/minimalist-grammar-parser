@@ -6,7 +6,7 @@ use lexicon::Lexicon;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
-use parsing::Rule;
+use parsing::RulePool;
 use parsing::{expand, BeamWrapper};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -94,8 +94,8 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'_, T, B> {
     }
 }
 
-type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], Vec<Rule>);
-type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, Vec<Rule>);
+type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], RulePool);
+type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, RulePool);
 
 pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
 {

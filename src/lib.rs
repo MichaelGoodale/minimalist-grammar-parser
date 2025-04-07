@@ -78,7 +78,7 @@ struct ParseHeap<'a, T, B: Beam<T>> {
     config: &'a ParsingConfig,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T>> ParseHeap<'_, T, B> {
+impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> ParseHeap<'_, T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }
@@ -162,7 +162,6 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {
-            let p = beam.log_prob();
             if let Some(moment) = beam.pop_moment() {
                 expand(
                     &mut self.parse_heap,
@@ -171,8 +170,8 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some((_, x, y)) = beam.beam.yield_good_parse() {
-                return Some((p, x, y));
+            } else if let Some(x) = FuzzyBeam::yield_good_parse(beam) {
+                return Some(x);
             }
         }
 
@@ -309,7 +308,6 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
-                let p = beam.log_prob();
                 if let Some(moment) = beam.pop_moment() {
                     expand(
                         &mut self.parse_heap,
@@ -318,7 +316,8 @@ where
                         self.lexicon,
                         self.config,
                     );
-                } else if let Some((mut good_parses, _, rules)) = beam.beam.yield_good_parse() {
+                } else if let Some((mut good_parses, p, rules)) = ParseBeam::yield_good_parse(beam)
+                {
                     if let Some(next_sentence) = good_parses.next() {
                         self.buffer
                             .extend(good_parses.map(|x| (p, x, rules.clone())));

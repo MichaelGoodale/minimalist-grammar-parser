@@ -11,11 +11,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use thin_vec::{thin_vec, ThinVec};
 
-pub trait Beam<T>: Sized + Ord {
-    fn pop_moment(&mut self) -> Option<ParseMoment>;
-
-    fn push_moment(&mut self, x: ParseMoment);
-
+pub trait Beam<T>: Sized {
     fn push_rule(&mut self, x: Rule);
 
     fn record_rules(&self) -> bool;
@@ -36,14 +32,10 @@ pub trait Beam<T>: Sized + Ord {
     fn top_id(&self) -> usize;
 
     fn top_id_mut(&mut self) -> &mut usize;
-
-    fn is_empty(&self) -> bool;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseBeam<'a, T> {
-    pub log_probability: LogProb<f64>,
-    pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: Vec<(&'a [T], usize)>,
     pub rules: ThinVec<Rule>,
     pub top_id: usize,
@@ -51,49 +43,10 @@ pub struct ParseBeam<'a, T> {
     pub record_rules: bool,
 }
 
-impl<T: Eq + std::fmt::Debug> PartialEq for ParseBeam<'_, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.log_probability == other.log_probability
-            && self.sentence == other.sentence
-            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> PartialOrd for ParseBeam<'_, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> Eq for ParseBeam<'_, T> {}
-
-impl<T: Eq + std::fmt::Debug> Ord for ParseBeam<'_, T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.log_probability
-            .partial_cmp(&other.log_probability)
-            .unwrap()
-    }
-}
-
 impl<T> Beam<T> for ParseBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn is_empty(&self) -> bool {
-        self.queue.is_empty()
-    }
-    fn pop_moment(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
-    }
-
-    fn push_moment(&mut self, x: ParseMoment) {
-        self.queue.push(Reverse(x))
-    }
-
     fn push_rule(&mut self, x: Rule) {
         self.rules.push(x)
     }
@@ -110,7 +63,6 @@ where
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
-        beam.beam.queue.shrink_to_fit();
         beam.beam
             .sentence
             .retain_mut(|(sentence, position)| match s {
@@ -182,8 +134,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 
         Ok(BeamWrapper {
             beam: ParseBeam {
-                log_probability: LogProb::new(0_f64).unwrap(),
-                queue,
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 rules: if record_rules {
                     thin_vec![Rule::Start(category_index)]
@@ -194,6 +144,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
                 steps: 0,
                 record_rules,
             },
+            queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
         })
@@ -219,8 +170,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 
         Ok(BeamWrapper {
             beam: ParseBeam {
-                log_probability: LogProb::new(0_f64).unwrap(),
-                queue,
                 sentence: vec![(sentence, 0)],
                 rules: if record_rules {
                     thin_vec![Rule::Start(category_index)]
@@ -231,22 +180,24 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
                 steps: 0,
                 record_rules,
             },
+            queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
         })
     }
 
     pub fn yield_good_parse(
-        self,
+        b: BeamWrapper<T, Self>,
     ) -> Option<(impl Iterator<Item = &'a [T]> + 'a, LogProb<f64>, Vec<Rule>)> {
-        if self.queue.is_empty() {
+        if b.is_empty() {
             Some((
-                self.sentence
+                b.beam
+                    .sentence
                     .into_iter()
                     .filter(|(s, pos)| s.len() == *pos)
                     .map(|(s, _)| s),
-                self.log_probability,
-                self.rules.to_vec(),
+                b.log_prob,
+                b.beam.rules.to_vec(),
             ))
         } else {
             None
@@ -254,17 +205,14 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuzzyBeam<'a, T> {
-    log_probability: LogProb<f64>,
-    queue: BinaryHeap<Reverse<ParseMoment>>,
     generated_sentences: Vec<T>,
     sentence_guides: Vec<(&'a [T], usize)>,
     rules: ThinVec<Rule>,
     top_id: usize,
     steps: usize,
     record_rules: bool,
-    // n_sentences: f64,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -291,8 +239,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
 
         Ok(BeamWrapper {
             beam: FuzzyBeam {
-                log_probability: LogProb::new(0_f64).unwrap(),
-                queue,
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
                 rules: if record_rules {
@@ -305,47 +251,21 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
                 //           n_sentences: (sentences.len() + 1) as f64,
                 record_rules,
             },
+            queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
         })
     }
 
-    pub fn yield_good_parse(self) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
-        if self.queue.is_empty() {
+    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
+        if b.is_empty() {
             Some((
-                self.log_probability,
-                self.generated_sentences.to_vec(),
-                self.rules.to_vec(),
+                b.log_prob,
+                b.beam.generated_sentences.to_vec(),
+                b.beam.rules.to_vec(),
             ))
         } else {
             None
-        }
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> PartialEq for FuzzyBeam<'_, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.log_probability == other.log_probability
-            && self.sentence_guides == other.sentence_guides
-            && self.generated_sentences == other.generated_sentences
-            && self.rules == other.rules
-            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> PartialOrd for FuzzyBeam<'_, T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> Eq for FuzzyBeam<'_, T> {}
-
-impl<T: Eq + std::fmt::Debug> Ord for FuzzyBeam<'_, T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (!self.sentence_guides.is_empty()).cmp(&(!self.sentence_guides.is_empty())) {
-            std::cmp::Ordering::Equal => self.log_probability.cmp(&other.log_probability),
-            x => x,
         }
     }
 }
@@ -354,21 +274,6 @@ impl<T> Beam<T> for FuzzyBeam<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
-    fn is_empty(&self) -> bool {
-        self.queue.is_empty()
-    }
-    fn pop_moment(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
-    }
-
-    fn push_moment(&mut self, x: ParseMoment) {
-        self.queue.push(Reverse(x))
-    }
-
     fn push_rule(&mut self, x: Rule) {
         self.rules.push(x)
     }
@@ -385,7 +290,6 @@ where
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
-        beam.beam.queue.shrink_to_fit();
         if let Some(s) = s {
             beam.beam.generated_sentences.push(s.clone());
         }
@@ -434,10 +338,8 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GeneratorBeam<T> {
-    pub log_probability: LogProb<f64>,
-    pub queue: BinaryHeap<Reverse<ParseMoment>>,
     pub sentence: Vec<T>,
     pub rules: ThinVec<Rule>,
     pub top_id: usize,
@@ -445,49 +347,10 @@ pub struct GeneratorBeam<T> {
     pub record_rules: bool,
 }
 
-impl<T: Eq + std::fmt::Debug> PartialEq for GeneratorBeam<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.log_probability == other.log_probability
-            && self.sentence == other.sentence
-            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> PartialOrd for GeneratorBeam<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: Eq + std::fmt::Debug> Eq for GeneratorBeam<T> {}
-
-impl<T: Eq + std::fmt::Debug> Ord for GeneratorBeam<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.log_probability
-            .partial_cmp(&other.log_probability)
-            .unwrap()
-    }
-}
-
 impl<T: Clone> Beam<T> for GeneratorBeam<T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn is_empty(&self) -> bool {
-        self.queue.is_empty()
-    }
-    fn pop_moment(&mut self) -> Option<ParseMoment> {
-        if let Some(Reverse(x)) = self.queue.pop() {
-            Some(x)
-        } else {
-            None
-        }
-    }
-
-    fn push_moment(&mut self, x: ParseMoment) {
-        self.queue.push(Reverse(x))
-    }
-
     fn push_rule(&mut self, x: Rule) {
         self.rules.push(x)
     }
@@ -504,7 +367,6 @@ where
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
-        beam.beam.queue.shrink_to_fit();
         if let Some(s) = s {
             //If the word was None then adding it does nothing
             beam.beam.sentence.push(s.clone());
@@ -557,8 +419,6 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
 
         Ok(BeamWrapper {
             beam: GeneratorBeam {
-                log_probability: LogProb::new(0_f64).unwrap(),
-                queue,
                 sentence: vec![],
                 rules: if record_rules {
                     thin_vec![Rule::Start(category_index)]
@@ -569,6 +429,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
                 steps: 0,
                 record_rules,
             },
+            queue,
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
         })

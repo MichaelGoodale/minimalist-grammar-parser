@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
@@ -42,20 +44,31 @@ pub enum Rule {
     },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BeamWrapper<T, B: Beam<T> + PartialEq> {
+#[derive(Debug, Clone)]
+pub struct BeamWrapper<T, B: Beam<T>> {
     log_prob: LogProb<f64>,
+    queue: BinaryHeap<Reverse<ParseMoment>>,
     pub beam: B,
     phantom: PhantomData<T>,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T>> PartialOrd for BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialEq for BeamWrapper<T, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.beam == other.beam
+            && self.log_prob == other.log_prob
+            && self.queue.clone().into_sorted_vec() == other.queue.clone().into_sorted_vec()
+    }
+}
+
+impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> Eq for BeamWrapper<T, B> {}
+
+impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialOrd for BeamWrapper<T, B> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T>> Ord for BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> Ord for BeamWrapper<T, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.log_prob.cmp(&other.log_prob)
     }
@@ -63,7 +76,7 @@ impl<T: Eq + std::fmt::Debug, B: Beam<T>> Ord for BeamWrapper<T, B> {
 
 impl<T, B: Beam<T>> BeamWrapper<T, B> {
     fn push_moment(&mut self, moment: ParseMoment) {
-        self.beam.push_moment(moment);
+        self.queue.push(Reverse(moment))
     }
 
     pub fn log_prob(&self) -> LogProb<f64> {
@@ -94,11 +107,15 @@ impl<T, B: Beam<T>> BeamWrapper<T, B> {
     }
 
     pub fn pop_moment(&mut self) -> Option<ParseMoment> {
-        self.beam.pop_moment()
+        if let Some(Reverse(x)) = self.queue.pop() {
+            Some(x)
+        } else {
+            None
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.beam.is_empty()
+        self.queue.is_empty()
     }
 }
 
@@ -114,7 +131,7 @@ fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Clone,
+    B: Beam<T> + Clone + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -182,7 +199,7 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T>,
+    B: Beam<T> + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -239,7 +256,7 @@ fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Clone,
+    B: Beam<T> + Clone + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -302,7 +319,7 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T>,
+    B: Beam<T> + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -349,7 +366,7 @@ pub fn expand<
     'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Clone + 'a,
+    B: Beam<T> + Eq + Clone + 'a,
 >(
     extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,

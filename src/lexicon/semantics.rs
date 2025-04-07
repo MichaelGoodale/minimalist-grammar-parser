@@ -88,7 +88,7 @@ mod test {
             100,
             1000,
         );
-        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda <e,t> x ((lambda <e,t> y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e)))))";
+        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda <e,<e,t>> x ((lambda <e,t> y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e)))))";
         let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
 
         let (_, _, rules) =

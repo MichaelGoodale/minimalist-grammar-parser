@@ -229,7 +229,7 @@ fn inner_interpretation<T: Eq, C: Eq>(
         } => {
             let complement = inner_interpretation(rules, lex, *complement_id);
             let child = inner_interpretation(rules, lex, *child_id);
-            child.merge(complement)
+            child.merge(complement).unwrap()
         }
         _ => todo!(),
     }

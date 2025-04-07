@@ -8,7 +8,6 @@ use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use thin_vec::thin_vec;
 
 pub trait Beam<T>: Sized {
@@ -80,34 +79,15 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
     where
         U: AsRef<[T]>,
     {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
-        queue.push(Reverse(ParseMoment::new(
-            FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            thin_vec![],
-        )));
-
-        Ok(BeamWrapper {
-            beam: ParseBeam {
+        Ok(BeamWrapper::new(
+            ParseBeam {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             },
-            queue,
-            log_prob: LogProb::prob_of_one(),
-            phantom: PhantomData,
             record_rules,
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
-            top_id: 0,
-            n_steps: 0,
-        })
+            category_index,
+        ))
     }
 
     pub fn new_single<Category: Eq + std::fmt::Debug + Clone>(
@@ -128,22 +108,13 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
             thin_vec![],
         )));
 
-        Ok(BeamWrapper {
-            beam: ParseBeam {
+        Ok(BeamWrapper::new(
+            ParseBeam {
                 sentence: vec![(sentence, 0)],
             },
-            queue,
-            log_prob: LogProb::prob_of_one(),
-            phantom: PhantomData,
             record_rules,
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
-            top_id: 0,
-            n_steps: 0,
-        })
+            category_index,
+        ))
     }
 
     pub fn yield_good_parse(
@@ -181,36 +152,16 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
     where
         U: AsRef<[T]>,
     {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
-
-        queue.push(Reverse(ParseMoment::new(
-            FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            thin_vec![],
-        )));
-
-        Ok(BeamWrapper {
-            beam: FuzzyBeam {
+        Ok(BeamWrapper::new(
+            FuzzyBeam {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
                 //           n_sentences: (sentences.len() + 1) as f64,
             },
             record_rules,
-            queue,
-            log_prob: LogProb::prob_of_one(),
-            phantom: PhantomData,
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
-            top_id: 0,
-            n_steps: 0,
-        })
+            category_index,
+        ))
     }
 
     pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
@@ -309,32 +260,13 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         initial_category: Category,
         record_rules: bool,
     ) -> Result<BeamWrapper<T, GeneratorBeam<T>>> {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
-        queue.push(Reverse(ParseMoment::new(
-            FutureTree {
-                node: category_index,
-                index: GornIndex::default(),
-                id: 0,
-            },
-            thin_vec![],
-        )));
-
-        Ok(BeamWrapper {
-            beam: GeneratorBeam { sentence: vec![] },
-            queue,
+        Ok(BeamWrapper::new(
+            GeneratorBeam { sentence: vec![] },
             record_rules,
-            rules: if record_rules {
-                thin_vec![Rule::Start(category_index)]
-            } else {
-                thin_vec![]
-            },
-            log_prob: LogProb::prob_of_one(),
-            phantom: PhantomData,
-            top_id: 0,
-            n_steps: 0,
-        })
+            category_index,
+        ))
     }
 
     pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {

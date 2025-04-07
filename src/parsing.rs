@@ -9,7 +9,7 @@ use beam::Beam;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
-use trees::{FutureTree, ParseMoment};
+use trees::{FutureTree, GornIndex, ParseMoment};
 
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum Rule {
@@ -81,6 +81,32 @@ impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> Ord for BeamWrapper<T, B> {
 impl<T, B: Beam<T>> BeamWrapper<T, B> {
     fn push_moment(&mut self, moment: ParseMoment) {
         self.queue.push(Reverse(moment))
+    }
+
+    fn new(beam: B, record_rules: bool, category_index: NodeIndex) -> Self {
+        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
+        queue.push(Reverse(ParseMoment::new(
+            FutureTree {
+                node: category_index,
+                index: GornIndex::default(),
+                id: 0,
+            },
+            thin_vec![],
+        )));
+        BeamWrapper {
+            beam,
+            queue,
+            record_rules,
+            log_prob: LogProb::prob_of_one(),
+            rules: if record_rules {
+                thin_vec![Rule::Start(category_index)]
+            } else {
+                thin_vec![]
+            },
+            top_id: 0,
+            n_steps: 0,
+            phantom: PhantomData,
+        }
     }
 
     pub fn log_prob(&self) -> LogProb<f64> {

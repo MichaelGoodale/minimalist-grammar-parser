@@ -31,39 +31,28 @@ lazy_static! {
     );
 }
 
-#[divan::bench(args = [true, false])]
-fn parse_long_sentence(record_rules: bool) {
+#[divan::bench]
+fn parse_long_sentence() {
     let g = divan::black_box(get_grammar());
     let sentence: Vec<&str> = divan::black_box(
         "which king knows the queen knows which beer the king drinks"
             .split(' ')
             .collect(),
     );
-    divan::black_box(if record_rules {
-        Parser::new
-    } else {
-        Parser::new_skip_rules
-    })(&g, "C", &sentence, &CONFIG)
-    .unwrap()
-    .next()
-    .unwrap();
+    Parser::new(&g, "C", &sentence, &CONFIG)
+        .unwrap()
+        .next()
+        .unwrap();
 }
 
-#[divan::bench(args=[true, false])]
-fn generate_sentence(record_rules: bool) {
+#[divan::bench]
+fn generate_sentence() {
     let g = divan::black_box(get_grammar());
-    divan::black_box(if record_rules {
-        Generator::new
-    } else {
-        Generator::new_skip_rules
-    })(&g, "C", &CONFIG)
-    .unwrap()
-    .take(100)
-    .count();
+    Generator::new(&g, "C", &CONFIG).unwrap().take(100).count();
 }
 
-#[divan::bench(args = [true, false])]
-fn parse_copy_language(record_rules: bool) {
+#[divan::bench]
+fn parse_copy_language() {
     let (lex, strings) = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -89,19 +78,12 @@ fn parse_copy_language(record_rules: bool) {
     });
 
     for s in strings.iter() {
-        divan::black_box(if record_rules {
-            Parser::new
-        } else {
-            Parser::new_skip_rules
-        })(&lex, "T", s, &CONFIG)
-        .unwrap()
-        .next()
-        .unwrap();
+        Parser::new(&lex, "T", s, &CONFIG).unwrap().next().unwrap();
     }
 }
 
-#[divan::bench(args = [true, false])]
-fn parse_copy_language_together(record_rules: bool) {
+#[divan::bench]
+fn parse_copy_language_together() {
     let (lex, strings) = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -126,18 +108,14 @@ fn parse_copy_language_together(record_rules: bool) {
         (lex, strings)
     });
 
-    divan::black_box(if record_rules {
-        Parser::new_multiple
-    } else {
-        Parser::new_skip_rules_multiple
-    })(&lex, "T", &strings, &CONFIG)
-    .unwrap()
-    .take(strings.len())
-    .for_each(|_| ());
+    Parser::new_multiple(&lex, "T", &strings, &CONFIG)
+        .unwrap()
+        .take(strings.len())
+        .for_each(|_| ());
 }
 
-#[divan::bench(args = [true, false])]
-fn generate_copy_language(record_rules: bool) {
+#[divan::bench]
+fn generate_copy_language() {
     let lex = divan::black_box({
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
@@ -147,12 +125,8 @@ fn generate_copy_language(record_rules: bool) {
         Lexicon::new(v)
     });
 
-    divan::black_box(if record_rules {
-        Generator::new
-    } else {
-        Generator::new_skip_rules
-    })(&lex, "T", &CONFIG)
-    .unwrap()
-    .take(100)
-    .count();
+    Generator::new(&lex, "T", &CONFIG)
+        .unwrap()
+        .take(100)
+        .count();
 }

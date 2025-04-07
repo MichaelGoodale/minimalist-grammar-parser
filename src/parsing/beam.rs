@@ -37,7 +37,7 @@ where
             }
             None => true,
         });
-        return !self.sentence.is_empty();
+        !self.sentence.is_empty()
     }
 }
 

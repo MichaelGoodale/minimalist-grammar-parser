@@ -6,8 +6,8 @@ use lexicon::Lexicon;
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
-use parsing::expand;
 use parsing::Rule;
+use parsing::{expand, BeamWrapper};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -73,21 +73,18 @@ impl ParsingConfig {
 
 #[derive(Debug, Clone)]
 struct ParseHeap<'a, T, B: Beam<T>> {
-    parse_heap: MinMaxHeap<B>,
+    parse_heap: MinMaxHeap<BeamWrapper<T, B>>,
     phantom: PhantomData<T>,
     config: &'a ParsingConfig,
 }
 
-impl<T, B: Beam<T>> ParseHeap<'_, T, B>
-where
-    B: Ord,
-{
-    fn pop(&mut self) -> Option<B> {
+impl<T: Eq + std::fmt::Debug, B: Beam<T>> ParseHeap<'_, T, B> {
+    fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }
 
-    fn push(&mut self, v: B) {
-        if v.log_probability() > &self.config.min_log_prob && v.n_steps() < self.config.max_steps {
+    fn push(&mut self, v: BeamWrapper<T, B>) {
+        if v.log_prob() > self.config.min_log_prob && v.n_steps() < self.config.max_steps {
             if self.parse_heap.len() > self.config.max_beams {
                 self.parse_heap.push_pop_min(v);
             } else {
@@ -165,6 +162,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(mut beam) = self.parse_heap.pop() {
+            let p = beam.log_prob();
             if let Some(moment) = beam.pop_moment() {
                 expand(
                     &mut self.parse_heap,
@@ -173,8 +171,8 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some(x) = beam.yield_good_parse() {
-                return Some(x);
+            } else if let Some((_, x, y)) = beam.beam.yield_good_parse() {
+                return Some((p, x, y));
             }
         }
 
@@ -311,6 +309,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
+                let p = beam.log_prob();
                 if let Some(moment) = beam.pop_moment() {
                     expand(
                         &mut self.parse_heap,
@@ -319,7 +318,7 @@ where
                         self.lexicon,
                         self.config,
                     );
-                } else if let Some((mut good_parses, p, rules)) = beam.yield_good_parse() {
+                } else if let Some((mut good_parses, _, rules)) = beam.beam.yield_good_parse() {
                     if let Some(next_sentence) = good_parses.next() {
                         self.buffer
                             .extend(good_parses.map(|x| (p, x, rules.clone())));
@@ -402,8 +401,12 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if beam.queue.is_empty() {
-                return Some((beam.log_probability, beam.sentence, beam.rules.to_vec()));
+            } else if beam.is_empty() {
+                return Some((
+                    beam.log_prob(),
+                    beam.beam.sentence,
+                    beam.beam.rules.to_vec(),
+                ));
             }
         }
         None

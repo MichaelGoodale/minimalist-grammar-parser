@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
 use crate::{Direction, ParseHeap, ParsingConfig};
 use anyhow::Result;
@@ -40,6 +42,66 @@ pub enum Rule {
     },
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct BeamWrapper<T, B: Beam<T> + PartialEq> {
+    log_prob: LogProb<f64>,
+    pub beam: B,
+    phantom: PhantomData<T>,
+}
+
+impl<T: Eq + std::fmt::Debug, B: Beam<T>> PartialOrd for BeamWrapper<T, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Eq + std::fmt::Debug, B: Beam<T>> Ord for BeamWrapper<T, B> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.log_prob.cmp(&other.log_prob)
+    }
+}
+
+impl<T, B: Beam<T>> BeamWrapper<T, B> {
+    fn push_moment(&mut self, moment: ParseMoment) {
+        self.beam.push_moment(moment);
+    }
+
+    pub fn log_prob(&self) -> LogProb<f64> {
+        self.log_prob
+    }
+
+    fn top_id(&self) -> usize {
+        self.beam.top_id()
+    }
+
+    fn top_id_mut(&mut self) -> &mut usize {
+        self.beam.top_id_mut()
+    }
+
+    fn record_rules(&self) -> bool {
+        self.beam.record_rules()
+    }
+
+    fn push_rule(&mut self, r: Rule) {
+        self.beam.push_rule(r)
+    }
+    fn inc(&mut self) {
+        self.beam.inc()
+    }
+
+    pub fn n_steps(&self) -> usize {
+        self.beam.n_steps()
+    }
+
+    pub fn pop_moment(&mut self) -> Option<ParseMoment> {
+        self.beam.pop_moment()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.beam.is_empty()
+    }
+}
+
 fn clone_push<T: Clone + Default>(v: &[T], x: T) -> ThinVec<T> {
     let mut v: ThinVec<T> = ThinVec::from(v);
     v.push(x);
@@ -57,7 +119,7 @@ fn unmerge_from_mover<
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    beam: &B,
+    beam: &BeamWrapper<T, B>,
     cat: &Category,
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
@@ -92,7 +154,7 @@ fn unmerge_from_mover<
                             .collect(),
                     ));
 
-                    *beam.log_probability_mut() += stored_prob + child_prob + config.move_prob;
+                    beam.log_prob += stored_prob + child_prob + config.move_prob;
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmergeFromMover {
                             child: child_node,
@@ -125,7 +187,7 @@ fn unmerge<
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    mut beam: B,
+    mut beam: BeamWrapper<T, B>,
     cat: &Category,
     dir: &Direction,
     child_node: NodeIndex,
@@ -156,7 +218,7 @@ fn unmerge<
         },
     ));
 
-    *beam.log_probability_mut() += child_prob + rule_prob;
+    beam.log_prob += child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmerge {
             child: child_node,
@@ -182,7 +244,7 @@ fn unmove_from_mover<
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    beam: &B,
+    beam: &BeamWrapper<T, B>,
     cat: &Category,
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
@@ -213,7 +275,7 @@ fn unmove_from_mover<
                             }))
                             .collect(),
                     ));
-                    *beam.log_probability_mut() += stored_prob + child_prob + config.move_prob;
+                    beam.log_prob += stored_prob + child_prob + config.move_prob;
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmoveFromMover {
                             parent: moment.tree.id,
@@ -245,7 +307,7 @@ fn unmove<
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
     moment: &ParseMoment,
-    mut beam: B,
+    mut beam: BeamWrapper<T, B>,
     cat: &Category,
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
@@ -269,7 +331,7 @@ fn unmove<
         ),
     ));
 
-    *beam.log_probability_mut() += child_prob + rule_prob;
+    beam.log_prob += child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmove {
             child_id: beam.top_id() + 1,
@@ -291,7 +353,7 @@ pub fn expand<
 >(
     extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,
-    beam: B,
+    beam: BeamWrapper<T, B>,
     lexicon: &'a Lexicon<T, Category>,
     config: &ParsingConfig,
 ) {

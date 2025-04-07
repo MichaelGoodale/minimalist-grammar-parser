@@ -23,8 +23,11 @@ where
     let mut id2node = HashMap::new();
     for rule in rules.iter() {
         match rule {
-            Rule::Start(nx) => {
-                let c = lexicon.get(*nx).unwrap().0;
+            Rule::Start {
+                node,
+                child: _child,
+            } => {
+                let c = lexicon.get(*node).unwrap().0;
                 id2node.insert(0, g.add_node(format!("{c}P").to_string()));
             }
             Rule::Unmerge {

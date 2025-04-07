@@ -1,6 +1,7 @@
 use crate::Direction;
 use ahash::AHashSet;
 use anyhow::{bail, Context, Result};
+use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
     text::{inline_whitespace, newline},
@@ -22,15 +23,19 @@ pub enum Feature<Category: Eq> {
 }
 fn grammar_parser<'src>(
 ) -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
-    entry_parser()
+    entry_parser::<extra::Err<Rich<'src, char>>>()
         .separated_by(newline())
         .collect::<Vec<_>>()
         .map(Lexicon::new)
         .then_ignore(end())
 }
 
-fn entry_parser<'src>(
-) -> impl Parser<'src, &'src str, LexicalEntry<&'src str, &'src str>, extra::Err<Rich<'src, char>>>
+fn entry_parser<'src, E>() -> impl Parser<'src, &'src str, LexicalEntry<&'src str, &'src str>, E>
+where
+    E: ParserExtra<'src, &'src str>,
+    E::Error: LabelError<'src, &'src str, TextExpected<'src, &'src str>>
+        + LabelError<'src, &'src str, MaybeRef<'src, char>>
+        + LabelError<'src, &'src str, &'static str>,
 {
     let feature_name = any()
         .and_is(none_of(['\t', '\n', ' ', '+', '-', '=', ':', '\r']))
@@ -499,14 +504,17 @@ pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
 impl LexicalEntry<&str, &str> {
     pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>> {
-        entry_parser().parse(s).into_result().map_err(|x| {
-            anyhow::Error::msg(
-                x.into_iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )
-        })
+        entry_parser::<extra::Err<Rich<char>>>()
+            .parse(s)
+            .into_result()
+            .map_err(|x| {
+                anyhow::Error::msg(
+                    x.into_iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            })
     }
 }
 
@@ -525,6 +533,9 @@ impl std::fmt::Display for FeatureOrLemma<&str, &str> {
         }
     }
 }
+
+#[cfg(feature = "semantics")]
+mod semantics;
 
 #[cfg(test)]
 mod tests {

@@ -4,6 +4,7 @@ use super::*;
 
 use simple_semantics::lambda::LambdaExprRef;
 use simple_semantics::lambda::LambdaPool;
+use simple_semantics::lambda::RootedLambdaPool;
 use simple_semantics::language::Expr;
 use simple_semantics::lot_parser;
 use simple_semantics::LabelledScenarios;
@@ -11,7 +12,7 @@ use simple_semantics::LabelledScenarios;
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
-    semantic_entries: HashMap<NodeIndex, (LambdaPool<Expr>, LambdaExprRef)>,
+    semantic_entries: HashMap<NodeIndex, RootedLambdaPool<Expr>>,
 }
 
 fn semantic_grammar_parser<'src>() -> impl Parser<
@@ -65,12 +66,10 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
 }
 
 impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
-    pub fn interpretation(&self, nx: NodeIndex) -> (&LambdaPool<Expr>, LambdaExprRef) {
-        let z = self
-            .semantic_entries
+    pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<Expr> {
+        self.semantic_entries
             .get(&nx)
-            .expect("There is no lemma of that node index!");
-        (&z.0, z.1)
+            .expect("There is no lemma of that node index!")
     }
 }
 
@@ -82,21 +81,26 @@ mod test {
     use crate::{Parser, ParsingConfig};
 
     #[test]
-    fn testytest() -> anyhow::Result<()> {
+    fn trivial_montague() -> anyhow::Result<()> {
         let config: ParsingConfig = ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
             100,
             1000,
         );
-        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda <e,t> x ((lambda <e,t> y (some(x, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e)))))";
-        let (semantic, scenario) = SemanticLexicon::parse(lexicon)?;
+        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda <e,t> x ((lambda <e,t> y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e)))))";
+        let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
 
-        let parse = Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
-            .next()
-            .unwrap();
-        dbg!(parse);
-        panic!();
+        let (_, _, rules) =
+            Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
+                .next()
+                .unwrap();
+        let interpretation = rules.to_interpretation(&semantic)?;
+        let interpretation = interpretation.into_pool()?;
+        assert_eq!(
+            "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
+            interpretation.to_string()
+        );
         Ok(())
     }
 }

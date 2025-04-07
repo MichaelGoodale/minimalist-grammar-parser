@@ -9,7 +9,10 @@ use crate::lexicon::Lexicon;
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
 #[cfg(feature = "semantics")]
-use simple_semantics::{lambda::LambdaPool, language::Expr};
+use simple_semantics::{
+    lambda::{LambdaPool, RootedLambdaPool},
+    language::Expr,
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct RuleIndex(usize);
@@ -199,9 +202,13 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
-    pub fn to_interpretation<T: Eq, C: Eq>(&self, lex: &SemanticLexicon<T, C>) {
-        let mut pool = LambdaPool::<Expr>::new();
-        inner_interpretation(self, lex, &mut pool, RuleIndex(0));
+    pub fn to_interpretation<T: Eq, C: Eq>(
+        &self,
+        lex: &SemanticLexicon<T, C>,
+    ) -> anyhow::Result<RootedLambdaPool<Expr>> {
+        let mut pool = inner_interpretation(self, lex, RuleIndex(0));
+        pool.reduce()?;
+        Ok(pool)
     }
 }
 
@@ -209,17 +216,23 @@ impl RulePool {
 fn inner_interpretation<T: Eq, C: Eq>(
     rules: &RulePool,
     lex: &SemanticLexicon<T, C>,
-    lambda_pool: &mut LambdaPool<Expr>,
     index: RuleIndex,
-) {
+) -> RootedLambdaPool<Expr> {
     let rule = rules.get(index);
-    let pool = match rule {
-        Rule::Scan { node } => {
-            let pool = lex.interpretation(*node);
+    match rule {
+        Rule::Scan { node } => lex.interpretation(*node).clone(),
+        Rule::Start { child, .. } => inner_interpretation(rules, lex, *child),
+        Rule::Unmerge {
+            child_id,
+            complement_id,
+            ..
+        } => {
+            let complement = inner_interpretation(rules, lex, *complement_id);
+            let child = inner_interpretation(rules, lex, *child_id);
+            child.merge(complement)
         }
-        Rule::Start { .. } | Rule::Scan { .. } | Rule::Unmerge { .. } => (),
         _ => todo!(),
-    };
+    }
 }
 
 fn inner_to_graph<T, C>(

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fmt::Display;
 
@@ -95,9 +96,9 @@ impl Rule {
             Rule::UnmoveTrace(trace_id) => trace_id.to_string(),
             Rule::Scan { node } => lex.get(node).unwrap().0.to_string(),
             Rule::Unmerge { .. } => "Merge".to_string(),
-            Rule::UnmergeFromMover { .. } => "Merge".to_string(),
+            Rule::UnmergeFromMover { .. } => "MergeFromMover".to_string(),
             Rule::Unmove { .. } => "Move".to_string(),
-            Rule::UnmoveFromMover { .. } => "Move".to_string(),
+            Rule::UnmoveFromMover { .. } => "MoveFromMover".to_string(),
         }
     }
 }
@@ -152,11 +153,19 @@ impl PartialRulePool {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RulePool(Vec<Rule>);
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default)]
-pub struct Empty {}
-impl std::fmt::Display for Empty {
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum MGEdge {
+    Move,
+    Merge,
+}
+
+impl std::fmt::Display for MGEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "")
+        let s = match self {
+            MGEdge::Move => "move",
+            MGEdge::Merge => "",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -172,23 +181,36 @@ impl RulePool {
         }
     }
 
-    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> DiGraph<String, Empty>
+    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> DiGraph<String, MGEdge>
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
-        let mut g = DiGraph::<String, Empty>::new();
-        link(&mut g, lex, self, RuleIndex(0));
+        let mut g = DiGraph::<String, MGEdge>::new();
+        let mut trace_h = HashMap::new();
+        let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
+        link(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
+        for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
+            if let (Some(a), Some(b)) = x {
+                Some((*rule_h.get(&a).unwrap(), b))
+            } else {
+                None
+            }
+        }) {
+            g.add_edge(a, b, MGEdge::Move);
+        }
         g
     }
 }
 
 fn link<T, C>(
-    g: &mut DiGraph<String, Empty>,
+    g: &mut DiGraph<String, MGEdge>,
     lex: &Lexicon<T, C>,
     rules: &RulePool,
     index: RuleIndex,
+    trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
+    rules_h: &mut HashMap<RuleIndex, NodeIndex>,
 ) -> NodeIndex
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
@@ -197,14 +219,31 @@ where
 {
     let rule = rules.get(index);
     let node = g.add_node(rule.to_name(lex));
+    rules_h.insert(index, node);
+
+    match rule {
+        Rule::UnmoveTrace(trace_id) => trace_h.entry(*trace_id).or_default().1 = Some(node),
+        Rule::UnmergeFromMover {
+            trace_id,
+            stored_id,
+            ..
+        }
+        | Rule::UnmoveFromMover {
+            trace_id,
+            stored_id,
+            ..
+        } => trace_h.entry(*trace_id).or_default().0 = Some(*stored_id),
+        Rule::Unmove { .. } | Rule::Start { .. } | Rule::Scan { .. } | Rule::Unmerge { .. } => (),
+    };
+
     let (child_a, child_b) = rule.children();
     if let Some(child_a) = child_a {
-        let child = link(g, lex, rules, child_a);
-        g.add_edge(node, child, Empty::default());
+        let child = link(g, lex, rules, child_a, trace_h, rules_h);
+        g.add_edge(node, child, MGEdge::Merge);
     };
     if let Some(child_b) = child_b {
-        let child = link(g, lex, rules, child_b);
-        g.add_edge(node, child, Empty::default());
+        let child = link(g, lex, rules, child_b, trace_h, rules_h);
+        g.add_edge(node, child, MGEdge::Merge);
     };
     node
 }
@@ -236,8 +275,39 @@ impl Iterator for RulePoolBFSIterator<'_> {
 
 #[cfg(test)]
 mod test {
+    use logprob::LogProb;
+
+    use super::*;
+    use crate::grammars::STABLER2011;
+    use crate::{Parser, ParsingConfig};
+    use petgraph::dot::Dot;
+
     #[test]
     fn to_graph() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(STABLER2011)?;
+        let config = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        for sentence in vec![
+            "the king drinks the beer",
+            "which wine the queen prefers",
+            "which queen prefers the wine",
+            "the queen knows the king drinks the beer",
+            "the queen knows the king knows the queen drinks the beer",
+        ]
+        .into_iter()
+        {
+            let (_, _, rules) =
+                Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &config)?
+                    .next()
+                    .unwrap();
+            let g = rules.to_graph(&lex);
+            let dot = Dot::new(&g);
+            println!("{}", dot);
+        }
         panic!();
         Ok(())
     }

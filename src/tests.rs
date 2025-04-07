@@ -480,26 +480,3 @@ fn proper_distributions() -> Result<()> {
     assert_eq!(v, parse);
     Ok(())
 }
-
-#[test]
-fn fancy_rules() -> anyhow::Result<()> {
-    let lex = Lexicon::parse(STABLER2011)?;
-    for sentence in vec![
-        "the king drinks the beer",
-        "which wine the queen prefers",
-        "which queen prefers the wine",
-        "the queen knows the king drinks the beer",
-        "the queen knows the king knows the queen drinks the beer",
-    ]
-    .into_iter()
-    {
-        let (_, _, rules) =
-            Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &CONFIG)?
-                .next()
-                .unwrap();
-        dbg!(rules);
-    }
-    panic!();
-
-    Ok(())
-}

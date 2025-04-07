@@ -1,13 +1,15 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::fmt::Display;
 
 use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
 
-use crate::lexicon;
 use crate::lexicon::FeatureOrLemma;
 use crate::lexicon::Lexicon;
+
+#[cfg(feature = "semantics")]
+use crate::lexicon::SemanticLexicon;
+#[cfg(feature = "semantics")]
+use simple_semantics::{lambda::LambdaPool, language::Expr};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct RuleIndex(usize);
@@ -174,13 +176,6 @@ impl RulePool {
         &self.0[x.0]
     }
 
-    pub fn iter(&self) -> RulePoolBFSIterator {
-        RulePoolBFSIterator {
-            pool: self,
-            queue: VecDeque::from([RuleIndex(0)]),
-        }
-    }
-
     pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> DiGraph<String, MGEdge>
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
@@ -190,7 +185,7 @@ impl RulePool {
         let mut g = DiGraph::<String, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
-        link(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
+        inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
         for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
             if let (Some(a), Some(b)) = x {
                 Some((*rule_h.get(&a).unwrap(), b))
@@ -202,9 +197,32 @@ impl RulePool {
         }
         g
     }
+
+    #[cfg(feature = "semantics")]
+    pub fn to_interpretation<T: Eq, C: Eq>(&self, lex: &SemanticLexicon<T, C>) {
+        let mut pool = LambdaPool::<Expr>::new();
+        inner_interpretation(self, lex, &mut pool, RuleIndex(0));
+    }
 }
 
-fn link<T, C>(
+#[cfg(feature = "semantics")]
+fn inner_interpretation<T: Eq, C: Eq>(
+    rules: &RulePool,
+    lex: &SemanticLexicon<T, C>,
+    lambda_pool: &mut LambdaPool<Expr>,
+    index: RuleIndex,
+) {
+    let rule = rules.get(index);
+    let pool = match rule {
+        Rule::Scan { node } => {
+            let pool = lex.interpretation(*node);
+        }
+        Rule::Start { .. } | Rule::Scan { .. } | Rule::Unmerge { .. } => (),
+        _ => todo!(),
+    };
+}
+
+fn inner_to_graph<T, C>(
     g: &mut DiGraph<String, MGEdge>,
     lex: &Lexicon<T, C>,
     rules: &RulePool,
@@ -238,39 +256,14 @@ where
 
     let (child_a, child_b) = rule.children();
     if let Some(child_a) = child_a {
-        let child = link(g, lex, rules, child_a, trace_h, rules_h);
+        let child = inner_to_graph(g, lex, rules, child_a, trace_h, rules_h);
         g.add_edge(node, child, MGEdge::Merge);
     };
     if let Some(child_b) = child_b {
-        let child = link(g, lex, rules, child_b, trace_h, rules_h);
+        let child = inner_to_graph(g, lex, rules, child_b, trace_h, rules_h);
         g.add_edge(node, child, MGEdge::Merge);
     };
     node
-}
-
-pub struct RulePoolBFSIterator<'a> {
-    pool: &'a RulePool,
-    queue: VecDeque<RuleIndex>,
-}
-
-impl Iterator for RulePoolBFSIterator<'_> {
-    type Item = Rule;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(r) = self.queue.pop_front() {
-            let rule = self.pool.get(r);
-            let (a, b) = rule.children();
-            if let Some(a) = a {
-                self.queue.push_back(a);
-            };
-            if let Some(b) = b {
-                self.queue.push_back(b);
-            };
-            Some(*rule)
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]

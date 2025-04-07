@@ -537,6 +537,9 @@ impl std::fmt::Display for FeatureOrLemma<&str, &str> {
 #[cfg(feature = "semantics")]
 mod semantics;
 
+#[cfg(feature = "semantics")]
+pub use semantics::SemanticLexicon;
+
 #[cfg(test)]
 mod tests {
 

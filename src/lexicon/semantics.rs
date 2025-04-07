@@ -64,6 +64,16 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
     }
 }
 
+impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
+    pub fn interpretation(&self, nx: NodeIndex) -> (&LambdaPool<Expr>, LambdaExprRef) {
+        let z = self
+            .semantic_entries
+            .get(&nx)
+            .expect("There is no lemma of that node index!");
+        (&z.0, z.1)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use logprob::LogProb;

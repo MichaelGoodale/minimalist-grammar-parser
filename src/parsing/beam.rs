@@ -96,7 +96,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
                     .filter(|(s, pos)| s.len() == *pos)
                     .map(|(s, _)| s),
                 b.log_prob,
-                b.rules.to_vec(),
+                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
             ))
         } else {
             None
@@ -135,7 +135,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
             Some((
                 b.log_prob,
                 b.beam.generated_sentences.to_vec(),
-                b.rules.to_vec(),
+                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
             ))
         } else {
             None
@@ -204,7 +204,11 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
 
     pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, Vec<Rule>)> {
         if b.is_empty() {
-            Some((b.log_prob, b.beam.sentence.to_vec(), b.rules.to_vec()))
+            Some((
+                b.log_prob,
+                b.beam.sentence.to_vec(),
+                b.rules.into_iter().collect::<Option<Vec<_>>>().unwrap(),
+            ))
         } else {
             None
         }

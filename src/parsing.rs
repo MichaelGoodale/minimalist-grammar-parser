@@ -17,6 +17,7 @@ pub enum Rule {
         node: NodeIndex,
         child: usize,
     },
+    UnmoveTrace,
     Scan {
         node: NodeIndex,
         parent: usize,
@@ -47,12 +48,25 @@ pub enum Rule {
     },
 }
 
+impl Rule {
+    fn parent_id(&self) -> usize {
+        match self {
+            Rule::Start { .. } => 1,
+            Rule::Scan { parent, .. }
+            | Rule::Unmerge { parent, .. }
+            | Rule::UnmergeFromMover { parent, .. }
+            | Rule::Unmove { parent, .. }
+            | Rule::UnmoveFromMover { parent, .. } => *parent,
+            Rule::UnmoveTrace => panic!("NO"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    rules: ThinVec<Rule>,
-    at_least_this_many_rules: usize,
+    rules: ThinVec<Option<Rule>>,
     pub beam: B,
     phantom: PhantomData<T>,
 }
@@ -90,7 +104,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     ) {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
-            self.rules.push(Rule::Scan {
+            self.push_rule(Rule::Scan {
                 node: child_node,
                 parent: moment.tree.id,
             });
@@ -98,14 +112,9 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         }
     }
 
-    fn fresh_id(&mut self) -> usize {
-        let old = self.at_least_this_many_rules;
-        self.at_least_this_many_rules += 1;
-        old
-    }
-
     fn new_future_tree(&mut self, node: NodeIndex, index: GornIndex) -> (FutureTree, usize) {
-        let id = self.fresh_id();
+        let id = self.rules.len(); //Get fresh ID
+        self.rules.push(None);
         (FutureTree { node, index, id }, id)
     }
 
@@ -126,7 +135,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             FutureTree {
                 node: category_index,
                 index: GornIndex::default(),
-                id: 0,
+                id: 1,
             },
             thin_vec![],
         )));
@@ -134,11 +143,13 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             beam,
             queue,
             log_prob: LogProb::prob_of_one(),
-            rules: thin_vec![Rule::Start {
-                node: category_index,
-                child: 1
-            }],
-            at_least_this_many_rules: 1,
+            rules: thin_vec![
+                Some(Rule::Start {
+                    node: category_index,
+                    child: 1
+                }),
+                None
+            ],
             phantom: PhantomData,
         }
     }
@@ -148,7 +159,14 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     }
 
     fn push_rule(&mut self, r: Rule) {
-        self.rules.push(r)
+        let i = r.parent_id();
+        match r {
+            Rule::UnmergeFromMover { storage, .. } | Rule::UnmoveFromMover { storage, .. } => {
+                self.rules[storage] = Some(Rule::UnmoveTrace)
+            }
+            _ => (),
+        }
+        self.rules[i] = Some(r);
     }
 
     pub fn n_steps(&self) -> usize {

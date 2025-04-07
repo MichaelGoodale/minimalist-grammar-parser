@@ -125,6 +125,7 @@ where
 
                 g.add_edge(parent_node, node, Empty {});
             }
+            Rule::UnmoveTrace => todo!(),
         }
     }
     g

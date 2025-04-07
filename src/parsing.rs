@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
 use crate::{Direction, ParseHeap, ParsingConfig};
 use anyhow::Result;
-use beam::Beam;
+use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{thin_vec, ThinVec};
@@ -45,7 +45,7 @@ pub enum Rule {
 }
 
 #[derive(Debug, Clone)]
-pub struct BeamWrapper<T, B: Beam<T>> {
+pub struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
     rules: ThinVec<Rule>,
@@ -56,7 +56,7 @@ pub struct BeamWrapper<T, B: Beam<T>> {
     n_steps: usize,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialEq for BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialEq for BeamWrapper<T, B> {
     fn eq(&self, other: &Self) -> bool {
         self.beam == other.beam
             && self.log_prob == other.log_prob
@@ -64,21 +64,42 @@ impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialEq for BeamWrapper<T, B> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> Eq for BeamWrapper<T, B> {}
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Eq for BeamWrapper<T, B> {}
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialOrd for BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialOrd for BeamWrapper<T, B> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> Ord for BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.log_prob.cmp(&other.log_prob)
     }
 }
 
-impl<T, B: Beam<T>> BeamWrapper<T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
+    fn scan(
+        mut self,
+        v: &mut ParseHeap<T, B>,
+        moment: &ParseMoment,
+        s: &Option<T>,
+        child_node: NodeIndex,
+        child_prob: LogProb<f64>,
+    ) {
+        if self.beam.scan(s) {
+            self.log_prob += child_prob;
+            if self.record_rules {
+                self.rules.push(Rule::Scan {
+                    node: child_node,
+                    parent: moment.tree.id,
+                });
+            }
+            self.n_steps += 1;
+            v.push(self);
+        }
+    }
+
     fn push_moment(&mut self, moment: ParseMoment) {
         self.queue.push(Reverse(moment))
     }
@@ -150,7 +171,7 @@ fn unmerge_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Clone + Eq,
+    B: Scanner<T> + Clone + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -218,7 +239,7 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Eq,
+    B: Scanner<T> + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -275,7 +296,7 @@ fn unmove_from_mover<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Clone + Eq,
+    B: Scanner<T> + Clone + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -338,7 +359,7 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Eq,
+    B: Scanner<T> + Eq,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -385,7 +406,7 @@ pub fn expand<
     'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Beam<T> + Eq + Clone + 'a,
+    B: Scanner<T> + Eq + Clone + 'a,
 >(
     extender: &mut ParseHeap<'a, T, B>,
     moment: ParseMoment,
@@ -401,7 +422,7 @@ pub fn expand<
         .for_each(
             |(beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
-                    B::scan(extender, &moment, beam, s, child_node, p);
+                    beam.scan(extender, &moment, s, child_node, p);
                 }
                 (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {
                     let new_beam_found = unmerge_from_mover(

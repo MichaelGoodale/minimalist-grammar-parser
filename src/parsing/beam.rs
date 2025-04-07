@@ -1,88 +1,60 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
 use super::{BeamWrapper, Rule};
 use crate::lexicon::Lexicon;
-use crate::ParseHeap;
 use anyhow::Result;
 use logprob::LogProb;
-use petgraph::graph::NodeIndex;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fmt::Debug;
 use thin_vec::thin_vec;
 
-pub trait Beam<T>: Sized {
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
-        moment: &ParseMoment,
-        beam: BeamWrapper<T, Self>,
-        s: &Option<T>,
-        child_node: NodeIndex,
-        child_prob: LogProb<f64>,
-    );
+pub trait Scanner<T>: Sized {
+    fn scan(&mut self, s: &Option<T>) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseBeam<'a, T> {
+pub struct ParseScan<'a, T> {
     pub sentence: Vec<(&'a [T], usize)>,
 }
 
-impl<T> Beam<T> for ParseBeam<'_, T>
+impl<T> Scanner<T> for ParseScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
-        moment: &ParseMoment,
-        mut beam: BeamWrapper<T, Self>,
-        s: &Option<T>,
-        child_node: NodeIndex,
-        child_prob: LogProb<f64>,
-    ) {
-        beam.beam
-            .sentence
-            .retain_mut(|(sentence, position)| match s {
-                Some(s) => {
-                    if let Some(string) = sentence.get(*position) {
-                        if s == string {
-                            *position += 1;
-                            true
-                        } else {
-                            false
-                        }
+    fn scan(&mut self, s: &Option<T>) -> bool {
+        self.sentence.retain_mut(|(sentence, position)| match s {
+            Some(s) => {
+                if let Some(string) = sentence.get(*position) {
+                    if s == string {
+                        *position += 1;
+                        true
                     } else {
                         false
                     }
+                } else {
+                    false
                 }
-                None => true,
-            });
-        if !beam.beam.sentence.is_empty() {
-            beam.log_prob += child_prob;
-            if beam.record_rules() {
-                beam.rules.push(Rule::Scan {
-                    node: child_node,
-                    parent: moment.tree.id,
-                });
             }
-            beam.n_steps += 1;
-            v.push(beam);
-        };
+            None => true,
+        });
+        return !self.sentence.is_empty();
     }
 }
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
+impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
     pub fn new_multiple<U, Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
         record_rules: bool,
-    ) -> Result<BeamWrapper<T, ParseBeam<'a, T>>>
+    ) -> Result<BeamWrapper<T, ParseScan<'a, T>>>
     where
         U: AsRef<[T]>,
     {
         let category_index = lexicon.find_category(&initial_category)?;
 
         Ok(BeamWrapper::new(
-            ParseBeam {
+            ParseScan {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             },
             record_rules,
@@ -95,7 +67,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         initial_category: Category,
         sentence: &'a [T],
         record_rules: bool,
-    ) -> Result<BeamWrapper<T, ParseBeam<'a, T>>> {
+    ) -> Result<BeamWrapper<T, ParseScan<'a, T>>> {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         let category_index = lexicon.find_category(&initial_category)?;
 
@@ -109,7 +81,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         )));
 
         Ok(BeamWrapper::new(
-            ParseBeam {
+            ParseScan {
                 sentence: vec![(sentence, 0)],
             },
             record_rules,
@@ -137,24 +109,24 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuzzyBeam<'a, T> {
+pub struct FuzzyScan<'a, T> {
     generated_sentences: Vec<T>,
     sentence_guides: Vec<(&'a [T], usize)>,
 }
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
+impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
     pub fn new<U, Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
         record_rules: bool,
-    ) -> Result<BeamWrapper<T, FuzzyBeam<'a, T>>>
+    ) -> Result<BeamWrapper<T, FuzzyScan<'a, T>>>
     where
         U: AsRef<[T]>,
     {
         let category_index = lexicon.find_category(&initial_category)?;
         Ok(BeamWrapper::new(
-            FuzzyBeam {
+            FuzzyScan {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
                 //           n_sentences: (sentences.len() + 1) as f64,
@@ -177,23 +149,15 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
     }
 }
 
-impl<T> Beam<T> for FuzzyBeam<'_, T>
+impl<T> Scanner<T> for FuzzyScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
-        moment: &ParseMoment,
-        mut beam: BeamWrapper<T, Self>,
-        s: &Option<T>,
-        child_node: NodeIndex,
-        child_prob: LogProb<f64>,
-    ) {
+    fn scan(&mut self, s: &Option<T>) -> bool {
         if let Some(s) = s {
-            beam.beam.generated_sentences.push(s.clone());
+            self.generated_sentences.push(s.clone());
         }
-        beam.beam
-            .sentence_guides
+        self.sentence_guides
             .retain_mut(|(sentence, position)| match s {
                 Some(s) => {
                     if let Some(string) = sentence.get(*position) {
@@ -209,61 +173,38 @@ where
                 }
                 None => true,
             });
-        beam.log_prob += child_prob;
-        if beam.record_rules() {
-            beam.rules.push(Rule::Scan {
-                node: child_node,
-                parent: moment.tree.id,
-            });
-        }
-        beam.n_steps += 1;
-        v.push(beam);
+        true
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct GeneratorBeam<T> {
+pub struct GeneratorScan<T> {
     pub sentence: Vec<T>,
 }
 
-impl<T: Clone> Beam<T> for GeneratorBeam<T>
+impl<T: Clone> Scanner<T> for GeneratorScan<T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn scan(
-        v: &mut ParseHeap<T, Self>,
-        moment: &ParseMoment,
-        mut beam: BeamWrapper<T, Self>,
-        s: &Option<T>,
-        child_node: NodeIndex,
-        child_prob: LogProb<f64>,
-    ) {
+    fn scan(&mut self, s: &Option<T>) -> bool {
         if let Some(s) = s {
             //If the word was None then adding it does nothing
-            beam.beam.sentence.push(s.clone());
+            self.sentence.push(s.clone());
         }
-        beam.log_prob += child_prob;
-        if beam.record_rules {
-            beam.rules.push(Rule::Scan {
-                node: child_node,
-                parent: moment.tree.id,
-            });
-        }
-        beam.n_steps += 1;
-        v.push(beam);
+        true
     }
 }
 
-impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
+impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
     pub fn new<Category: Eq + std::fmt::Debug + Clone>(
         lexicon: &Lexicon<T, Category>,
         initial_category: Category,
         record_rules: bool,
-    ) -> Result<BeamWrapper<T, GeneratorBeam<T>>> {
+    ) -> Result<BeamWrapper<T, GeneratorScan<T>>> {
         let category_index = lexicon.find_category(&initial_category)?;
 
         Ok(BeamWrapper::new(
-            GeneratorBeam { sentence: vec![] },
+            GeneratorScan { sentence: vec![] },
             record_rules,
             category_index,
         ))

@@ -5,7 +5,7 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::beam::{Beam, FuzzyBeam, GeneratorBeam, ParseBeam};
+use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::Rule;
 use parsing::{expand, BeamWrapper};
 
@@ -72,13 +72,13 @@ impl ParsingConfig {
 }
 
 #[derive(Debug, Clone)]
-struct ParseHeap<'a, T, B: Beam<T>> {
+struct ParseHeap<'a, T, B: Scanner<T>> {
     parse_heap: MinMaxHeap<BeamWrapper<T, B>>,
     phantom: PhantomData<T>,
     config: &'a ParsingConfig,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> ParseHeap<'_, T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'_, T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }
@@ -100,7 +100,7 @@ type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, Vec<Rule>);
 pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
 {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, FuzzyBeam<'a, T>>,
+    parse_heap: ParseHeap<'a, T, FuzzyScan<'a, T>>,
     config: &'a ParsingConfig,
 }
 
@@ -119,7 +119,7 @@ where
         U: AsRef<[T]>,
     {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, true)?);
+        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences, true)?);
         Ok(FuzzyParser {
             lexicon,
             config,
@@ -141,7 +141,7 @@ where
         U: AsRef<[T]>,
     {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(FuzzyBeam::new(lexicon, initial_category, sentences, false)?);
+        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences, false)?);
         Ok(FuzzyParser {
             lexicon,
             config,
@@ -170,7 +170,7 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some(x) = FuzzyBeam::yield_good_parse(beam) {
+            } else if let Some(x) = FuzzyScan::yield_good_parse(beam) {
                 return Some(x);
             }
         }
@@ -181,7 +181,7 @@ where
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, ParseBeam<'a, T>>,
+    parse_heap: ParseHeap<'a, T, ParseScan<'a, T>>,
     config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
 }
@@ -198,7 +198,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new_single(
+        parse_heap.push(ParseScan::new_single(
             lexicon,
             initial_category,
             sentence,
@@ -223,7 +223,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new_single(
+        parse_heap.push(ParseScan::new_single(
             lexicon,
             initial_category,
             sentence,
@@ -251,7 +251,7 @@ where
         U: AsRef<[T]>,
     {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new_multiple(
+        parse_heap.push(ParseScan::new_multiple(
             lexicon,
             initial_category,
             sentences,
@@ -279,7 +279,7 @@ where
         U: AsRef<[T]>,
     {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseBeam::new_multiple(
+        parse_heap.push(ParseScan::new_multiple(
             lexicon,
             initial_category,
             sentences,
@@ -316,7 +316,7 @@ where
                         self.lexicon,
                         self.config,
                     );
-                } else if let Some((mut good_parses, p, rules)) = ParseBeam::yield_good_parse(beam)
+                } else if let Some((mut good_parses, p, rules)) = ParseScan::yield_good_parse(beam)
                 {
                     if let Some(next_sentence) = good_parses.next() {
                         self.buffer
@@ -337,7 +337,7 @@ where
 #[derive(Debug)]
 pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, GeneratorBeam<T>>,
+    parse_heap: ParseHeap<'a, T, GeneratorScan<T>>,
     config: &'a ParsingConfig,
 }
 
@@ -352,7 +352,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorBeam::new(lexicon, initial_category, true)?);
+        parse_heap.push(GeneratorScan::new(lexicon, initial_category, true)?);
         Ok(Generator {
             lexicon,
             config,
@@ -370,7 +370,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorBeam::new(lexicon, initial_category, false)?);
+        parse_heap.push(GeneratorScan::new(lexicon, initial_category, false)?);
         Ok(Generator {
             lexicon,
             config,
@@ -400,7 +400,7 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some(x) = GeneratorBeam::yield_good_parse(beam) {
+            } else if let Some(x) = GeneratorScan::yield_good_parse(beam) {
                 return Some(x);
             }
         }

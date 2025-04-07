@@ -52,6 +52,8 @@ pub struct BeamWrapper<T, B: Beam<T>> {
     record_rules: bool,
     pub beam: B,
     phantom: PhantomData<T>,
+    top_id: usize,
+    n_steps: usize,
 }
 
 impl<T: Eq + std::fmt::Debug, B: Beam<T> + Eq> PartialEq for BeamWrapper<T, B> {
@@ -85,14 +87,6 @@ impl<T, B: Beam<T>> BeamWrapper<T, B> {
         self.log_prob
     }
 
-    fn top_id(&self) -> usize {
-        self.beam.top_id()
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        self.beam.top_id_mut()
-    }
-
     fn push_rule(&mut self, r: Rule) {
         self.rules.push(r)
     }
@@ -101,12 +95,8 @@ impl<T, B: Beam<T>> BeamWrapper<T, B> {
         self.record_rules
     }
 
-    fn inc(&mut self) {
-        self.beam.inc()
-    }
-
     pub fn n_steps(&self) -> usize {
-        self.beam.n_steps()
+        self.n_steps
     }
 
     pub fn pop_moment(&mut self) -> Option<ParseMoment> {
@@ -156,7 +146,7 @@ fn unmerge_from_mover<
                         FutureTree {
                             node: child_node,
                             index: moment.tree.index,
-                            id: beam.top_id() + 1,
+                            id: beam.top_id + 1,
                         },
                         thin_vec![],
                     ));
@@ -164,7 +154,7 @@ fn unmerge_from_mover<
                         FutureTree {
                             node: stored_child_node,
                             index: mover.index,
-                            id: beam.top_id() + 2,
+                            id: beam.top_id + 2,
                         },
                         moment
                             .movers
@@ -178,14 +168,14 @@ fn unmerge_from_mover<
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmergeFromMover {
                             child: child_node,
-                            child_id: beam.top_id() + 1,
-                            stored_id: beam.top_id() + 2,
+                            child_id: beam.top_id + 1,
+                            stored_id: beam.top_id + 2,
                             parent: moment.tree.id,
                             storage: mover.id,
                         });
                     }
-                    *beam.top_id_mut() += 2;
-                    beam.inc();
+                    beam.top_id += 2;
+                    beam.n_steps += 1;
                     v.push(beam);
                     new_beam = true;
                 }
@@ -219,7 +209,7 @@ fn unmerge<
         FutureTree {
             node: complement,
             index: moment.tree.index.clone_push(*dir),
-            id: beam.top_id() + 1,
+            id: beam.top_id + 1,
         },
         match dir {
             Direction::Right => moment.movers.clone(),
@@ -230,7 +220,7 @@ fn unmerge<
         FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(dir.flip()),
-            id: beam.top_id() + 2,
+            id: beam.top_id + 2,
         },
         match dir {
             Direction::Right => thin_vec![],
@@ -243,12 +233,12 @@ fn unmerge<
         beam.push_rule(Rule::Unmerge {
             child: child_node,
             parent: moment.tree.id,
-            child_id: beam.top_id() + 2,
-            complement_id: beam.top_id() + 1,
+            child_id: beam.top_id + 2,
+            complement_id: beam.top_id + 1,
         });
     }
-    *beam.top_id_mut() += 2;
-    beam.inc();
+    beam.top_id += 2;
+    beam.n_steps += 1;
     v.push(beam);
     Ok(())
 }
@@ -281,7 +271,7 @@ fn unmove_from_mover<
                         FutureTree {
                             node: child_node,
                             index: moment.tree.index,
-                            id: beam.top_id() + 1,
+                            id: beam.top_id + 1,
                         },
                         moment
                             .movers
@@ -291,7 +281,7 @@ fn unmove_from_mover<
                             .chain(std::iter::once(FutureTree {
                                 node: stored_child_node,
                                 index: mover.index,
-                                id: beam.top_id() + 2,
+                                id: beam.top_id + 2,
                             }))
                             .collect(),
                     ));
@@ -299,13 +289,13 @@ fn unmove_from_mover<
                     if beam.record_rules() {
                         beam.push_rule(Rule::UnmoveFromMover {
                             parent: moment.tree.id,
-                            child_id: beam.top_id() + 1,
-                            stored_id: beam.top_id() + 2,
+                            child_id: beam.top_id + 1,
+                            stored_id: beam.top_id + 2,
                             storage: mover.id,
                         });
                     }
-                    *beam.top_id_mut() += 2;
-                    beam.inc();
+                    beam.top_id += 2;
+                    beam.n_steps += 1;
                     v.push(beam);
                     new_beam_found = true;
                 }
@@ -339,14 +329,14 @@ fn unmove<
         FutureTree {
             node: child_node,
             index: moment.tree.index.clone_push(Direction::Right),
-            id: beam.top_id() + 1,
+            id: beam.top_id + 1,
         },
         clone_push(
             &moment.movers,
             FutureTree {
                 node: stored,
                 index: moment.tree.index.clone_push(Direction::Left),
-                id: beam.top_id() + 2,
+                id: beam.top_id + 2,
             },
         ),
     ));
@@ -354,13 +344,13 @@ fn unmove<
     beam.log_prob += child_prob + rule_prob;
     if beam.record_rules() {
         beam.push_rule(Rule::Unmove {
-            child_id: beam.top_id() + 1,
-            stored_id: beam.top_id() + 2,
+            child_id: beam.top_id + 1,
+            stored_id: beam.top_id + 2,
             parent: moment.tree.id,
         });
     }
-    *beam.top_id_mut() += 2;
-    beam.inc();
+    beam.top_id += 2;
+    beam.n_steps += 1;
     v.push(beam);
     Ok(())
 }

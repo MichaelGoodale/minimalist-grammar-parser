@@ -20,21 +20,11 @@ pub trait Beam<T>: Sized {
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     );
-
-    fn inc(&mut self);
-
-    fn n_steps(&self) -> usize;
-
-    fn top_id(&self) -> usize;
-
-    fn top_id_mut(&mut self) -> &mut usize;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseBeam<'a, T> {
     pub sentence: Vec<(&'a [T], usize)>,
-    pub top_id: usize,
-    pub steps: usize,
 }
 
 impl<T> Beam<T> for ParseBeam<'_, T>
@@ -74,25 +64,9 @@ where
                     parent: moment.tree.id,
                 });
             }
-            beam.beam.steps += 1;
+            beam.n_steps += 1;
             v.push(beam);
         };
-    }
-
-    fn inc(&mut self) {
-        self.steps += 1;
-    }
-
-    fn n_steps(&self) -> usize {
-        self.steps
-    }
-
-    fn top_id(&self) -> usize {
-        self.top_id
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        &mut self.top_id
     }
 }
 
@@ -121,8 +95,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         Ok(BeamWrapper {
             beam: ParseBeam {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
-                top_id: 0,
-                steps: 0,
             },
             queue,
             log_prob: LogProb::prob_of_one(),
@@ -133,6 +105,8 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
             } else {
                 thin_vec![]
             },
+            top_id: 0,
+            n_steps: 0,
         })
     }
 
@@ -157,8 +131,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
         Ok(BeamWrapper {
             beam: ParseBeam {
                 sentence: vec![(sentence, 0)],
-                top_id: 0,
-                steps: 0,
             },
             queue,
             log_prob: LogProb::prob_of_one(),
@@ -169,6 +141,8 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
             } else {
                 thin_vec![]
             },
+            top_id: 0,
+            n_steps: 0,
         })
     }
 
@@ -195,8 +169,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseBeam<'a, T> {
 pub struct FuzzyBeam<'a, T> {
     generated_sentences: Vec<T>,
     sentence_guides: Vec<(&'a [T], usize)>,
-    top_id: usize,
-    steps: usize,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
@@ -225,8 +197,6 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             beam: FuzzyBeam {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
-                top_id: 0,
-                steps: 0,
                 //           n_sentences: (sentences.len() + 1) as f64,
             },
             record_rules,
@@ -238,6 +208,8 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyBeam<'a, T> {
             } else {
                 thin_vec![]
             },
+            top_id: 0,
+            n_steps: 0,
         })
     }
 
@@ -293,32 +265,14 @@ where
                 parent: moment.tree.id,
             });
         }
-        beam.beam.steps += 1;
+        beam.n_steps += 1;
         v.push(beam);
-    }
-
-    fn inc(&mut self) {
-        self.steps += 1;
-    }
-
-    fn n_steps(&self) -> usize {
-        self.steps
-    }
-
-    fn top_id(&self) -> usize {
-        self.top_id
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        &mut self.top_id
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GeneratorBeam<T> {
     pub sentence: Vec<T>,
-    pub top_id: usize,
-    pub steps: usize,
 }
 
 impl<T: Clone> Beam<T> for GeneratorBeam<T>
@@ -344,24 +298,8 @@ where
                 parent: moment.tree.id,
             });
         }
-        beam.beam.steps += 1;
+        beam.n_steps += 1;
         v.push(beam);
-    }
-
-    fn inc(&mut self) {
-        self.steps += 1;
-    }
-
-    fn n_steps(&self) -> usize {
-        self.steps
-    }
-
-    fn top_id(&self) -> usize {
-        self.top_id
-    }
-
-    fn top_id_mut(&mut self) -> &mut usize {
-        &mut self.top_id
     }
 }
 
@@ -384,11 +322,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
         )));
 
         Ok(BeamWrapper {
-            beam: GeneratorBeam {
-                sentence: vec![],
-                top_id: 0,
-                steps: 0,
-            },
+            beam: GeneratorBeam { sentence: vec![] },
             queue,
             record_rules,
             rules: if record_rules {
@@ -398,6 +332,8 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorBeam<T> {
             },
             log_prob: LogProb::prob_of_one(),
             phantom: PhantomData,
+            top_id: 0,
+            n_steps: 0,
         })
     }
 

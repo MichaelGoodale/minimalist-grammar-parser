@@ -165,9 +165,9 @@ checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
 name = "divan"
-version = "0.1.18"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "009c56317fe2bd3b5eebe3aa888828c62ed1b085d26c1ef2079a60369795765e"
+checksum = "a405457ec78b8fe08b0e32b4a3570ab5dff6dd16eb9e76a5ee0a9d9cbd898933"
 dependencies = [
  "cfg-if",
  "clap",
@@ -179,9 +179,9 @@ dependencies = [
 
 [[package]]
 name = "divan-macros"
-version = "0.1.18"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f4de9827ae754db91aedec0277381f5a2d8e2f801564c8d774acfe1ab1b045e"
+checksum = "9556bc800956545d6420a640173e5ba7dfa82f38d3ea5a167eb555bc69ac3323"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -289,9 +289,9 @@ checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe7db12097d22ec582439daf8618b8fdd1a7bef6270e9af3b1ebcd30893cf413"
+checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
 name = "logprob"
@@ -476,7 +476,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simple-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#14949483425761530225741ae1f30c2ac0e6fea2"
+source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#e1ff73a721885567996c0f9f75c1666345bafaa7"
 dependencies = [
  "ahash",
  "anyhow",

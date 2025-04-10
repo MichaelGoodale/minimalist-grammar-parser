@@ -249,7 +249,7 @@ impl RulePool {
         lex: &SemanticLexicon<T, C>,
     ) -> anyhow::Result<RootedLambdaPool<Expr>> {
         let mut trace_h = HashMap::default();
-        let (mut pool, _) = inner_interpretation(self, lex, RuleIndex(0), &mut trace_h);
+        let (mut pool, _) = inner_interpretation(self, lex, RuleIndex(0), &mut trace_h)?;
         pool.reduce()?;
         Ok(pool)
     }
@@ -261,19 +261,20 @@ fn inner_interpretation<T: Eq, C: Eq>(
     lex: &SemanticLexicon<T, C>,
     index: RuleIndex,
     trace_h: &mut HashMap<TraceId, RootedLambdaPool<Expr>>,
-) -> (RootedLambdaPool<Expr>, Option<TraceId>) {
+) -> anyhow::Result<(RootedLambdaPool<Expr>, Option<TraceId>)> {
     let rule = rules.get(index);
-    match rule {
+    Ok(match rule {
         Rule::Scan { node } => (lex.interpretation(*node).clone(), None),
-        Rule::Start { child, .. } => inner_interpretation(rules, lex, *child, trace_h),
+        Rule::Start { child, .. } => inner_interpretation(rules, lex, *child, trace_h)?,
         Rule::Unmerge {
             child_id,
             complement_id,
             ..
         } => {
-            let complement = inner_interpretation(rules, lex, *complement_id, trace_h).0;
-            let child = inner_interpretation(rules, lex, *child_id, trace_h).0;
-            (child.merge(complement).unwrap(), None)
+            let complement = inner_interpretation(rules, lex, *complement_id, trace_h)?.0;
+            let child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+            let merged = child.merge(complement).unwrap();
+            (merged, None)
         }
         Rule::UnmoveTrace(trace_id) => (trace_h.remove(trace_id).unwrap(), Some(*trace_id)),
         Rule::UnmergeFromMover {
@@ -282,12 +283,10 @@ fn inner_interpretation<T: Eq, C: Eq>(
             trace_id,
             ..
         } => {
-            let child = inner_interpretation(rules, lex, *child_id, trace_h).0;
-            let stored_value = inner_interpretation(rules, lex, *stored_id, trace_h).0;
+            let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+            let stored_value = inner_interpretation(rules, lex, *stored_id, trace_h)?.0;
             trace_h.insert(*trace_id, stored_value);
-
-            dbg!(trace_h);
-            //TODO: Actually apply the novel abstraction
+            child.apply_new_free_variable(trace_id.0)?;
             (child, None)
         }
         Rule::Unmove {
@@ -296,17 +295,18 @@ fn inner_interpretation<T: Eq, C: Eq>(
         } =>
         //We add the lambda extraction to child_id
         {
-            let child = inner_interpretation(rules, lex, *child_id, trace_h).0;
-            let (stored_value, trace_id) = inner_interpretation(rules, lex, *stored_id, trace_h);
-            dbg!(child, trace_id, stored_id);
-            todo!()
+            let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+            let (stored_value, trace_id) = inner_interpretation(rules, lex, *stored_id, trace_h)?;
+            child.lambda_abstract_free_variable(trace_id.unwrap().0)?;
+            let merged = stored_value.merge(child).unwrap();
+            (merged, None)
         }
         Rule::UnmoveFromMover {
             child_id,
             stored_id,
             trace_id,
         } => todo!(),
-    }
+    })
 }
 
 fn x_bar_helper<T, C>(

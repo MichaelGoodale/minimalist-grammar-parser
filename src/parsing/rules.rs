@@ -1,4 +1,6 @@
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
+use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -175,6 +177,44 @@ impl std::fmt::Display for MGEdge {
     }
 }
 
+///Awful helper function to make chains from pairs, e.g. [(a,b), (b,c), (c,d), (z, w)] ->
+///[(a,b,c,d), (z,w)]
+fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
+    x: I,
+) -> impl Iterator<Item = Vec<NodeIndex>> {
+    let mut trace_paths = DiGraphMap::<NodeIndex, ()>::new();
+    x.map(|(a, b)| {
+        trace_paths.add_node(a);
+        trace_paths.add_node(b);
+        trace_paths.add_edge(a, b, ());
+        a
+    })
+    .collect_vec()
+    .into_iter()
+    .filter_map(move |mut x| {
+        if trace_paths
+            .edges_directed(x, petgraph::Direction::Incoming)
+            .next()
+            .is_none()
+        {
+            let mut path = vec![x];
+            let get_child = |x| {
+                trace_paths
+                    .edges_directed(x, petgraph::Direction::Outgoing)
+                    .next()
+                    .map(|(_start, end, _edge_weight)| end)
+            };
+            while let Some(next) = get_child(x) {
+                path.push(next);
+                x = next;
+            }
+            Some(path)
+        } else {
+            None
+        }
+    })
+}
+
 impl RulePool {
     pub fn get(&self, x: RuleIndex) -> &Rule {
         &self.0[x.0]
@@ -190,33 +230,36 @@ impl RulePool {
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
         inner_to_x_bar_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
 
-        for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
+        let paths = to_chains(trace_h.into_iter().filter_map(|(_, x)| {
             if let (Some(a), Some(b)) = x {
-                Some((*rule_h.get(&a).unwrap(), b))
+                let a = *rule_h.get(&a).unwrap();
+                Some((a, b))
             } else {
                 None
             }
-        }) {
-            let a_parent_edge = g
-                .edges_directed(a, petgraph::Direction::Incoming)
-                .next()
-                .unwrap();
-            let a_parent_node = a_parent_edge.source();
+        }));
 
-            let b_parent_edge = g
-                .edges_directed(b, petgraph::Direction::Incoming)
-                .next()
-                .unwrap();
-            let b_parent_node = b_parent_edge.source();
-            let b_parent_id = b_parent_edge.id();
+        for mut path in paths {
+            let parents = path
+                .iter()
+                .map(|x| {
+                    let parent_edge = g
+                        .edges_directed(*x, petgraph::Direction::Incoming)
+                        .next()
+                        .unwrap();
+                    let parent = parent_edge.source();
+                    let w = g.remove_edge(parent_edge.id()).unwrap();
+                    (parent, w)
+                })
+                .collect_vec();
+            path.rotate_left(1);
 
-            let edge_weight = g.remove_edge(a_parent_edge.id()).unwrap();
-            g.add_edge(a_parent_node, b, edge_weight);
-
-            let edge_weight = g.remove_edge(b_parent_id).unwrap();
-            g.add_edge(b_parent_node, a, edge_weight);
-
-            g.add_edge(b, a, MGEdge::Move);
+            for (x, (p, w)) in path.iter().zip(parents.into_iter()) {
+                g.add_edge(p, *x, w);
+            }
+            for (x, y) in path.into_iter().tuple_windows() {
+                g.add_edge(x, y, MGEdge::Move);
+            }
         }
         g
     }
@@ -244,10 +287,14 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
-    pub fn to_interpretation<T: Eq, C: Eq>(
+    pub fn to_interpretation<T, C>(
         &self,
         lex: &SemanticLexicon<T, C>,
-    ) -> anyhow::Result<RootedLambdaPool<Expr>> {
+    ) -> anyhow::Result<RootedLambdaPool<Expr>>
+    where
+        T: Eq + std::fmt::Debug + std::clone::Clone,
+        C: Eq + std::fmt::Debug + std::clone::Clone,
+    {
         let mut trace_h = HashMap::default();
         let (mut pool, _) = inner_interpretation(self, lex, RuleIndex(0), &mut trace_h)?;
         pool.reduce()?;
@@ -256,12 +303,16 @@ impl RulePool {
 }
 
 #[cfg(feature = "semantics")]
-fn inner_interpretation<T: Eq, C: Eq>(
+fn inner_interpretation<T, C>(
     rules: &RulePool,
     lex: &SemanticLexicon<T, C>,
     index: RuleIndex,
     trace_h: &mut HashMap<TraceId, RootedLambdaPool<Expr>>,
-) -> anyhow::Result<(RootedLambdaPool<Expr>, Option<TraceId>)> {
+) -> anyhow::Result<(RootedLambdaPool<Expr>, Option<TraceId>)>
+where
+    T: Eq + std::fmt::Debug + std::clone::Clone,
+    C: Eq + std::fmt::Debug + std::clone::Clone,
+{
     let rule = rules.get(index);
     Ok(match rule {
         Rule::Scan { node } => (lex.interpretation(*node).clone(), None),
@@ -301,11 +352,7 @@ fn inner_interpretation<T: Eq, C: Eq>(
             let merged = stored_value.merge(child).unwrap();
             (merged, None)
         }
-        Rule::UnmoveFromMover {
-            child_id,
-            stored_id,
-            trace_id,
-        } => todo!(),
+        Rule::UnmoveFromMover { .. } => todo!(),
     })
 }
 
@@ -558,8 +605,27 @@ mod test {
         println!("{}", dot);
         assert_eq!(
             dot.to_string(),
- "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n",
+    "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn multimove() -> anyhow::Result<()> {
+        let config: ParsingConfig = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+
+        let lex = Lexicon::parse("a::v= +k +q z\nb::v -k -q")?;
+        let (_, _s, r) = Parser::new(&lex, "z", &["b", "a"], &config)?
+            .next()
+            .unwrap();
+        let g = r.to_x_bar_graph(&lex);
+        println!("{}", Dot::new(&g));
+        assert_eq!(Dot::new(&g).to_string(), "digraph {\n    0 [ label = \"a\" ]\n    1 [ label = \"z\" ]\n    2 [ label = \"b\" ]\n    3 [ label = \"v\" ]\n    4 [ label = \"vP\" ]\n    5 [ label = \"z'\" ]\n    6 [ label = \"t1\" ]\n    7 [ label = \"z'\" ]\n    8 [ label = \"t0\" ]\n    9 [ label = \"zP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    4 -> 3 [ label = \"\" ]\n    5 -> 1 [ label = \"\" ]\n    9 -> 4 [ label = \"\" ]\n    7 -> 5 [ label = \"\" ]\n    7 -> 8 [ label = \"\" ]\n    9 -> 7 [ label = \"\" ]\n    5 -> 6 [ label = \"\" ]\n    6 -> 8 [ label = \"move\" ]\n    8 -> 4 [ label = \"move\" ]\n}\n");
         Ok(())
     }
 }

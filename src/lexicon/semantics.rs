@@ -1,13 +1,15 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+
+use crate::ParsingConfig;
 
 use super::*;
 
-use simple_semantics::lambda::LambdaExprRef;
-use simple_semantics::lambda::LambdaPool;
 use simple_semantics::lambda::RootedLambdaPool;
 use simple_semantics::language::Expr;
 use simple_semantics::lot_parser;
 use simple_semantics::LabelledScenarios;
+use simple_semantics::LanguageExpression;
 
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<T: Eq, Category: Eq> {
@@ -45,7 +47,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
 }
 
 impl<'src> SemanticLexicon<&'src str, &'src str> {
-    fn parse(s: &'src str) -> anyhow::Result<(Self, LabelledScenarios)> {
+    pub fn parse(s: &'src str) -> anyhow::Result<(Self, LabelledScenarios)> {
         let mut state = extra::SimpleState(LabelledScenarios::default());
 
         Ok((
@@ -65,21 +67,42 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
     }
 }
 
-impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
+impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
     pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<Expr> {
         self.semantic_entries
             .get(&nx)
             .expect("There is no lemma of that node index!")
+    }
+
+    pub fn parse_and_interpret<'a>(
+        &'a self,
+        initial_category: C,
+        sentence: &'a [T],
+        config: &'a ParsingConfig,
+    ) -> anyhow::Result<impl Iterator<Item = (LogProb<f64>, &'a [T], Option<LanguageExpression>)>>
+    {
+        Ok(
+            crate::Parser::new(&self.lexicon, initial_category, sentence, config)?.map(
+                move |(p, s, r)| {
+                    (
+                        p,
+                        s,
+                        r.to_interpretation(self)
+                            .ok()
+                            .and_then(|x| x.into_pool().ok()),
+                    )
+                },
+            ),
+        )
     }
 }
 
 #[cfg(test)]
 mod test {
     use logprob::LogProb;
-    use petgraph::dot::Dot;
 
     use super::SemanticLexicon;
-    use crate::{lexicon::Lexicon, Generator, Parser, ParsingConfig};
+    use crate::{Parser, ParsingConfig};
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {
@@ -135,43 +158,6 @@ mod test {
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
             interpretation.to_string()
         );
-        Ok(())
-    }
-
-    #[test]
-    fn quantifier() -> anyhow::Result<()> {
-        let config: ParsingConfig = ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            1000,
-        );
-
-        let lex = Lexicon::parse("a::v= +k +q z\nb::v -k -q")?;
-        Generator::new(&lex, "z", &config)?
-            .take(50)
-            .for_each(|(_, s, r)| {
-                println!("{}", s.join(" "));
-                dbg!(&r);
-                let g = r.to_graph(&lex);
-                println!("{}", Dot::new(&g));
-                let g = r.to_x_bar_graph(&lex);
-                println!("{}", Dot::new(&g));
-            });
-
-        let nouns = "student::n::lambda e x (p_Student(x))\nteacher::n::lambda e x (p_teacher(x))";
-        let quantifiers = "every::n= d -k -q::lambda t z (z)\nsome::n= d -k -q::lambda t z (z)";
-        let verbs = "sees::d= V::lambda t x (x)\nshaves::V::lambda t x (x)";
-        let tense = "::V= +k =d +q v::lambda t x (t)\n::v= +k +q t::lambda t z (z)";
-        let lexicon = [nouns, quantifiers, verbs, tense].join("\n");
-        let (semantic, _scenario) = SemanticLexicon::parse(&lexicon)?;
-
-        Generator::new(&semantic.lexicon, "v", &config)?
-            .take(50)
-            .for_each(|(_, sentence, _)| {
-                dbg!(sentence);
-            });
-        panic!();
         Ok(())
     }
 }

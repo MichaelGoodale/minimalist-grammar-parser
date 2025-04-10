@@ -315,16 +315,31 @@ impl RulePool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum CanceledFeature<C: Eq> {
-    Feature(Feature<C>),
-    CanceledFeature(Feature<C>),
+struct CanceledFeature<C: Eq> {
+    feature: Feature<C>,
+    canceled: bool,
+}
+
+impl<C: Eq> CanceledFeature<C> {
+    fn uncanceled(feature: Feature<C>) -> Self {
+        CanceledFeature {
+            feature,
+            canceled: false,
+        }
+    }
+    fn canceled(feature: Feature<C>) -> Self {
+        CanceledFeature {
+            feature,
+            canceled: true,
+        }
+    }
 }
 
 impl<C: Eq + std::fmt::Display> Display for CanceledFeature<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CanceledFeature::Feature(feature) => write!(f, "{}", feature),
-            CanceledFeature::CanceledFeature(feature) => write!(f, "\\cancel{{{}}}", feature),
+        match self.canceled {
+            false => write!(f, "{}", self.feature),
+            true => write!(f, "\\cancel{{{}}}", self.feature),
         }
     }
 }
@@ -626,7 +641,8 @@ where
             movement.push(Mover {
                 features: complement_features
                     .iter()
-                    .map(|x| CanceledFeature::Feature(x.clone()))
+                    .cloned()
+                    .map(CanceledFeature::uncanceled)
                     .collect(),
                 trace_id,
             });
@@ -648,7 +664,8 @@ where
             movement.push(Mover {
                 features: complement_features
                     .iter()
-                    .map(|x| CanceledFeature::Feature(x.clone()))
+                    .cloned()
+                    .map(CanceledFeature::uncanceled)
                     .collect(),
                 trace_id,
             });
@@ -661,12 +678,9 @@ where
             .iter()
             .cloned()
             .enumerate()
-            .map(|(i, x)| {
-                if i == 0 && !called_from_start {
-                    CanceledFeature::CanceledFeature(x)
-                } else {
-                    CanceledFeature::Feature(x)
-                }
+            .map(|(i, x)| CanceledFeature {
+                feature: x,
+                canceled: i == 0 && !called_from_start,
             })
             .collect(),
         movement: if let Some(t) = sister_trace {
@@ -679,17 +693,11 @@ where
                             features: x
                                 .features
                                 .iter()
+                                .cloned()
                                 .enumerate()
-                                .map(|(i, x)| {
-                                    let f = match x {
-                                        CanceledFeature::Feature(f)
-                                        | CanceledFeature::CanceledFeature(f) => f.clone(),
-                                    };
-                                    if i == 0 {
-                                        CanceledFeature::CanceledFeature(f)
-                                    } else {
-                                        CanceledFeature::Feature(f)
-                                    }
+                                .map(|(i, mut x)| {
+                                    x.canceled = i == 0;
+                                    x
                                 })
                                 .collect(),
                         }
@@ -775,12 +783,9 @@ where
                     .iter()
                     .cloned()
                     .enumerate()
-                    .map(|(i, x)| {
-                        if i == 0 {
-                            CanceledFeature::CanceledFeature(x)
-                        } else {
-                            CanceledFeature::Feature(x)
-                        }
+                    .map(|(i, x)| CanceledFeature {
+                        feature: x,
+                        canceled: i == 0,
                     })
                     .collect(),
                 movement: vec![],

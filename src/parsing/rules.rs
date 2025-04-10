@@ -4,9 +4,12 @@ use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::fmt::Display;
 
 use crate::lexicon::Feature;
 use crate::lexicon::FeatureOrLemma;
+use crate::lexicon::LexicalEntry;
 use crate::lexicon::Lexicon;
 
 #[cfg(feature = "semantics")]
@@ -264,16 +267,25 @@ impl RulePool {
         g
     }
 
-    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
+    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<MgNode<T, C>, MGEdge>
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
-        T: Eq + std::fmt::Debug + std::clone::Clone,
-        C: Eq + std::fmt::Debug + std::clone::Clone,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
-        let mut g = StableDiGraph::<String, MGEdge>::new();
+        let mut g = StableDiGraph::<MgNode<T, C>, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
-        inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
+        inner_to_graph(
+            &mut g,
+            lex,
+            self,
+            RuleIndex(0),
+            &mut trace_h,
+            &mut rule_h,
+            false,
+            None,
+        );
         for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
             if let (Some(a), Some(b)) = x {
                 Some((*rule_h.get(&a).unwrap(), b))
@@ -299,6 +311,112 @@ impl RulePool {
         let (mut pool, _) = inner_interpretation(self, lex, RuleIndex(0), &mut trace_h)?;
         pool.reduce()?;
         Ok(pool)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CanceledFeature<C: Eq> {
+    Feature(Feature<C>),
+    CanceledFeature(Feature<C>),
+}
+
+impl<C: Eq + std::fmt::Display> Display for CanceledFeature<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CanceledFeature::Feature(feature) => write!(f, "{}", feature),
+            CanceledFeature::CanceledFeature(feature) => write!(f, "\\cancel{{{}}}", feature),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Mover<C: Eq> {
+    trace_id: TraceId,
+    features: Vec<CanceledFeature<C>>,
+}
+impl<C: Eq + std::fmt::Display> Display for Mover<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.features.len() {
+            0 => write!(f, ""),
+            1 => write!(
+                f,
+                "{}$_{{{}}}$",
+                self.features.first().unwrap(),
+                self.trace_id.0
+            ),
+            _ => write!(
+                f,
+                "{}$_{{{}}}^{{{}}}$",
+                self.features.last().unwrap(),
+                self.trace_id.0,
+                self.features
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, x)| if i < self.features.len() - 1 {
+                        Some(x)
+                    } else {
+                        None
+                    })
+                    .map(|x| x.to_string())
+                    .join(" ")
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MgNode<T, C: Eq> {
+    Node {
+        features: Vec<CanceledFeature<C>>,
+        movement: Vec<Mover<C>>,
+    },
+    Leaf {
+        lemma: Option<T>,
+        features: Vec<CanceledFeature<C>>,
+        movement: Vec<Mover<C>>,
+    },
+    Trace(TraceId),
+}
+
+impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
+    fn to_latex(&self) -> String {
+        match self {
+            MgNode::Node { features, movement } => format!(
+                "\\texttt{{{}}} {}",
+                features.iter().map(|x| x.to_string()).join(" "),
+                if !movement.is_empty() {
+                    format!(
+                        "\\{{{}\\}}",
+                        movement.iter().map(|x| x.to_string()).join(", ")
+                    )
+                } else {
+                    "".to_string()
+                }
+            ),
+            MgNode::Leaf {
+                lemma,
+                features,
+                movement,
+            } => {
+                format!(
+                    "\\plainlex{{{}}}{{{}}} {}",
+                    match lemma {
+                        Some(x) => x.to_string(),
+                        None => "$\\epsilon$".to_string(),
+                    },
+                    features.iter().map(|x| x.to_string()).join(" "),
+                    if !movement.is_empty() {
+                        format!(
+                            "\\{{{}\\}}",
+                            movement.iter().map(|x| x.to_string()).join(", ")
+                        )
+                    } else {
+                        "".to_string()
+                    }
+                )
+            }
+            MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
+        }
     }
 }
 
@@ -470,48 +588,234 @@ where
     (node, features, category)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn graph_helper<T, C>(
+    current_rule: Rule,
+    child_id: RuleIndex,
+    complement_id: RuleIndex,
+    g: &mut StableDiGraph<MgNode<T, C>, MGEdge>,
+    lex: &Lexicon<T, C>,
+    rules: &RulePool,
+    trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
+    rules_h: &mut HashMap<RuleIndex, NodeIndex>,
+    called_from_start: bool,
+    sister_trace: Option<TraceId>,
+) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
+where
+    FeatureOrLemma<T, C>: std::fmt::Display,
+    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+{
+    let (complement_node, complement_features, mut complement_movers, comp_trace_id) =
+        inner_to_graph(g, lex, rules, complement_id, trace_h, rules_h, false, None);
+
+    let (child_node, mut features, mut movement, _) = inner_to_graph(
+        g,
+        lex,
+        rules,
+        child_id,
+        trace_h,
+        rules_h,
+        false,
+        comp_trace_id,
+    );
+
+    movement.append(&mut complement_movers);
+    match current_rule {
+        Rule::UnmergeFromMover { trace_id, .. } => {
+            movement.push(Mover {
+                features: complement_features
+                    .iter()
+                    .map(|x| CanceledFeature::Feature(x.clone()))
+                    .collect(),
+                trace_id,
+            });
+        }
+        Rule::Unmove { .. } => {
+            let trace_id = comp_trace_id.unwrap();
+            movement = movement
+                .into_iter()
+                .filter(|x| x.trace_id != trace_id)
+                .collect_vec();
+        }
+        Rule::UnmoveFromMover { trace_id, .. } => {
+            let comp_trace_id = comp_trace_id.unwrap();
+            let i = movement
+                .iter()
+                .position(|x| x.trace_id == comp_trace_id)
+                .unwrap();
+            movement[i].features.remove(0);
+            movement.push(Mover {
+                features: complement_features
+                    .iter()
+                    .map(|x| CanceledFeature::Feature(x.clone()))
+                    .collect(),
+                trace_id,
+            });
+        }
+        _ => (),
+    }
+
+    let node = g.add_node(MgNode::Node {
+        features: features
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, x)| {
+                if i == 0 && !called_from_start {
+                    CanceledFeature::CanceledFeature(x)
+                } else {
+                    CanceledFeature::Feature(x)
+                }
+            })
+            .collect(),
+        movement: if let Some(t) = sister_trace {
+            movement
+                .iter()
+                .map(|x| {
+                    if x.trace_id == t {
+                        Mover {
+                            trace_id: t,
+                            features: x
+                                .features
+                                .iter()
+                                .enumerate()
+                                .map(|(i, x)| {
+                                    let f = match x {
+                                        CanceledFeature::Feature(f)
+                                        | CanceledFeature::CanceledFeature(f) => f.clone(),
+                                    };
+                                    if i == 0 {
+                                        CanceledFeature::CanceledFeature(f)
+                                    } else {
+                                        CanceledFeature::Feature(f)
+                                    }
+                                })
+                                .collect(),
+                        }
+                    } else {
+                        x.clone()
+                    }
+                })
+                .collect()
+        } else {
+            movement.clone()
+        },
+    });
+
+    let (child_dir, complement_dir) = if let Some(Feature::Selector(_, dir)) = features.last() {
+        (dir.flip(), *dir)
+    } else {
+        (Direction::Left, Direction::Right)
+    };
+
+    g.add_edge(node, child_node, MGEdge::Merge(Some(child_dir)));
+    g.add_edge(node, complement_node, MGEdge::Merge(Some(complement_dir)));
+
+    features.remove(0);
+    (node, features, movement, None)
+}
+
 fn inner_to_graph<T, C>(
-    g: &mut StableDiGraph<String, MGEdge>,
+    g: &mut StableDiGraph<MgNode<T, C>, MGEdge>,
     lex: &Lexicon<T, C>,
     rules: &RulePool,
     index: RuleIndex,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-) -> NodeIndex
+    called_from_start: bool,
+    sister_trace: Option<TraceId>,
+) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
-    T: Eq + std::fmt::Debug + std::clone::Clone,
-    C: Eq + std::fmt::Debug + std::clone::Clone,
+    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
 {
     let rule = rules.get(index);
-    let node = g.add_node(rule.to_name(lex));
-    rules_h.insert(index, node);
-
-    match rule {
-        Rule::UnmoveTrace(trace_id) => trace_h.entry(*trace_id).or_default().1 = Some(node),
+    let (node, features, movers, trace_id) = match rule {
+        Rule::UnmoveTrace(trace_id) => {
+            let node = g.add_node(MgNode::Trace(*trace_id));
+            trace_h.entry(*trace_id).or_default().1 = Some(node);
+            (node, vec![], vec![], Some(*trace_id))
+        }
         Rule::UnmergeFromMover {
             trace_id,
             stored_id,
+            child_id,
             ..
         }
         | Rule::UnmoveFromMover {
             trace_id,
             stored_id,
+            child_id,
             ..
-        } => trace_h.entry(*trace_id).or_default().0 = Some(*stored_id),
-        Rule::Unmove { .. } | Rule::Start { .. } | Rule::Scan { .. } | Rule::Unmerge { .. } => (),
+        } => {
+            trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
+            graph_helper(
+                *rule,
+                *child_id,
+                *stored_id,
+                g,
+                lex,
+                rules,
+                trace_h,
+                rules_h,
+                called_from_start,
+                sister_trace,
+            )
+        }
+        Rule::Scan { node } => {
+            let LexicalEntry {
+                lemma,
+                mut features,
+            } = lex.get_lexical_entry(*node).unwrap();
+            let node = g.add_node(MgNode::Leaf {
+                lemma,
+                features: features
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        if i == 0 {
+                            CanceledFeature::CanceledFeature(x)
+                        } else {
+                            CanceledFeature::Feature(x)
+                        }
+                    })
+                    .collect(),
+                movement: vec![],
+            });
+            features.remove(0);
+            (node, features, vec![], None)
+        }
+        Rule::Unmove {
+            child_id,
+            stored_id: complement_id,
+        }
+        | Rule::Unmerge {
+            child_id,
+            complement_id,
+            ..
+        } => graph_helper(
+            *rule,
+            *child_id,
+            *complement_id,
+            g,
+            lex,
+            rules,
+            trace_h,
+            rules_h,
+            called_from_start,
+            sister_trace,
+        ),
+        Rule::Start { child, .. } => {
+            inner_to_graph(g, lex, rules, *child, trace_h, rules_h, true, None)
+        }
     };
 
-    let (child_a, child_b) = rule.children();
-    if let Some(child_a) = child_a {
-        let child = inner_to_graph(g, lex, rules, child_a, trace_h, rules_h);
-        g.add_edge(node, child, MGEdge::Merge(None));
-    };
-    if let Some(child_b) = child_b {
-        let child = inner_to_graph(g, lex, rules, child_b, trace_h, rules_h);
-        g.add_edge(node, child, MGEdge::Merge(None));
-    };
-    node
+    rules_h.insert(index, node);
+
+    (node, features, movers, trace_id)
 }
 
 #[cfg(test)]
@@ -546,9 +850,12 @@ mod test {
                     .next()
                     .unwrap();
             let g = rules.to_graph(&lex);
-            let _dot = Dot::new(&g);
+            let g = g.map(|_, n| n.to_latex(), |_, e| e);
+            let dot = Dot::new(&g);
+            println!("{dot}");
         }
         //TODO: Decide on a formatting and stick with it.
+        panic!();
         Ok(())
     }
 

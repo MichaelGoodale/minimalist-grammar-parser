@@ -111,13 +111,24 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LexicalEntry<T: Eq, Category: Eq> {
-    pub lemma: Option<T>,
-    pub features: Vec<Feature<Category>>,
+    pub(crate) lemma: Option<T>,
+    pub(crate) features: Vec<Feature<Category>>,
 }
 
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
     pub fn new(lemma: Option<T>, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
+    }
+
+    pub fn category(&self) -> &Feature<Category> {
+        let mut cat = None;
+        for lex in self.features.iter() {
+            if matches!(lex, Feature::Category(_)) {
+                cat = Some(lex);
+                break;
+            }
+        }
+        cat.expect("All lexical entries must have one category")
     }
 }
 
@@ -305,6 +316,42 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             }
         }
         Ok(v)
+    }
+
+    pub fn get_lexical_entry(&self, nx: NodeIndex) -> anyhow::Result<LexicalEntry<T, Category>> {
+        let lemma = self.graph.node_weight(nx).context("No such node")?;
+        let lemma = match lemma {
+            FeatureOrLemma::Lemma(lemma) => lemma,
+            FeatureOrLemma::Feature(_) | FeatureOrLemma::Root => {
+                bail!("Node is not a lemma node!")
+            }
+        }
+        .clone();
+
+        let mut parent = self
+            .parent_of(nx)
+            .expect("A lemma must always have a parent node");
+        let mut parent_node = self
+            .graph
+            .node_weight(parent)
+            .expect("A lemma must always have a parent node");
+        let mut features = vec![];
+        while !(matches!(parent_node, FeatureOrLemma::Root)) {
+            match parent_node {
+                FeatureOrLemma::Feature(feature) => {
+                    features.push(feature.clone());
+                },
+                FeatureOrLemma::Root|FeatureOrLemma::Lemma(_) => bail!("We should never have a lemma or root accessed this way, the lexicon is mal-formed"),
+            }
+            parent = self
+                .parent_of(parent)
+                .expect("All features must end before the root!");
+            parent_node = self
+                .graph
+                .node_weight(parent)
+                .expect("All features must end before the root!");
+        }
+        Ok(LexicalEntry { features, lemma })
     }
 
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
@@ -602,6 +649,45 @@ mod tests {
                     Feature::Category("V")
                 ]
             }
+        );
+    }
+
+    #[test]
+    fn get_lexical_entry() -> anyhow::Result<()> {
+        let entries: HashSet<_> = STABLER2011
+            .split('\n')
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<_>>()?;
+        let lex = Lexicon::parse(STABLER2011)?;
+        for (nx, _) in &lex.leaves {
+            let lexical_entry = lex.get_lexical_entry(*nx)?;
+            assert!(entries.contains(&lexical_entry));
+        }
+        Ok(())
+    }
+    #[test]
+    fn get_category() {
+        assert_eq!(
+            *SimpleLexicalEntry::parse("eats::d= =d V")
+                .unwrap()
+                .category(),
+            Feature::Category("V")
+        );
+        assert_eq!(
+            *SimpleLexicalEntry::parse("eats::d= V -d")
+                .unwrap()
+                .category(),
+            Feature::Category("V")
+        );
+        assert_eq!(
+            *SimpleLexicalEntry::parse("eats::C -d").unwrap().category(),
+            Feature::Category("C")
+        );
+        assert_eq!(
+            *SimpleLexicalEntry::parse("eats::+w Z -d")
+                .unwrap()
+                .category(),
+            Feature::Category("Z")
         );
     }
 

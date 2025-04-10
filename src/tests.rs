@@ -321,10 +321,7 @@ fn copy_language() -> anyhow::Result<()> {
     7 -> 6 [ label = \"\" ]
 }
 ",
-        format!(
-            "{}",
-            petgraph::dot::Dot::new(&tree_building::build_tree(&lex, &rules))
-        )
+        format!("{}", petgraph::dot::Dot::new(&rules.to_x_bar_graph(&lex)))
     );
     Ok(())
 }

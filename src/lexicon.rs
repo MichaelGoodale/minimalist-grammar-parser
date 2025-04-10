@@ -120,11 +120,11 @@ impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
     }
 
-    pub fn category(&self) -> &Feature<Category> {
+    pub fn category(&self) -> &Category {
         let mut cat = None;
         for lex in self.features.iter() {
-            if matches!(lex, Feature::Category(_)) {
-                cat = Some(lex);
+            if let Feature::Category(c) = lex {
+                cat = Some(c);
                 break;
             }
         }
@@ -671,23 +671,23 @@ mod tests {
             *SimpleLexicalEntry::parse("eats::d= =d V")
                 .unwrap()
                 .category(),
-            Feature::Category("V")
+            "V"
         );
         assert_eq!(
             *SimpleLexicalEntry::parse("eats::d= V -d")
                 .unwrap()
                 .category(),
-            Feature::Category("V")
+            "V"
         );
         assert_eq!(
             *SimpleLexicalEntry::parse("eats::C -d").unwrap().category(),
-            Feature::Category("C")
+            "C"
         );
         assert_eq!(
             *SimpleLexicalEntry::parse("eats::+w Z -d")
                 .unwrap()
                 .category(),
-            Feature::Category("Z")
+            "Z"
         );
     }
 

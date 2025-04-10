@@ -1,20 +1,17 @@
-use std::collections::HashMap;
-
-use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::StableDiGraph;
+use petgraph::visit::EdgeRef;
+use std::collections::HashMap;
 
 use crate::lexicon::Feature;
 use crate::lexicon::FeatureOrLemma;
-use crate::lexicon::LexicalEntry;
 use crate::lexicon::Lexicon;
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
+use crate::Direction;
 #[cfg(feature = "semantics")]
-use simple_semantics::{
-    lambda::{LambdaPool, RootedLambdaPool},
-    language::Expr,
-};
+use simple_semantics::{lambda::RootedLambdaPool, language::Expr};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct RuleIndex(usize);
@@ -163,14 +160,16 @@ pub struct RulePool(Vec<Rule>);
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MGEdge {
     Move,
-    Merge,
+    Merge(Option<Direction>),
 }
 
 impl std::fmt::Display for MGEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             MGEdge::Move => "move",
-            MGEdge::Merge => "",
+            MGEdge::Merge(None) => "",
+            MGEdge::Merge(Some(Direction::Left)) => "",
+            MGEdge::Merge(Some(Direction::Right)) => "",
         };
         write!(f, "{}", s)
     }
@@ -180,16 +179,17 @@ impl RulePool {
     pub fn get(&self, x: RuleIndex) -> &Rule {
         &self.0[x.0]
     }
-    pub fn to_x_bar_graph<T, C>(&self, lex: &Lexicon<T, C>) -> DiGraph<String, MGEdge>
+    pub fn to_x_bar_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
-        let mut g = DiGraph::<String, MGEdge>::new();
+        let mut g = StableDiGraph::<String, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
         inner_to_x_bar_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
+
         for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
             if let (Some(a), Some(b)) = x {
                 Some((*rule_h.get(&a).unwrap(), b))
@@ -197,18 +197,37 @@ impl RulePool {
                 None
             }
         }) {
-            g.add_edge(a, b, MGEdge::Move);
+            let a_parent_edge = g
+                .edges_directed(a, petgraph::Direction::Incoming)
+                .next()
+                .unwrap();
+            let a_parent_node = a_parent_edge.source();
+
+            let b_parent_edge = g
+                .edges_directed(b, petgraph::Direction::Incoming)
+                .next()
+                .unwrap();
+            let b_parent_node = b_parent_edge.source();
+            let b_parent_id = b_parent_edge.id();
+
+            let edge_weight = g.remove_edge(a_parent_edge.id()).unwrap();
+            g.add_edge(a_parent_node, b, edge_weight);
+
+            let edge_weight = g.remove_edge(b_parent_id).unwrap();
+            g.add_edge(b_parent_node, a, edge_weight);
+
+            g.add_edge(b, a, MGEdge::Move);
         }
         g
     }
 
-    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> DiGraph<String, MGEdge>
+    pub fn to_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
-        let mut g = DiGraph::<String, MGEdge>::new();
+        let mut g = StableDiGraph::<String, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
         inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
@@ -289,54 +308,94 @@ fn inner_interpretation<T: Eq, C: Eq>(
         } => todo!(),
     }
 }
-fn inner_to_x_bar_graph<T, C>(
-    g: &mut DiGraph<String, MGEdge>,
+
+fn x_bar_helper<T, C>(
+    child_id: RuleIndex,
+    complement_id: RuleIndex,
+    g: &mut StableDiGraph<String, MGEdge>,
     lex: &Lexicon<T, C>,
     rules: &RulePool,
-    index: RuleIndex,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-) -> (NodeIndex, Vec<Feature<C>>)
+) -> (NodeIndex, Vec<Feature<C>>, Option<C>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
 {
-    let (node, features) = match rules.get(index) {
+    let (child_node, mut child_features, child_category) =
+        inner_to_x_bar_graph(g, lex, rules, child_id, trace_h, rules_h);
+    let feature = child_features.pop();
+
+    let (complement_node, _, _) =
+        inner_to_x_bar_graph(g, lex, rules, complement_id, trace_h, rules_h);
+
+    let node = if let Some(Feature::Category(_)) = child_features.last() {
+        child_features.pop();
+        g.add_node(format!("{}P", child_category.as_ref().unwrap()))
+    } else {
+        g.add_node(format!("{}'", child_category.as_ref().unwrap()))
+    };
+
+    let (child_dir, complement_dir) = if let Some(Feature::Selector(_, dir)) = feature {
+        (dir.flip(), dir)
+    } else {
+        (Direction::Left, Direction::Right)
+    };
+
+    g.add_edge(node, child_node, MGEdge::Merge(Some(child_dir)));
+    g.add_edge(node, complement_node, MGEdge::Merge(Some(complement_dir)));
+
+    (node, child_features, child_category)
+}
+
+fn inner_to_x_bar_graph<T, C>(
+    g: &mut StableDiGraph<String, MGEdge>,
+    lex: &Lexicon<T, C>,
+    rules: &RulePool,
+    index: RuleIndex,
+    trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
+    rules_h: &mut HashMap<RuleIndex, NodeIndex>,
+) -> (NodeIndex, Vec<Feature<C>>, Option<C>)
+where
+    FeatureOrLemma<T, C>: std::fmt::Display,
+    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+{
+    let (mut node, features, category) = match rules.get(index) {
         Rule::UnmoveTrace(trace_id) => {
             let node = g.add_node(trace_id.to_string());
             trace_h.entry(*trace_id).or_default().1 = Some(node);
-            (node, vec![])
+            (node, vec![], None)
         }
         Rule::UnmergeFromMover {
             trace_id,
             stored_id,
+            child_id,
             ..
         }
         | Rule::UnmoveFromMover {
             trace_id,
             stored_id,
+            child_id,
             ..
         } => {
             trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
-
-            (g.add_node(trace_id.to_string()), vec![])
+            x_bar_helper(*child_id, *stored_id, g, lex, rules, trace_h, rules_h)
         }
         Rule::Scan { node } => {
-            let lexeme = lex.get_lexical_entry(*node).unwrap();
-
-            let mut node = g.add_node(match lexeme.lemma {
+            let mut lexeme = lex.get_lexical_entry(*node).unwrap();
+            let category = lexeme.category().clone();
+            let node = g.add_node(match lexeme.lemma {
                 Some(x) => x.to_string(),
                 None => "ε".to_string(),
             });
 
-            if let Some(Feature::Category(c)) = lexeme.features.first() {
-                let parent = g.add_node(format!("{c}P"));
-                g.add_edge(parent, node, MGEdge::Merge);
-                node = parent;
-            }
+            let parent = g.add_node(category.to_string());
+            g.add_edge(parent, node, MGEdge::Merge(None));
 
-            (node, lexeme.features)
+            lexeme.features.reverse();
+            (parent, lexeme.features, Some(category))
         }
         Rule::Unmove {
             child_id,
@@ -346,35 +405,26 @@ where
             child_id,
             complement_id,
             ..
-        } => {
-            let (child_node, mut child_features) =
-                inner_to_x_bar_graph(g, lex, rules, *child_id, trace_h, rules_h);
-            let current_feature = child_features.pop();
+        } => x_bar_helper(*child_id, *complement_id, g, lex, rules, trace_h, rules_h),
+        Rule::Start { child, .. } => {
+            let (node, _, category) = inner_to_x_bar_graph(g, lex, rules, *child, trace_h, rules_h);
 
-            let (complement_node, _complement_features) =
-                inner_to_x_bar_graph(g, lex, rules, *complement_id, trace_h, rules_h);
-
-            let node = g.add_node(
-                current_feature
-                    .map(FeatureOrLemma::Feature)
-                    .unwrap()
-                    .to_string(),
-            );
-
-            g.add_edge(node, child_node, MGEdge::Merge);
-            g.add_edge(node, complement_node, MGEdge::Merge);
-
-            (node, child_features)
+            (node, vec![], category)
         }
-        Rule::Start { child, .. } => inner_to_x_bar_graph(g, lex, rules, *child, trace_h, rules_h),
     };
+    if let Some(Feature::Category(c)) = features.last() {
+        let new_node = g.add_node(format!("{c}P"));
+        g.add_edge(new_node, node, MGEdge::Merge(None));
+        node = new_node
+    }
+
     rules_h.insert(index, node);
 
-    (node, features)
+    (node, features, category)
 }
 
 fn inner_to_graph<T, C>(
-    g: &mut DiGraph<String, MGEdge>,
+    g: &mut StableDiGraph<String, MGEdge>,
     lex: &Lexicon<T, C>,
     rules: &RulePool,
     index: RuleIndex,
@@ -408,11 +458,11 @@ where
     let (child_a, child_b) = rule.children();
     if let Some(child_a) = child_a {
         let child = inner_to_graph(g, lex, rules, child_a, trace_h, rules_h);
-        g.add_edge(node, child, MGEdge::Merge);
+        g.add_edge(node, child, MGEdge::Merge(None));
     };
     if let Some(child_b) = child_b {
         let child = inner_to_graph(g, lex, rules, child_b, trace_h, rules_h);
-        g.add_edge(node, child, MGEdge::Merge);
+        g.add_edge(node, child, MGEdge::Merge(None));
     };
     node
 }
@@ -475,54 +525,10 @@ mod test {
         .2;
         let parse = rules.to_x_bar_graph(&lex);
         let dot = Dot::new(&parse);
-        println!("{}", dot.to_string());
+        println!("{}", dot);
         assert_eq!(
             dot.to_string(),
-            "digraph {
-    0 [ label = \"CP\" ]
-    1 [ label = \"DP\" ]
-    2 [ label = \"C'\" ]
-    3 [ label = \"VP\" ]
-    4 [ label = \"t\" ]
-    5 [ label = \"which\" ]
-    6 [ label = \"D\" ]
-    7 [ label = \"queen\" ]
-    8 [ label = \"N\" ]
-    9 [ label = \"NP\" ]
-    10 [ label = \"ε\" ]
-    11 [ label = \"C\" ]
-    12 [ label = \"V'\" ]
-    13 [ label = \"prefers\" ]
-    14 [ label = \"V\" ]
-    15 [ label = \"DP\" ]
-    16 [ label = \"the\" ]
-    17 [ label = \"D\" ]
-    18 [ label = \"wine\" ]
-    19 [ label = \"N\" ]
-    20 [ label = \"NP\" ]
-    0 -> 1 [ label = \"\" ]
-    0 -> 2 [ label = \"\" ]
-    2 -> 3 [ label = \"\" ]
-    3 -> 4 [ label = \"\" ]
-    4 -> 1 [ label = \"\" ]
-    1 -> 6 [ label = \"\" ]
-    6 -> 5 [ label = \"\" ]
-    1 -> 9 [ label = \"\" ]
-    9 -> 8 [ label = \"\" ]
-    8 -> 7 [ label = \"\" ]
-    2 -> 11 [ label = \"\" ]
-    11 -> 10 [ label = \"\" ]
-    3 -> 12 [ label = \"\" ]
-    12 -> 14 [ label = \"\" ]
-    14 -> 13 [ label = \"\" ]
-    12 -> 15 [ label = \"\" ]
-    15 -> 17 [ label = \"\" ]
-    17 -> 16 [ label = \"\" ]
-    15 -> 20 [ label = \"\" ]
-    20 -> 19 [ label = \"\" ]
-    19 -> 18 [ label = \"\" ]
-}
-"
+            "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"the\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    17 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n}\n"
         );
         Ok(())
     }
@@ -549,54 +555,10 @@ mod test {
         .2;
         let parse = rules.to_x_bar_graph(&lex);
         let dot = Dot::new(&parse);
-        println!("{}", dot.to_string());
+        println!("{}", dot);
         assert_eq!(
             dot.to_string(),
-            "digraph {
-    0 [ label = \"CP\" ]
-    1 [ label = \"DP\" ]
-    2 [ label = \"C'\" ]
-    3 [ label = \"VP\" ]
-    4 [ label = \"t\" ]
-    5 [ label = \"which\" ]
-    6 [ label = \"D\" ]
-    7 [ label = \"queen\" ]
-    8 [ label = \"N\" ]
-    9 [ label = \"NP\" ]
-    10 [ label = \"ε\" ]
-    11 [ label = \"C\" ]
-    12 [ label = \"V'\" ]
-    13 [ label = \"prefers\" ]
-    14 [ label = \"V\" ]
-    15 [ label = \"DP\" ]
-    16 [ label = \"the\" ]
-    17 [ label = \"D\" ]
-    18 [ label = \"wine\" ]
-    19 [ label = \"N\" ]
-    20 [ label = \"NP\" ]
-    0 -> 1 [ label = \"\" ]
-    0 -> 2 [ label = \"\" ]
-    2 -> 3 [ label = \"\" ]
-    3 -> 4 [ label = \"\" ]
-    4 -> 1 [ label = \"\" ]
-    1 -> 6 [ label = \"\" ]
-    6 -> 5 [ label = \"\" ]
-    1 -> 9 [ label = \"\" ]
-    9 -> 8 [ label = \"\" ]
-    8 -> 7 [ label = \"\" ]
-    2 -> 11 [ label = \"\" ]
-    11 -> 10 [ label = \"\" ]
-    3 -> 12 [ label = \"\" ]
-    12 -> 14 [ label = \"\" ]
-    14 -> 13 [ label = \"\" ]
-    12 -> 15 [ label = \"\" ]
-    15 -> 17 [ label = \"\" ]
-    17 -> 16 [ label = \"\" ]
-    15 -> 20 [ label = \"\" ]
-    20 -> 19 [ label = \"\" ]
-    19 -> 18 [ label = \"\" ]
-}
-"
+ "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n",
         );
         Ok(())
     }

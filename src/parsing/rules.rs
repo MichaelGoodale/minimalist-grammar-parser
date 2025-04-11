@@ -276,16 +276,7 @@ impl RulePool {
         let mut g = StableDiGraph::<MgNode<T, C>, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
-        inner_to_graph(
-            &mut g,
-            lex,
-            self,
-            RuleIndex(0),
-            &mut trace_h,
-            &mut rule_h,
-            false,
-            None,
-        );
+        inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
         for (a, b) in trace_h.into_iter().filter_map(|(_, x)| {
             if let (Some(a), Some(b)) = x {
                 Some((*rule_h.get(&a).unwrap(), b))
@@ -315,39 +306,9 @@ impl RulePool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CanceledFeature<C: Eq> {
-    feature: Feature<C>,
-    canceled: bool,
-}
-
-impl<C: Eq> CanceledFeature<C> {
-    fn uncanceled(feature: Feature<C>) -> Self {
-        CanceledFeature {
-            feature,
-            canceled: false,
-        }
-    }
-    fn canceled(feature: Feature<C>) -> Self {
-        CanceledFeature {
-            feature,
-            canceled: true,
-        }
-    }
-}
-
-impl<C: Eq + std::fmt::Display> Display for CanceledFeature<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.canceled {
-            false => write!(f, "{}", self.feature),
-            true => write!(f, "\\cancel{{{}}}", self.feature),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct Mover<C: Eq> {
     trace_id: TraceId,
-    features: Vec<CanceledFeature<C>>,
+    features: Vec<Feature<C>>,
 }
 impl<C: Eq + std::fmt::Display> Display for Mover<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -382,23 +343,42 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum MgNode<T, C: Eq> {
     Node {
-        features: Vec<CanceledFeature<C>>,
+        features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
+        root: bool,
     },
     Leaf {
         lemma: Option<T>,
-        features: Vec<CanceledFeature<C>>,
+        features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
+        root: bool,
     },
     Trace(TraceId),
+}
+
+fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: bool) -> String {
+    v.iter()
+        .enumerate()
+        .map(|(i, x)| {
+            if i == 0 && canceled_features {
+                format!("\\cancel{{{}}}", x)
+            } else {
+                x.to_string()
+            }
+        })
+        .join(" ")
 }
 
 impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
     fn to_latex(&self) -> String {
         match self {
-            MgNode::Node { features, movement } => format!(
+            MgNode::Node {
+                features,
+                movement,
+                root,
+            } => format!(
                 "\\texttt{{{}}} {}",
-                features.iter().map(|x| x.to_string()).join(" "),
+                feature_vec_to_string(features, !root),
                 if !movement.is_empty() {
                     format!(
                         "\\{{{}\\}}",
@@ -412,6 +392,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                 lemma,
                 features,
                 movement,
+                root,
             } => {
                 format!(
                     "\\plainlex{{{}}}{{{}}} {}",
@@ -419,7 +400,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                         Some(x) => x.to_string(),
                         None => "$\\epsilon$".to_string(),
                     },
-                    features.iter().map(|x| x.to_string()).join(" "),
+                    feature_vec_to_string(features, !root),
                     if !movement.is_empty() {
                         format!(
                             "\\{{{}\\}}",
@@ -603,7 +584,6 @@ where
     (node, features, category)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn graph_helper<T, C>(
     current_rule: Rule,
     child_id: RuleIndex,
@@ -613,8 +593,6 @@ fn graph_helper<T, C>(
     rules: &RulePool,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-    called_from_start: bool,
-    sister_trace: Option<TraceId>,
 ) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
@@ -622,28 +600,16 @@ where
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
 {
     let (complement_node, complement_features, mut complement_movers, comp_trace_id) =
-        inner_to_graph(g, lex, rules, complement_id, trace_h, rules_h, false, None);
+        inner_to_graph(g, lex, rules, complement_id, trace_h, rules_h);
 
-    let (child_node, mut features, mut movement, _) = inner_to_graph(
-        g,
-        lex,
-        rules,
-        child_id,
-        trace_h,
-        rules_h,
-        false,
-        comp_trace_id,
-    );
+    let (child_node, mut features, mut movement, _) =
+        inner_to_graph(g, lex, rules, child_id, trace_h, rules_h);
 
     movement.append(&mut complement_movers);
     match current_rule {
         Rule::UnmergeFromMover { trace_id, .. } => {
             movement.push(Mover {
-                features: complement_features
-                    .iter()
-                    .cloned()
-                    .map(CanceledFeature::uncanceled)
-                    .collect(),
+                features: complement_features,
                 trace_id,
             });
         }
@@ -662,11 +628,7 @@ where
                 .unwrap();
             movement[i].features.remove(0);
             movement.push(Mover {
-                features: complement_features
-                    .iter()
-                    .cloned()
-                    .map(CanceledFeature::uncanceled)
-                    .collect(),
+                features: complement_features,
                 trace_id,
             });
         }
@@ -674,41 +636,9 @@ where
     }
 
     let node = g.add_node(MgNode::Node {
-        features: features
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(i, x)| CanceledFeature {
-                feature: x,
-                canceled: i == 0 && !called_from_start,
-            })
-            .collect(),
-        movement: if let Some(t) = sister_trace {
-            movement
-                .iter()
-                .map(|x| {
-                    if x.trace_id == t {
-                        Mover {
-                            trace_id: t,
-                            features: x
-                                .features
-                                .iter()
-                                .cloned()
-                                .enumerate()
-                                .map(|(i, mut x)| {
-                                    x.canceled = i == 0;
-                                    x
-                                })
-                                .collect(),
-                        }
-                    } else {
-                        x.clone()
-                    }
-                })
-                .collect()
-        } else {
-            movement.clone()
-        },
+        features: features.clone(),
+        movement: movement.clone(),
+        root: false,
     });
 
     let (child_dir, complement_dir) = if let Some(Feature::Selector(_, dir)) = features.last() {
@@ -731,8 +661,6 @@ fn inner_to_graph<T, C>(
     index: RuleIndex,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-    called_from_start: bool,
-    sister_trace: Option<TraceId>,
 ) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
@@ -760,16 +688,7 @@ where
         } => {
             trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
             graph_helper(
-                *rule,
-                *child_id,
-                *stored_id,
-                g,
-                lex,
-                rules,
-                trace_h,
-                rules_h,
-                called_from_start,
-                sister_trace,
+                *rule, *child_id, *stored_id, g, lex, rules, trace_h, rules_h,
             )
         }
         Rule::Scan { node } => {
@@ -778,16 +697,9 @@ where
                 mut features,
             } = lex.get_lexical_entry(*node).unwrap();
             let node = g.add_node(MgNode::Leaf {
+                root: false,
                 lemma,
-                features: features
-                    .iter()
-                    .cloned()
-                    .enumerate()
-                    .map(|(i, x)| CanceledFeature {
-                        feature: x,
-                        canceled: i == 0,
-                    })
-                    .collect(),
+                features: features.clone(),
                 movement: vec![],
             });
             features.remove(0);
@@ -810,11 +722,15 @@ where
             rules,
             trace_h,
             rules_h,
-            called_from_start,
-            sister_trace,
         ),
         Rule::Start { child, .. } => {
-            inner_to_graph(g, lex, rules, *child, trace_h, rules_h, true, None)
+            let (node, features, movers, trace_id) =
+                inner_to_graph(g, lex, rules, *child, trace_h, rules_h);
+            match g.node_weight_mut(node).unwrap() {
+                MgNode::Node { root, .. } | MgNode::Leaf { root, .. } => *root = true,
+                MgNode::Trace(_) => (),
+            };
+            (node, features, movers, trace_id)
         }
     };
 

@@ -8,9 +8,9 @@ use thin_vec::ThinVec;
 
 use super::RuleIndex;
 
-type IndexArray = BitArray<[u64; 2], Lsb0>;
-
-pub const MAX_STEPS: usize = 128;
+pub const N_CHUNKS: u32 = 128 / usize::BITS;
+type IndexArray = BitArray<[usize; N_CHUNKS as usize], Lsb0>;
+pub const MAX_STEPS: usize = (usize::BITS * N_CHUNKS) as usize;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct GornIndex {

@@ -137,27 +137,33 @@ impl RulePool {
 
         //Complicated code to add nodes between traces and their origins as well as for canceling
         //the features of movers.
-        for (trace_origin, trace_node) in trace_h.into_iter().filter_map(|(_, x)| {
-            if let (Some(unmove_origin_rule), Some(trace_node)) = x {
-                Some((*rule_h.get(&unmove_origin_rule).unwrap(), trace_node))
-            } else {
-                None
-            }
-        }) {
-            let trace_id = match g.node_weight(trace_node).unwrap() {
+        let movements = trace_h
+            .into_iter()
+            .filter_map(|(_, x)| {
+                if let (Some(unmove_origin_rule), Some(trace_node)) = x {
+                    Some((*rule_h.get(&unmove_origin_rule).unwrap(), trace_node))
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
+
+        for (_trace_origin, trace_node) in movements.iter() {
+            let trace_id = match g.node_weight(*trace_node).unwrap() {
                 MgNode::Trace(trace_id) => *trace_id,
                 _ => panic!("trace_node must be a MgNode::Trace!"),
             };
 
             let parent = g
-                .neighbors_directed(trace_node, petgraph::Direction::Incoming)
+                .neighbors_directed(*trace_node, petgraph::Direction::Incoming)
                 .next()
                 .unwrap();
 
             let sister = g
                 .neighbors_directed(parent, petgraph::Direction::Outgoing)
-                .find(|x| *x != trace_node)
+                .find(|x| *x != *trace_node)
                 .unwrap();
+
             match g.node_weight_mut(sister).unwrap() {
                 MgNode::Node { movement, .. } | MgNode::Leaf { movement, .. } => {
                     let m = movement
@@ -168,6 +174,9 @@ impl RulePool {
                 }
                 MgNode::Trace(_) => (),
             };
+        }
+
+        for (trace_origin, trace_node) in movements.into_iter() {
             g.add_edge(trace_origin, trace_node, MGEdge::Move);
         }
         (g, root)
@@ -249,7 +258,7 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
             0 => write!(f, ""),
             1 => write!(
                 f,
-                "\\texttt{{{}}}$_{{\\texttt{{{}}}}}$",
+                "\\texttt{{{}}}_{{{}}}",
                 match self.canceled {
                     true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
                     false => self.features.first().unwrap().to_string(),
@@ -258,7 +267,7 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
             ),
             _ => write!(
                 f,
-                "\\texttt{{{}}}$_{{\\texttt{{{}}}}}^{{\\texttt{{{}}}}}$",
+                "\\texttt{{{}}}_{{{}}}^{{\\texttt{{{}}}}}",
                 match self.canceled {
                     true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
                     false => self.features.first().unwrap().to_string(),
@@ -266,12 +275,7 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
                 self.trace_id.0,
                 self.features
                     .iter()
-                    .enumerate()
-                    .filter_map(|(i, x)| if i < self.features.len() - 1 {
-                        Some(x)
-                    } else {
-                        None
-                    })
+                    .skip(1)
                     .map(|x| x.to_string())
                     .join(" ")
             ),
@@ -316,11 +320,11 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                 movement,
                 root,
             } => format!(
-                "\\texttt{{{}}} {}",
+                "{{\\texttt{{{}}} {}}}",
                 feature_vec_to_string(features, !root),
                 if !movement.is_empty() {
                     format!(
-                        "\\{{{}\\}}",
+                        "$\\{{{}\\}}$",
                         movement.iter().map(|x| x.to_string()).join(", ")
                     )
                 } else {
@@ -334,7 +338,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                 root,
             } => {
                 format!(
-                    "\\plainlex{{{}}}{{{}}} {}",
+                    "{{\\plainlex{{{}}}{{{}}} {}}}",
                     match lemma {
                         Some(x) => x.to_string(),
                         None => "$\\epsilon$".to_string(),
@@ -342,7 +346,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                     feature_vec_to_string(features, !root),
                     if !movement.is_empty() {
                         format!(
-                            "\\{{{}\\}}",
+                            "$\\{{{}\\}}$",
                             movement.iter().map(|x| x.to_string()).join(", ")
                         )
                     } else {
@@ -501,23 +505,21 @@ where
         }
         Rule::Unmove { .. } => {
             let trace_id = comp_trace_id.unwrap();
-            movement = movement
-                .into_iter()
-                .filter(|x| x.trace_id != trace_id)
-                .collect_vec();
+            let i = movement
+                .iter()
+                .find_position(|x| x.trace_id == trace_id)
+                .unwrap()
+                .0;
+            movement.remove(i);
         }
         Rule::UnmoveFromMover { trace_id, .. } => {
             let comp_trace_id = comp_trace_id.unwrap();
-            let i = movement
-                .iter()
-                .position(|x| x.trace_id == comp_trace_id)
+            let mover = movement
+                .iter_mut()
+                .find(|x| x.trace_id == comp_trace_id)
                 .unwrap();
-            movement[i].features.remove(0);
-            movement.push(Mover {
-                features: complement_features,
-                trace_id,
-                canceled: false,
-            });
+            mover.features.remove(0);
+            mover.trace_id = trace_id;
         }
         _ => (),
     }
@@ -640,7 +642,7 @@ mod test {
     use logprob::LogProb;
 
     use super::*;
-    use crate::grammars::STABLER2011;
+    use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use crate::{Parser, ParsingConfig};
     use petgraph::dot::Dot;
 
@@ -656,6 +658,48 @@ mod test {
         for sentence in vec!["which wine the queen prefers"].into_iter() {
             let (_, _, rules) =
                 Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &config)?
+                    .next()
+                    .unwrap();
+            let (g, _) = rules.to_graph(&lex);
+            let g = g.map(|_, n| n.to_latex(), |_, e| e);
+            let dot = Dot::new(&g);
+            println!("{dot}");
+            println!("{}", rules.to_latex(&lex));
+            assert_eq!(
+                rules.to_latex(&lex),
+                "\\begin{forest}
+[\\texttt{C} 
+	[{$t0$},name=node0 ]
+	[\\texttt{\\cancel{+W} C} \\{\\texttt{\\cancel{-W}}$_{\\texttt{0}}$\\}
+		[\\plainlex{$\\epsilon$}{\\cancel{V=} +W C}  ]
+		[\\texttt{\\cancel{V}} \\{\\texttt{-W}$_{\\texttt{0}}$\\}
+			[\\texttt{\\cancel{D}} 
+				[\\plainlex{the}{\\cancel{N=} D}  ]
+				[\\plainlex{queen}{\\cancel{N}}  ] ]
+			[\\texttt{\\cancel{=D} V} \\{\\texttt{-W}$_{\\texttt{0}}$\\}
+				[\\plainlex{prefers}{\\cancel{D=} =D V}  ]
+				[\\texttt{\\cancel{D} -W} ,name=node6
+					[\\plainlex{which}{\\cancel{N=} D -W}  ]
+					[\\plainlex{wine}{\\cancel{N}}  ] ] ] ] ] ]
+\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node0);
+\\end{forest}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn double_movement_graph() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(COPY_LANGUAGE)?;
+        let config = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        for sentence in vec!["a b a b"].into_iter() {
+            let (_, _, rules) =
+                Parser::new(&lex, "T", &sentence.split(' ').collect::<Vec<_>>(), &config)?
                     .next()
                     .unwrap();
             let (g, _) = rules.to_graph(&lex);
@@ -739,7 +783,7 @@ mod test {
         println!("{}", dot);
         assert_eq!(
             dot.to_string(),
-    "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n"
+            "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n"
         );
         Ok(())
     }
@@ -759,7 +803,10 @@ mod test {
             .unwrap();
         let g = r.to_x_bar_graph(&lex);
         println!("{}", Dot::new(&g));
-        assert_eq!(Dot::new(&g).to_string(), "digraph {\n    0 [ label = \"a\" ]\n    1 [ label = \"z\" ]\n    2 [ label = \"b\" ]\n    3 [ label = \"v\" ]\n    4 [ label = \"vP\" ]\n    5 [ label = \"z'\" ]\n    6 [ label = \"t1\" ]\n    7 [ label = \"z'\" ]\n    8 [ label = \"t0\" ]\n    9 [ label = \"zP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    4 -> 3 [ label = \"\" ]\n    5 -> 1 [ label = \"\" ]\n    9 -> 4 [ label = \"\" ]\n    7 -> 5 [ label = \"\" ]\n    7 -> 8 [ label = \"\" ]\n    9 -> 7 [ label = \"\" ]\n    5 -> 6 [ label = \"\" ]\n    6 -> 8 [ label = \"move\" ]\n    8 -> 4 [ label = \"move\" ]\n}\n");
+        assert_eq!(
+            Dot::new(&g).to_string(),
+            "digraph {\n    0 [ label = \"a\" ]\n    1 [ label = \"z\" ]\n    2 [ label = \"b\" ]\n    3 [ label = \"v\" ]\n    4 [ label = \"vP\" ]\n    5 [ label = \"z'\" ]\n    6 [ label = \"t1\" ]\n    7 [ label = \"z'\" ]\n    8 [ label = \"t0\" ]\n    9 [ label = \"zP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    4 -> 3 [ label = \"\" ]\n    5 -> 1 [ label = \"\" ]\n    9 -> 4 [ label = \"\" ]\n    7 -> 5 [ label = \"\" ]\n    7 -> 8 [ label = \"\" ]\n    9 -> 7 [ label = \"\" ]\n    5 -> 6 [ label = \"\" ]\n    6 -> 8 [ label = \"move\" ]\n    8 -> 4 [ label = \"move\" ]\n}\n"
+        );
         Ok(())
     }
 

@@ -96,6 +96,7 @@ pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(Option<T>),
     Feature(Feature<Category>),
+    Complement(Category, Direction),
 }
 
 impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma<T, Category>> {
@@ -103,7 +104,17 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
         let LexicalEntry { lemma, features } = value;
         std::iter::once(lemma)
             .map(|x| FeatureOrLemma::Lemma(x))
-            .chain(features.into_iter().map(|x| FeatureOrLemma::Feature(x)))
+            .chain(
+                features
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, feat)| match feat {
+                        //A feature is a complement iff its the first
+                        //selector (i.e. the moment the head first is merged)
+                        Feature::Selector(c, d) if i == 0 => FeatureOrLemma::Complement(c, d),
+                        _ => FeatureOrLemma::Feature(feat),
+                    }),
+            )
             .collect()
     }
 }
@@ -200,6 +211,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                         break;
                     } else if let FeatureOrLemma::Feature(f) = &self.graph[parent] {
                         features.push(f.clone());
+                    } else if let FeatureOrLemma::Complement(c, d) = &self.graph[parent] {
+                        features.push(Feature::Selector(c.clone(), *d));
                     }
                     nx = parent;
                 }
@@ -222,7 +235,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         let lemma = self.graph.node_weight(nx).context("No such node")?;
         let lemma = match lemma {
             FeatureOrLemma::Lemma(lemma) => lemma,
-            FeatureOrLemma::Feature(_) | FeatureOrLemma::Root => {
+            FeatureOrLemma::Feature(_)
+            | FeatureOrLemma::Root
+            | FeatureOrLemma::Complement(_, _) => {
                 bail!("Node is not a lemma node!")
             }
         }
@@ -240,6 +255,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             match parent_node {
                 FeatureOrLemma::Feature(feature) => {
                     features.push(feature.clone());
+                }
+                FeatureOrLemma::Complement(cat, d) => {
+                    features.push(Feature::Selector(cat.clone(), *d))
                 }
                 FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => bail!(
                     "We should never have a lemma or root accessed this way, the lexicon is mal-formed"
@@ -479,6 +497,7 @@ impl std::fmt::Display for FeatureOrLemma<&str, &str> {
                 }
             }
             FeatureOrLemma::Feature(feature) => write!(f, "{}", feature),
+            FeatureOrLemma::Complement(c, d) => write!(f, "{}", Feature::Selector(c, *d)),
         }
     }
 }
@@ -602,7 +621,7 @@ mod tests {
             x,
             vec![
                 FeatureOrLemma::Lemma(Some("eats")),
-                FeatureOrLemma::Feature(Feature::Selector("d", Direction::Right)),
+                FeatureOrLemma::Complement("d", Direction::Right),
                 FeatureOrLemma::Feature(Feature::Selector("d", Direction::Left)),
                 FeatureOrLemma::Feature(Feature::Category("V")),
             ]

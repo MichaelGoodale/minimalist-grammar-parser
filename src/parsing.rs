@@ -9,7 +9,7 @@ use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use rules::{PartialRulePool, RuleIndex};
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
 pub use rules::{Rule, RulePool};
@@ -353,7 +353,8 @@ pub fn expand<
                 (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
                     beam.scan(extender, &moment, s, child_node, p);
                 }
-                (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {
+                (FeatureOrLemma::Complement(cat, dir), p)
+                | (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {
                     let new_beam_found = unmerge_from_mover(
                         extender, lexicon, &moment, &beam, cat, child_node, p, config,
                     );

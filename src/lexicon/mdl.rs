@@ -76,6 +76,9 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
                             Feature::Selector(c, _d) => c,
                         });
                         n_features += 1;
+                    } else if let FeatureOrLemma::Complement(c, _d) = &self.graph[parent] {
+                        category_symbols.insert(c);
+                        n_features += 1;
                     }
                     nx = parent;
                 }

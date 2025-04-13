@@ -47,14 +47,16 @@ fn simple_merge() -> Result<()> {
     )?
     .next()
     .unwrap();
-    assert!(Parser::new(
-        &lexicon,
-        "d",
-        &"drinks the man the beer".split(' ').collect::<Vec<_>>(),
-        &CONFIG
-    )?
-    .next()
-    .is_none());
+    assert!(
+        Parser::new(
+            &lexicon,
+            "d",
+            &"drinks the man the beer".split(' ').collect::<Vec<_>>(),
+            &CONFIG
+        )?
+        .next()
+        .is_none()
+    );
     Ok(())
 }
 
@@ -134,9 +136,11 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(Parser::new(&lex, "C", &bad_sentence, &CONFIG)?
-            .next()
-            .is_none());
+        assert!(
+            Parser::new(&lex, "C", &bad_sentence, &CONFIG)?
+                .next()
+                .is_none()
+        );
     }
     Ok(())
 }
@@ -144,6 +148,7 @@ fn moving_parse() -> anyhow::Result<()> {
 #[test]
 fn generation() -> Result<()> {
     let lex = Lexicon::parse(SIMPLESTABLER2011)?;
+    dbg!(&lex);
     let mut v: Vec<_> = Generator::new(
         &lex,
         "C",
@@ -208,6 +213,7 @@ fn generation() -> Result<()> {
         ),
     ];
 
+    dbg!(&v);
     assert_eq!(v.len(), x.len());
     x.sort_by(|a, b| a.1.cmp(&b.1));
     v.sort_by(|a, b| a.1.cmp(&b.1));
@@ -351,7 +357,7 @@ fn simple_movement() -> Result<()> {
     let lexicon = [
         "john::d -k",
         "will::v= +k t",
-        "eat::d= d= v",
+        "eat::d= =d v",
         "the::n= d",
         "cake::n",
     ];
@@ -363,9 +369,16 @@ fn simple_movement() -> Result<()> {
     );
     let v: Vec<_> = Generator::new(&lexicon, "t", &CONFIG)?
         .take(50)
-        .map(|(_, s, _)| s)
+        .map(|(_, s, r)| s)
         .collect();
-    assert_eq!(v, vec![["john", "will", "eat", "the", "cake"]]);
+
+    assert_eq!(
+        v,
+        vec![
+            ["john", "will", "eat", "the", "cake"],
+            ["john", "will", "the", "cake", "eat"]
+        ]
+    );
     Parser::new(
         &lexicon,
         "t",
@@ -380,6 +393,7 @@ fn simple_movement() -> Result<()> {
 #[test]
 fn proper_distributions() -> Result<()> {
     let lexicon = ["a::1= +3 0", "a::1= 1", "ε::1 -3"];
+
     let lexicon = Lexicon::new(
         lexicon
             .into_iter()

@@ -200,6 +200,13 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+    pub fn is_complement(&self, nx: NodeIndex) -> bool {
+        matches!(
+            self.graph.node_weight(nx).unwrap(),
+            FeatureOrLemma::Complement(_, _)
+        )
+    }
+
     pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
         let mut v = vec![];
         for (leaf, weight) in self.leaves.iter() {
@@ -389,6 +396,21 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             None
         }
     }
+
+    pub fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
+        self.graph.node_weight(nx).and_then(|x| match x {
+            FeatureOrLemma::Root => None,
+            FeatureOrLemma::Lemma(_) => None,
+            FeatureOrLemma::Feature(feature) => match feature {
+                Feature::Category(c)
+                | Feature::Selector(c, _)
+                | Feature::Licensor(c)
+                | Feature::Licensee(c) => Some(c),
+            },
+            FeatureOrLemma::Complement(c, _) => Some(c),
+        })
+    }
+
     pub fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
         self.graph
             .edges_directed(nx, petgraph::Direction::Incoming)

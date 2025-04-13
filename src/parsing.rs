@@ -148,17 +148,21 @@ fn unmerge_from_mover<
             match stored {
                 FeatureOrLemma::Feature(Feature::Category(stored)) if stored == cat => {
                     let mut beam = beam.clone();
-                    let child_id = beam.push_moment(child_node, moment.tree.index, thin_vec![]);
-                    let stored_id = beam.push_moment(
-                        stored_child_node,
-                        mover.index,
-                        moment
-                            .movers
-                            .iter()
-                            .filter(|&v| v != mover)
-                            .cloned()
-                            .collect(),
-                    );
+                    let movers = moment
+                        .movers
+                        .iter()
+                        .filter(|&v| v != mover)
+                        .cloned()
+                        .collect();
+
+                    let (stored_movers, child_movers) = if lexicon.is_complement(child_node) {
+                        (movers, thin_vec![])
+                    } else {
+                        (thin_vec![], movers)
+                    };
+
+                    let child_id = beam.push_moment(child_node, moment.tree.index, child_movers);
+                    let stored_id = beam.push_moment(stored_child_node, mover.index, stored_movers);
 
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
 
@@ -202,21 +206,24 @@ fn unmerge<
     rule_prob: LogProb<f64>,
 ) -> Result<()> {
     let complement = lexicon.find_category(cat)?;
+
+    //This enforces the SpICmg constraint (it could be loosened by determining how to divide the
+    //subsets of movers)
+    let (complement_movers, child_movers) = if lexicon.is_complement(child_node) {
+        (moment.movers.clone(), thin_vec![])
+    } else {
+        (thin_vec![], moment.movers.clone())
+    };
+
     let complement_id = beam.push_moment(
         complement,
         moment.tree.index.clone_push(*dir),
-        match dir {
-            Direction::Right => moment.movers.clone(),
-            Direction::Left => thin_vec![],
-        },
+        complement_movers,
     );
     let child_id = beam.push_moment(
         child_node,
         moment.tree.index.clone_push(dir.flip()),
-        match dir {
-            Direction::Right => thin_vec![],
-            Direction::Left => moment.movers.clone(),
-        },
+        child_movers,
     );
 
     beam.log_prob += child_prob + rule_prob;
@@ -375,23 +382,32 @@ pub fn expand<
                     );
                 }
                 (FeatureOrLemma::Feature(Feature::Licensor(cat)), p) => {
-                    let new_beam_found = unmove_from_mover(
-                        extender, lexicon, &moment, &beam, cat, child_node, p, config,
-                    );
-                    let _ = unmove(
-                        extender,
-                        lexicon,
-                        &moment,
-                        beam,
-                        cat,
-                        child_node,
-                        p,
-                        if new_beam_found {
-                            config.dont_move_prob
-                        } else {
-                            LogProb::prob_of_one()
-                        },
-                    );
+                    let shortest_move_constraint_violated = moment.movers.iter().any(|x| {
+                        lexicon
+                            .get_feature_category(x.node)
+                            .map(|x| x == cat)
+                            .unwrap_or(false)
+                    });
+
+                    if !shortest_move_constraint_violated {
+                        let new_beam_found = unmove_from_mover(
+                            extender, lexicon, &moment, &beam, cat, child_node, p, config,
+                        );
+                        let _ = unmove(
+                            extender,
+                            lexicon,
+                            &moment,
+                            beam,
+                            cat,
+                            child_node,
+                            p,
+                            if new_beam_found {
+                                config.dont_move_prob
+                            } else {
+                                LogProb::prob_of_one()
+                            },
+                        );
+                    }
                 }
                 _ => (),
             },

@@ -292,7 +292,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
         let n_items = items.len();
-        Self::new_with_weights(items, std::iter::repeat(1.0).take(n_items).collect())
+        Self::new_with_weights(items, std::iter::repeat_n(1.0, n_items).collect())
     }
 
     pub fn new_with_weights(items: Vec<LexicalEntry<T, Category>>, weights: Vec<f64>) -> Self {

@@ -369,7 +369,7 @@ fn simple_movement() -> Result<()> {
     );
     let v: Vec<_> = Generator::new(&lexicon, "t", &CONFIG)?
         .take(50)
-        .map(|(_, s, r)| s)
+        .map(|(_, s, _)| s)
         .collect();
 
     assert_eq!(

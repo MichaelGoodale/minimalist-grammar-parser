@@ -1,6 +1,7 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
-use crate::{parsing::RuleIndex, Direction};
+use crate::{Direction, Generator, ParsingConfig, lexicon::Lexicon, parsing::RuleIndex};
 use anyhow::Result;
+use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::thin_vec;
 
@@ -71,5 +72,40 @@ fn index_order() -> Result<()> {
     gorn_indices.sort();
     let gorn_indices: Vec<Vec<Direction>> = gorn_indices.into_iter().map(|x| x.into()).collect();
     assert_eq!(gorn_indices, raw_directions);
+    Ok(())
+}
+
+#[test]
+fn smc() -> anyhow::Result<()> {
+    let lex = Lexicon::parse("a::d= +w +w c\nb::d -w -w")?;
+    Generator::new(
+        &lex,
+        "c",
+        &ParsingConfig::new(
+            LogProb::new(-128.0)?,
+            LogProb::from_raw_prob(0.5)?,
+            1000,
+            100,
+        ),
+    )?
+    .next()
+    .unwrap();
+
+    let lex = Lexicon::parse("a::d= d= +w +w c\nb::d -w")?;
+    assert!(
+        Generator::new(
+            &lex,
+            "c",
+            &ParsingConfig::new(
+                LogProb::new(-128.0)?,
+                LogProb::from_raw_prob(0.5)?,
+                1000,
+                100,
+            ),
+        )?
+        .next()
+        .is_none()
+    );
+
     Ok(())
 }

@@ -256,9 +256,20 @@ fn unmove_from_mover<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
     config: &ParsingConfig,
+    already_mover_of_this_cat: bool,
 ) -> bool {
     let mut new_beam_found = false;
-    for mover in moment.movers.iter() {
+
+    for mover in moment
+        .movers
+        .iter()
+        .filter(|x| lexicon.get_feature_category(x.node) == Some(cat) || !already_mover_of_this_cat)
+    //This checks for the SMC. This is because we can't add a new moved -x if we've already got
+    //a -x in our movers. Unless of course, that -x is achieved by getting rid of a -x that is
+    //already there. E.g. if the movers are [<-w, -w>, <-x, -w>] we can turn the <-w, -w> to -w
+    //since we still will only have one -w in the movers. We can't do <-x, -w> since that would
+    //lead to two -w in the movers at the same time, violating the SMC.
+    {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
             match stored {
@@ -382,17 +393,25 @@ pub fn expand<
                     );
                 }
                 (FeatureOrLemma::Feature(Feature::Licensor(cat)), p) => {
-                    let shortest_move_constraint_violated = moment.movers.iter().any(|x| {
+                    let already_mover_of_this_cat = moment.movers.iter().any(|x| {
                         lexicon
                             .get_feature_category(x.node)
                             .map(|x| x == cat)
                             .unwrap_or(false)
                     });
-
-                    if !shortest_move_constraint_violated {
-                        let new_beam_found = unmove_from_mover(
-                            extender, lexicon, &moment, &beam, cat, child_node, p, config,
-                        );
+                    let new_beam_found = unmove_from_mover(
+                        extender,
+                        lexicon,
+                        &moment,
+                        &beam,
+                        cat,
+                        child_node,
+                        p,
+                        config,
+                        already_mover_of_this_cat,
+                    );
+                    if !already_mover_of_this_cat {
+                        //This corresponds to the SMC here.
                         let _ = unmove(
                             extender,
                             lexicon,

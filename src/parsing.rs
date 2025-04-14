@@ -8,10 +8,10 @@ use anyhow::Result;
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use rules::{PartialRulePool, RuleIndex};
 use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
+pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
 pub use rules::{Rule, RulePool};
 
 #[derive(Debug, Clone)]
@@ -56,8 +56,11 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
     ) {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
-            self.rules
-                .push_rule(Rule::Scan { node: child_node }, moment.tree.id);
+            self.rules.push_rule(
+                v.rules_mut(),
+                Rule::Scan { node: child_node },
+                moment.tree.id,
+            );
             v.push(self);
         }
     }
@@ -168,6 +171,7 @@ fn unmerge_from_mover<
 
                     let trace_id = beam.rules.fresh_trace();
                     beam.rules.push_rule(
+                        v.rules_mut(),
                         Rule::UnmergeFromMover {
                             child: child_node,
                             child_id,
@@ -228,6 +232,7 @@ fn unmerge<
 
     beam.log_prob += child_prob + rule_prob;
     beam.rules.push_rule(
+        v.rules_mut(),
         Rule::Unmerge {
             child: child_node,
             child_id,
@@ -290,6 +295,7 @@ fn unmove_from_mover<
 
                     let trace_id = beam.rules.fresh_trace();
                     beam.rules.push_rule(
+                        v.rules_mut(),
                         Rule::UnmoveFromMover {
                             child_id,
                             stored_id,
@@ -337,6 +343,7 @@ fn unmove<
 
     beam.log_prob += child_prob + rule_prob;
     beam.rules.push_rule(
+        v.rules_mut(),
         Rule::Unmove {
             child_id,
             stored_id,

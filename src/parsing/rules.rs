@@ -1,5 +1,5 @@
 use petgraph::graph::NodeIndex;
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
@@ -66,15 +66,14 @@ pub enum Rule {
 struct PartialIndex(usize);
 
 #[derive(Debug, Clone, Copy)]
-struct RuleHolder {
+pub struct RuleHolder {
     rule: Rule,
     index: RuleIndex,
     parent: Option<PartialIndex>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct PartialRulePool {
-    pool: Rc<RefCell<Vec<RuleHolder>>>,
     n_traces: usize,
     n_nodes: usize,
     most_recent: PartialIndex,
@@ -96,8 +95,7 @@ impl PartialRulePool {
         self.n_nodes
     }
 
-    pub fn push_rule(&mut self, rule: Rule, index: RuleIndex) {
-        let mut pool = self.pool.borrow_mut();
+    pub fn push_rule(&mut self, pool: &mut Vec<RuleHolder>, rule: Rule, index: RuleIndex) {
         pool.push(RuleHolder {
             rule,
             index,
@@ -106,7 +104,7 @@ impl PartialRulePool {
         self.most_recent = PartialIndex(pool.len() - 1);
     }
 
-    pub fn start_from_category(cat: NodeIndex) -> Self {
+    pub fn default_pool(cat: NodeIndex) -> Vec<RuleHolder> {
         let mut v = Vec::with_capacity(100_000);
         v.push(RuleHolder {
             rule: Rule::Start {
@@ -116,16 +114,18 @@ impl PartialRulePool {
             index: RuleIndex(0),
             parent: None,
         });
+        v
+    }
+
+    pub fn start_from_category(cat: NodeIndex) -> Self {
         PartialRulePool {
-            pool: Rc::new(RefCell::new(v)),
             n_traces: 0,
             n_nodes: 2,
             most_recent: PartialIndex(0),
         }
     }
 
-    pub fn into_rule_pool(self) -> RulePool {
-        let big_pool = self.pool.borrow();
+    pub fn into_rule_pool(self, big_pool: &[RuleHolder]) -> RulePool {
         let mut pool = vec![None; self.n_nodes];
         let mut i = Some(self.most_recent);
 

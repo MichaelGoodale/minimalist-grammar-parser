@@ -1,7 +1,7 @@
-use super::{rules::RulePool, BeamWrapper};
-use crate::lexicon::Lexicon;
+use super::{BeamWrapper, RuleHolder, rules::RulePool};
 use anyhow::Result;
 use logprob::LogProb;
+use petgraph::graph::NodeIndex;
 use std::fmt::Debug;
 
 pub trait Scanner<T>: Sized {
@@ -38,16 +38,13 @@ where
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
-    pub fn new_multiple<U, Category: Eq + std::fmt::Debug + Clone>(
-        lexicon: &Lexicon<T, Category>,
-        initial_category: Category,
+    pub fn new_multiple<U>(
+        category_index: NodeIndex,
         sentences: &'a [U],
     ) -> Result<BeamWrapper<T, ParseScan<'a, T>>>
     where
         U: AsRef<[T]>,
     {
-        let category_index = lexicon.find_category(&initial_category)?;
-
         Ok(BeamWrapper::new(
             ParseScan {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
@@ -56,12 +53,10 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
         ))
     }
 
-    pub fn new_single<Category: Eq + std::fmt::Debug + Clone>(
-        lexicon: &Lexicon<T, Category>,
-        initial_category: Category,
+    pub fn new_single(
+        category_index: NodeIndex,
         sentence: &'a [T],
     ) -> Result<BeamWrapper<T, ParseScan<'a, T>>> {
-        let category_index = lexicon.find_category(&initial_category)?;
         Ok(BeamWrapper::new(
             ParseScan {
                 sentence: vec![(sentence, 0)],
@@ -72,6 +67,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
 
     pub fn yield_good_parse(
         b: BeamWrapper<T, Self>,
+        rules: &[RuleHolder],
     ) -> Option<(impl Iterator<Item = &'a [T]> + 'a, LogProb<f64>, RulePool)> {
         if b.is_empty() {
             Some((
@@ -81,7 +77,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
                     .filter(|(s, pos)| s.len() == *pos)
                     .map(|(s, _)| s),
                 b.log_prob,
-                b.rules.into_rule_pool(),
+                b.rules.into_rule_pool(rules),
             ))
         } else {
             None
@@ -96,15 +92,13 @@ pub struct FuzzyScan<'a, T> {
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
-    pub fn new<U, Category: Eq + std::fmt::Debug + Clone>(
-        lexicon: &Lexicon<T, Category>,
-        initial_category: Category,
+    pub fn new<U>(
+        category_index: NodeIndex,
         sentences: &'a [U],
     ) -> Result<BeamWrapper<T, FuzzyScan<'a, T>>>
     where
         U: AsRef<[T]>,
     {
-        let category_index = lexicon.find_category(&initial_category)?;
         Ok(BeamWrapper::new(
             FuzzyScan {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
@@ -115,12 +109,15 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
         ))
     }
 
-    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
+    pub fn yield_good_parse(
+        b: BeamWrapper<T, Self>,
+        rules: &[RuleHolder],
+    ) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
         if b.is_empty() {
             Some((
                 b.log_prob,
                 b.beam.generated_sentences.to_vec(),
-                b.rules.into_rule_pool(),
+                b.rules.into_rule_pool(rules),
             ))
         } else {
             None
@@ -175,21 +172,23 @@ where
 }
 
 impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
-    pub fn new<Category: Eq + std::fmt::Debug + Clone>(
-        lexicon: &Lexicon<T, Category>,
-        initial_category: Category,
-    ) -> Result<BeamWrapper<T, GeneratorScan<T>>> {
-        let category_index = lexicon.find_category(&initial_category)?;
-
+    pub fn new(category_index: NodeIndex) -> Result<BeamWrapper<T, GeneratorScan<T>>> {
         Ok(BeamWrapper::new(
             GeneratorScan { sentence: vec![] },
             category_index,
         ))
     }
 
-    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
+    pub fn yield_good_parse(
+        b: BeamWrapper<T, Self>,
+        rules: &[RuleHolder],
+    ) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
         if b.is_empty() {
-            Some((b.log_prob, b.beam.sentence.to_vec(), b.rules.into_rule_pool()))
+            Some((
+                b.log_prob,
+                b.beam.sentence.to_vec(),
+                b.rules.into_rule_pool(rules),
+            ))
         } else {
             None
         }

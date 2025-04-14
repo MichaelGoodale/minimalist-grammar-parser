@@ -5,9 +5,10 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::RulePool;
 use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
-use parsing::{BeamWrapper, expand};
+use parsing::{BeamWrapper, PartialRulePool, expand};
+use parsing::{RuleHolder, RulePool};
+use petgraph::graph::NodeIndex;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -76,6 +77,7 @@ struct ParseHeap<'a, T, B: Scanner<T>> {
     parse_heap: MinMaxHeap<BeamWrapper<T, B>>,
     phantom: PhantomData<T>,
     config: &'a ParsingConfig,
+    rule_arena: Vec<RuleHolder>,
 }
 
 impl<'a, T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'a, T, B> {
@@ -93,14 +95,19 @@ impl<'a, T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'a, T, B> {
         }
     }
 
-    fn new(start: BeamWrapper<T, B>, config: &'a ParsingConfig) -> Self {
+    fn new(start: BeamWrapper<T, B>, config: &'a ParsingConfig, cat: NodeIndex) -> Self {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(start);
         ParseHeap {
             parse_heap,
             phantom: PhantomData,
             config,
+            rule_arena: PartialRulePool::default_pool(cat),
         }
+    }
+
+    fn rules_mut(&mut self) -> &mut Vec<RuleHolder> {
+        &mut self.rule_arena
     }
 }
 
@@ -128,10 +135,8 @@ where
     where
         U: AsRef<[T]>,
     {
-        let parse_heap = ParseHeap::new(
-            FuzzyScan::new(lexicon, initial_category, sentences)?,
-            config,
-        );
+        let cat = lexicon.find_category(&initial_category)?;
+        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences)?, config, cat);
         Ok(FuzzyParser {
             lexicon,
             config,
@@ -156,7 +161,7 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some(x) = FuzzyScan::yield_good_parse(beam) {
+            } else if let Some(x) = FuzzyScan::yield_good_parse(beam, &self.parse_heap.rule_arena) {
                 return Some(x);
             }
         }
@@ -183,10 +188,8 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let parse_heap = ParseHeap::new(
-            ParseScan::new_single(lexicon, initial_category, sentence)?,
-            config,
-        );
+        let cat = lexicon.find_category(&initial_category)?;
+        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, sentence)?, config, cat);
         Ok(Parser {
             lexicon,
             config,
@@ -204,10 +207,8 @@ where
     where
         U: AsRef<[T]>,
     {
-        let parse_heap = ParseHeap::new(
-            ParseScan::new_multiple(lexicon, initial_category, sentences)?,
-            config,
-        );
+        let cat = lexicon.find_category(&initial_category)?;
+        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences)?, config, cat);
         Ok(Parser {
             lexicon,
             buffer: vec![],
@@ -235,7 +236,8 @@ where
                         self.lexicon,
                         self.config,
                     );
-                } else if let Some((mut good_parses, p, rules)) = ParseScan::yield_good_parse(beam)
+                } else if let Some((mut good_parses, p, rules)) =
+                    ParseScan::yield_good_parse(beam, &self.parse_heap.rule_arena)
                 {
                     if let Some(next_sentence) = good_parses.next() {
                         self.buffer
@@ -270,7 +272,8 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let parse_heap = ParseHeap::new(GeneratorScan::new(lexicon, initial_category)?, config);
+        let cat = lexicon.find_category(&initial_category)?;
+        let parse_heap = ParseHeap::new(GeneratorScan::new(cat)?, config, cat);
         Ok(Generator {
             lexicon,
             config,
@@ -296,7 +299,9 @@ where
                     self.lexicon,
                     self.config,
                 );
-            } else if let Some(x) = GeneratorScan::yield_good_parse(beam) {
+            } else if let Some(x) =
+                GeneratorScan::yield_good_parse(beam, &self.parse_heap.rule_arena)
+            {
                 return Some(x);
             }
         }

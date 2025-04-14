@@ -1,6 +1,5 @@
-use itertools::Itertools;
 use petgraph::graph::NodeIndex;
-use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;

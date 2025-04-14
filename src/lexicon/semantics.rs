@@ -111,7 +111,7 @@ mod test {
     use logprob::LogProb;
 
     use super::SemanticLexicon;
-    use crate::{Generator, Parser, ParsingConfig, lexicon::Lexicon};
+    use crate::{Generator, Parser, ParsingConfig};
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {

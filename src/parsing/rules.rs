@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
 
@@ -207,16 +208,7 @@ impl SemanticState {
         }
     }
 
-    fn merge(alpha: &Self, beta: &Self) -> Option<Self> {
-        let a_type = alpha.expr.get_type().unwrap();
-        let b_type = beta.expr.get_type().unwrap();
-        let can_apply_b_to_a = a_type.lhs_clone().is_ok_and(|x| x == b_type);
-        let can_apply_a_to_b = b_type.lhs().is_ok_and(|x| x == a_type);
-
-        if !(can_apply_a_to_b || can_apply_b_to_a) {
-            return None;
-        }
-
+    fn merge(alpha: Self, beta: Self) -> Option<Self> {
         let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
         if overlapping_traces {
             return None;
@@ -225,11 +217,11 @@ impl SemanticState {
         let SemanticState {
             expr: alpha,
             movers: mut alpha_movers,
-        } = alpha.clone();
+        } = alpha;
         let SemanticState {
             expr: beta,
             movers: beta_movers,
-        } = beta.clone();
+        } = beta;
         let alpha = alpha.merge(beta).unwrap();
         for (k, v) in beta_movers {
             alpha_movers.insert(k, v);
@@ -244,7 +236,6 @@ impl SemanticState {
 #[derive(Debug, Clone)]
 #[cfg(feature = "semantics")]
 struct SemanticDerivation<'a, T: Eq, C: Eq> {
-    interpretations: Vec<Vec<SemanticState>>,
     lexicon: &'a SemanticLexicon<T, C>,
     rules: &'a RulePool,
 }
@@ -259,18 +250,14 @@ where
         rules: &RulePool,
         lex: &SemanticLexicon<T, C>,
     ) -> impl Iterator<Item = RootedLambdaPool<Expr>> {
-        let interpretations = vec![vec![]; rules.len()];
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,
-            interpretations,
         };
 
         //We jump to rule 1 since the start rule is superfluous
-        derivation.get_previous_rules(RuleIndex(1));
+        let last_derivation = derivation.get_previous_rules(RuleIndex(1));
 
-        //Again, we take rule 1 since rule 0 is superfluous.
-        let last_derivation = derivation.interpretations.into_iter().nth(1).unwrap();
         last_derivation.into_iter().filter_map(|x| {
             if x.movers.is_empty() {
                 Some(x.expr)
@@ -280,52 +267,45 @@ where
         })
     }
 
-    fn add_interpretation(&mut self, s: SemanticState, index: RuleIndex) {
-        self.interpretations[index.0].push(s);
-    }
-
-    fn interpretations(&self, index: RuleIndex) -> impl Iterator<Item = &SemanticState> {
-        self.interpretations.get(index.0).unwrap().iter()
-    }
-
-    fn get_previous_rules(&mut self, index: RuleIndex) {
+    fn get_previous_rules(&mut self, index: RuleIndex) -> Vec<SemanticState> {
         let rule = self.rules.get(index);
         match rule {
             Rule::Scan { node } => {
-                let s = SemanticState::new(self.lexicon.interpretation(*node).clone());
-                self.add_interpretation(s, index);
+                vec![SemanticState::new(
+                    self.lexicon.interpretation(*node).clone(),
+                )]
             }
-            Rule::Start { .. } => {} // This shouldn't be called.
+            Rule::Start { .. } => {
+                panic!("The start rule should always be skipped");
+            } // This shouldn't be called.
             Rule::Unmerge {
                 child_id,
                 complement_id,
                 ..
             } => {
-                self.get_previous_rules(*complement_id);
-                self.get_previous_rules(*child_id);
+                let complements = self.get_previous_rules(*complement_id);
+                let children = self.get_previous_rules(*child_id);
 
-                let interpretations = self
-                    .interpretations(*child_id)
-                    .zip(self.interpretations(*complement_id))
+                children
+                    .into_iter()
+                    .cartesian_product(complements)
                     .filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta))
-                    .collect::<Vec<_>>();
-                self.interpretations[index.0] = interpretations;
+                    .collect::<Vec<_>>()
             }
-            Rule::UnmoveTrace(trace_id) => (),
+            Rule::UnmoveTrace(_) => panic!("Traces shouldn't directly be accessed"),
             Rule::UnmergeFromMover {
                 child_id,
                 stored_id,
                 trace_id,
                 ..
             } => {
-                self.get_previous_rules(*stored_id);
-                self.get_previous_rules(*child_id);
+                let stored = self.get_previous_rules(*stored_id);
+                let children = self.get_previous_rules(*child_id);
 
-                let interpretations = self
-                    .interpretations(*child_id)
-                    .zip(self.interpretations(*stored_id))
-                    .filter_map(|(alpha, beta)| {
-                        let mut alpha = alpha.clone();
+                children
+                    .into_iter()
+                    .cartesian_product(stored)
+                    .filter_map(|(mut alpha, beta)| {
                         if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
                             alpha.movers.insert(*trace_id, beta.expr.clone());
                             Some(alpha)
@@ -333,8 +313,7 @@ where
                             None
                         }
                     })
-                    .collect::<Vec<_>>();
-                self.interpretations[index.0] = interpretations;
+                    .collect::<Vec<_>>()
             }
             Rule::Unmove {
                 child_id,
@@ -346,9 +325,8 @@ where
                     Rule::UnmoveTrace(trace_id) => trace_id,
                     _ => panic!("Ill-formed tree"),
                 };
-                self.get_previous_rules(*child_id);
-                let interpretations = self
-                    .interpretations(*child_id)
+                self.get_previous_rules(*child_id)
+                    .into_iter()
                     .filter_map(|alpha| {
                         let mut alpha = alpha.clone();
                         if alpha.expr.lambda_abstract_free_variable(trace_id.0).is_ok() {
@@ -361,8 +339,7 @@ where
                             None
                         }
                     })
-                    .collect::<Vec<_>>();
-                self.interpretations[index.0] = interpretations;
+                    .collect::<Vec<_>>()
             }
             _ => todo!(), /*
                           Rule::UnmergeFromMover {

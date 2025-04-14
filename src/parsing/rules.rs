@@ -108,15 +108,17 @@ impl PartialRulePool {
     }
 
     pub fn start_from_category(cat: NodeIndex) -> Self {
+        let mut v = Vec::with_capacity(100_000);
+        v.push(RuleHolder {
+            rule: Rule::Start {
+                node: cat,
+                child: RuleIndex(1),
+            },
+            index: RuleIndex(0),
+            parent: None,
+        });
         PartialRulePool {
-            pool: Rc::new(RefCell::new(vec![RuleHolder {
-                rule: Rule::Start {
-                    node: cat,
-                    child: RuleIndex(1),
-                },
-                index: RuleIndex(0),
-                parent: None,
-            }])),
+            pool: Rc::new(RefCell::new(v)),
             n_traces: 0,
             n_nodes: 2,
             most_recent: PartialIndex(0),
@@ -127,8 +129,6 @@ impl PartialRulePool {
         let big_pool = self.pool.borrow();
         let mut pool = vec![None; self.n_nodes];
         let mut i = Some(self.most_recent);
-
-        dbg!(&big_pool, &self);
 
         while i.is_some() {
             let RuleHolder {

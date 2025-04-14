@@ -64,15 +64,20 @@ use crate::grammars::STABLER2011;
 #[test]
 fn moving_parse() -> anyhow::Result<()> {
     let lex = Lexicon::parse(STABLER2011)?;
+
+    println!("{}", lex.graphviz(true));
+
     for sentence in vec![
         "the king drinks the beer",
         "which wine the queen prefers",
-        "which queen prefers the wine",
         "the queen knows the king drinks the beer",
         "the queen knows the king knows the queen drinks the beer",
+        "which king knows the queen knows which beer the king drinks",
+        "which queen prefers the wine",
     ]
     .into_iter()
     {
+        println!("{sentence}");
         Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &CONFIG)?
             .next()
             .unwrap();

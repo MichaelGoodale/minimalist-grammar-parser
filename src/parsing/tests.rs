@@ -109,3 +109,54 @@ fn smc() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn specificer_island_constraints() -> anyhow::Result<()> {
+    let lex = Lexicon::parse("a::d= +w c\nb::d -w")?;
+    Generator::new(
+        &lex,
+        "c",
+        &ParsingConfig::new(
+            LogProb::new(-128.0)?,
+            LogProb::from_raw_prob(0.5)?,
+            1000,
+            100,
+        ),
+    )?
+    .next()
+    .unwrap();
+
+    //We can extract from the specifier if the -w feature is on top.
+    let lex = Lexicon::parse("a::b= =c +w c\nb::b\nc::c -w")?;
+    Generator::new(
+        &lex,
+        "c",
+        &ParsingConfig::new(
+            LogProb::new(-128.0)?,
+            LogProb::from_raw_prob(0.5)?,
+            1000,
+            100,
+        ),
+    )?
+    .next()
+    .unwrap();
+
+    //We can't extract from the specifier if the -w feature is a sub constiuent.
+    let lex = Lexicon::parse("a::b= =c +w c\nb::b\n::z= c\nc::z -w")?;
+    assert!(
+        Generator::new(
+            &lex,
+            "c",
+            &ParsingConfig::new(
+                LogProb::new(-128.0)?,
+                LogProb::from_raw_prob(0.5)?,
+                1000,
+                100,
+            ),
+        )?
+        .next()
+        .is_none()
+    );
+
+    Ok(())
+}

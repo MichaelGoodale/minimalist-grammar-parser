@@ -6,6 +6,7 @@ use chumsky::{
     text::{inline_whitespace, newline},
 };
 use logprob::{LogProb, Softmax};
+use petgraph::dot::Dot;
 use petgraph::{
     graph::DiGraph,
     graph::NodeIndex,
@@ -197,6 +198,21 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Pa
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
     for Lexicon<T, Category>
 {
+}
+impl<T, Category> Lexicon<T, Category>
+where
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone,
+    FeatureOrLemma<T, Category>: std::fmt::Display,
+{
+    pub fn graphviz(&self, debug: bool) -> String {
+        let dot = Dot::new(&self.graph);
+        if debug {
+            format!("{:?}", dot)
+        } else {
+            format!("{}", dot)
+        }
+    }
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {

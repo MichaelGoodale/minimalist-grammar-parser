@@ -3,9 +3,9 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
+    Generator, Parser, ParsingConfig,
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
-    Generator, Parser, ParsingConfig,
 };
 
 fn main() {

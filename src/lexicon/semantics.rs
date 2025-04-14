@@ -5,11 +5,12 @@ use crate::ParsingConfig;
 
 use super::*;
 
+use itertools::Itertools;
+use simple_semantics::LabelledScenarios;
+use simple_semantics::LanguageExpression;
 use simple_semantics::lambda::RootedLambdaPool;
 use simple_semantics::language::Expr;
 use simple_semantics::lot_parser;
-use simple_semantics::LabelledScenarios;
-use simple_semantics::LanguageExpression;
 
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<T: Eq, Category: Eq> {
@@ -79,8 +80,15 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         initial_category: C,
         sentence: &'a [T],
         config: &'a ParsingConfig,
-    ) -> anyhow::Result<impl Iterator<Item = (LogProb<f64>, &'a [T], Option<LanguageExpression>)>>
-    {
+    ) -> anyhow::Result<
+        impl Iterator<
+            Item = (
+                LogProb<f64>,
+                &'a [T],
+                impl Iterator<Item = LanguageExpression>,
+            ),
+        >,
+    > {
         Ok(
             crate::Parser::new(&self.lexicon, initial_category, sentence, config)?.map(
                 move |(p, s, r)| {
@@ -88,8 +96,9 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
                         p,
                         s,
                         r.to_interpretation(self)
-                            .ok()
-                            .and_then(|x| x.into_pool().ok()),
+                            .filter_map(|x| x.into_pool().ok())
+                            .collect_vec()
+                            .into_iter(),
                     )
                 },
             ),
@@ -102,7 +111,7 @@ mod test {
     use logprob::LogProb;
 
     use super::SemanticLexicon;
-    use crate::{Parser, ParsingConfig};
+    use crate::{Generator, Parser, ParsingConfig, lexicon::Lexicon};
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {
@@ -119,7 +128,7 @@ mod test {
             Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
                 .next()
                 .unwrap();
-        let interpretation = rules.to_interpretation(&semantic)?;
+        let interpretation = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
@@ -152,12 +161,41 @@ mod test {
         .next()
         .unwrap();
         dbg!(&rules);
-        let interpretation = rules.to_interpretation(&semantic)?;
+        let interpretation = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
             interpretation.to_string()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn qr_test() -> anyhow::Result<()> {
+        let config: ParsingConfig = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        let lexical = [
+            "everyone::d -k -q::lambda <e,t> P (every(x, all_a, P(x)))",
+            "someone::d -k -q::lambda <e,t> P (some(x, all_a, P(x)))",
+            "likes::d= V -v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, x)&p_likes(e)&PatientOf(e, y))))",
+            "::v= +v +k +q t::lambda t x (x)",
+            "::V= +k d= +q v::lambda <e,t> p (p)",
+        ];
+
+        let lexicon = lexical.join("\n");
+        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
+
+        for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
+            println!("{}", s.join(" "));
+            for interpretation in rules.to_interpretation(&lex) {
+                println!("{}", interpretation.into_pool()?)
+            }
+        }
+
         Ok(())
     }
 }

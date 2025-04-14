@@ -1,5 +1,5 @@
 use petgraph::graph::NodeIndex;
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
@@ -168,72 +168,245 @@ impl RulePool {
         &self.0[x.0]
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
     #[cfg(feature = "semantics")]
-    pub fn to_interpretation<T, C>(
-        &self,
-        lex: &SemanticLexicon<T, C>,
-    ) -> anyhow::Result<RootedLambdaPool<Expr>>
+    pub fn to_interpretation<'a, T, C>(
+        &'a self,
+        lex: &'a SemanticLexicon<T, C>,
+    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> + 'a
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
-        let mut trace_h = HashMap::default();
-        let (mut pool, _) = inner_interpretation(self, lex, RuleIndex(0), &mut trace_h)?;
-        pool.reduce()?;
-        Ok(pool)
+        SemanticDerivation::interpret(self, lex).filter_map(|mut pool| {
+            if pool.reduce().is_ok() {
+                Some(pool)
+            } else {
+                None
+            }
+        })
     }
 }
 
+#[derive(Debug, Clone)]
 #[cfg(feature = "semantics")]
-fn inner_interpretation<T, C>(
-    rules: &RulePool,
-    lex: &SemanticLexicon<T, C>,
-    index: RuleIndex,
-    trace_h: &mut HashMap<TraceId, RootedLambdaPool<Expr>>,
-) -> anyhow::Result<(RootedLambdaPool<Expr>, Option<TraceId>)>
+struct SemanticState {
+    expr: RootedLambdaPool<Expr>,
+    movers: HashMap<TraceId, RootedLambdaPool<Expr>>,
+}
+
+#[cfg(feature = "semantics")]
+impl SemanticState {
+    fn new(alpha: RootedLambdaPool<Expr>) -> Self {
+        SemanticState {
+            expr: alpha,
+            movers: HashMap::default(),
+        }
+    }
+
+    fn merge(alpha: &Self, beta: &Self) -> Option<Self> {
+        let a_type = alpha.expr.get_type().unwrap();
+        let b_type = beta.expr.get_type().unwrap();
+        let can_apply_b_to_a = a_type.lhs_clone().is_ok_and(|x| x == b_type);
+        let can_apply_a_to_b = b_type.lhs().is_ok_and(|x| x == a_type);
+
+        if !(can_apply_a_to_b || can_apply_b_to_a) {
+            return None;
+        }
+
+        let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
+        if overlapping_traces {
+            return None;
+        }
+
+        let SemanticState {
+            expr: alpha,
+            movers: mut alpha_movers,
+        } = alpha.clone();
+        let SemanticState {
+            expr: beta,
+            movers: beta_movers,
+        } = beta.clone();
+        let alpha = alpha.merge(beta).unwrap();
+        for (k, v) in beta_movers {
+            alpha_movers.insert(k, v);
+        }
+        Some(SemanticState {
+            expr: alpha,
+            movers: alpha_movers,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg(feature = "semantics")]
+struct SemanticDerivation<'a, T: Eq, C: Eq> {
+    interpretations: Vec<Vec<SemanticState>>,
+    lexicon: &'a SemanticLexicon<T, C>,
+    rules: &'a RulePool,
+}
+
+#[cfg(feature = "semantics")]
+impl<T, C> SemanticDerivation<'_, T, C>
 where
     T: Eq + std::fmt::Debug + std::clone::Clone,
     C: Eq + std::fmt::Debug + std::clone::Clone,
 {
-    let rule = rules.get(index);
-    Ok(match rule {
-        Rule::Scan { node } => (lex.interpretation(*node).clone(), None),
-        Rule::Start { child, .. } => inner_interpretation(rules, lex, *child, trace_h)?,
-        Rule::Unmerge {
-            child_id,
-            complement_id,
-            ..
-        } => {
-            let complement = inner_interpretation(rules, lex, *complement_id, trace_h)?.0;
-            let child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-            let merged = child.merge(complement).unwrap();
-            (merged, None)
+    fn interpret(
+        rules: &RulePool,
+        lex: &SemanticLexicon<T, C>,
+    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> {
+        let interpretations = vec![vec![]; rules.len()];
+        let mut derivation = SemanticDerivation {
+            rules,
+            lexicon: lex,
+            interpretations,
+        };
+
+        //We jump to rule 1 since the start rule is superfluous
+        derivation.get_previous_rules(RuleIndex(1));
+
+        //Again, we take rule 1 since rule 0 is superfluous.
+        let last_derivation = derivation.interpretations.into_iter().nth(1).unwrap();
+        last_derivation.into_iter().filter_map(|x| {
+            if x.movers.is_empty() {
+                Some(x.expr)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn add_interpretation(&mut self, s: SemanticState, index: RuleIndex) {
+        self.interpretations[index.0].push(s);
+    }
+
+    fn interpretations(&self, index: RuleIndex) -> impl Iterator<Item = &SemanticState> {
+        self.interpretations.get(index.0).unwrap().iter()
+    }
+
+    fn get_previous_rules(&mut self, index: RuleIndex) {
+        let rule = self.rules.get(index);
+        match rule {
+            Rule::Scan { node } => {
+                let s = SemanticState::new(self.lexicon.interpretation(*node).clone());
+                self.add_interpretation(s, index);
+            }
+            Rule::Start { .. } => {} // This shouldn't be called.
+            Rule::Unmerge {
+                child_id,
+                complement_id,
+                ..
+            } => {
+                self.get_previous_rules(*complement_id);
+                self.get_previous_rules(*child_id);
+
+                let interpretations = self
+                    .interpretations(*child_id)
+                    .zip(self.interpretations(*complement_id))
+                    .filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta))
+                    .collect::<Vec<_>>();
+                self.interpretations[index.0] = interpretations;
+            }
+            Rule::UnmoveTrace(trace_id) => (),
+            Rule::UnmergeFromMover {
+                child_id,
+                stored_id,
+                trace_id,
+                ..
+            } => {
+                self.get_previous_rules(*stored_id);
+                self.get_previous_rules(*child_id);
+
+                let interpretations = self
+                    .interpretations(*child_id)
+                    .zip(self.interpretations(*stored_id))
+                    .filter_map(|(alpha, beta)| {
+                        let mut alpha = alpha.clone();
+                        if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
+                            alpha.movers.insert(*trace_id, beta.expr.clone());
+                            Some(alpha)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                self.interpretations[index.0] = interpretations;
+            }
+            Rule::Unmove {
+                child_id,
+                stored_id,
+            } =>
+            //We add the lambda extraction to child_id
+            {
+                let trace_id = match self.rules.get(*stored_id) {
+                    Rule::UnmoveTrace(trace_id) => trace_id,
+                    _ => panic!("Ill-formed tree"),
+                };
+                self.get_previous_rules(*child_id);
+                let interpretations = self
+                    .interpretations(*child_id)
+                    .filter_map(|alpha| {
+                        let mut alpha = alpha.clone();
+                        if alpha.expr.lambda_abstract_free_variable(trace_id.0).is_ok() {
+                            alpha.movers.remove(trace_id).and_then(|stored_value| {
+                                let SemanticState { expr, movers } = alpha;
+                                expr.merge(stored_value)
+                                    .map(|expr| SemanticState { expr, movers })
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                self.interpretations[index.0] = interpretations;
+            }
+            _ => todo!(), /*
+                          Rule::UnmergeFromMover {
+                              child_id,
+                              stored_id,
+                              trace_id,
+                              ..
+                          } => {
+                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+                              let stored_value = inner_interpretation(rules, lex, *stored_id, trace_h)?.0;
+                              dbg!(child.get_type()?, &stored_value.get_type()?);
+                              trace_h.insert(*trace_id, stored_value);
+
+                              child.apply_new_free_variable(trace_id.0)?;
+                              (child, None)
+                          }
+                          Rule::Unmove {
+                              child_id,
+                              stored_id,
+                          } =>
+                          //We add the lambda extraction to child_id
+                          {
+                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+                              let (stored_value, trace_id) =
+                                  inner_interpretation(rules, lex, *stored_id, trace_h)?;
+                              child.lambda_abstract_free_variable(trace_id.unwrap().0)?;
+                              let merged = stored_value.merge(child).unwrap();
+                              (merged, None)
+                          }
+                          Rule::UnmoveFromMover {
+                              child_id,
+                              stored_id,
+                              trace_id,
+                              ..
+                          } => {
+                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
+                              let (stored_value, next_trace_id) =
+                                  inner_interpretation(rules, lex, *stored_id, trace_h)?;
+                              trace_h.insert(*trace_id, stored_value);
+
+                              child.apply_new_free_variable(trace_id.0)?;
+                              child.lambda_abstract_free_variable(next_trace_id.unwrap().0)?;
+                              (child, None)
+                          }*/
         }
-        Rule::UnmoveTrace(trace_id) => (trace_h.remove(trace_id).unwrap(), Some(*trace_id)),
-        Rule::UnmergeFromMover {
-            child_id,
-            stored_id,
-            trace_id,
-            ..
-        } => {
-            let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-            let stored_value = inner_interpretation(rules, lex, *stored_id, trace_h)?.0;
-            trace_h.insert(*trace_id, stored_value);
-            child.apply_new_free_variable(trace_id.0)?;
-            (child, None)
-        }
-        Rule::Unmove {
-            child_id,
-            stored_id,
-        } =>
-        //We add the lambda extraction to child_id
-        {
-            let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-            let (stored_value, trace_id) = inner_interpretation(rules, lex, *stored_id, trace_h)?;
-            child.lambda_abstract_free_variable(trace_id.unwrap().0)?;
-            let merged = stored_value.merge(child).unwrap();
-            (merged, None)
-        }
-        Rule::UnmoveFromMover { .. } => todo!(),
-    })
+    }
 }

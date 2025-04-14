@@ -117,14 +117,6 @@ impl PartialRulePool {
         v
     }
 
-    pub fn start_from_category(cat: NodeIndex) -> Self {
-        PartialRulePool {
-            n_traces: 0,
-            n_nodes: 2,
-            most_recent: PartialIndex(0),
-        }
-    }
-
     pub fn into_rule_pool(self, big_pool: &[RuleHolder]) -> RulePool {
         let mut pool = vec![None; self.n_nodes];
         let mut i = Some(self.most_recent);
@@ -155,6 +147,16 @@ impl PartialRulePool {
         }
 
         RulePool(pool.into_iter().collect::<Option<Vec<_>>>().unwrap())
+    }
+}
+
+impl Default for PartialRulePool {
+    fn default() -> Self {
+        PartialRulePool {
+            n_traces: 0,
+            n_nodes: 2,
+            most_recent: PartialIndex(0),
+        }
     }
 }
 

@@ -95,7 +95,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
             beam,
             queue,
             log_prob: LogProb::prob_of_one(),
-            rules: PartialRulePool::start_from_category(category_index),
+            rules: PartialRulePool::default(),
             phantom: PhantomData,
         }
     }

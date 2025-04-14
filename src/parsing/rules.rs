@@ -222,14 +222,17 @@ impl SemanticState {
             expr: beta,
             movers: beta_movers,
         } = beta;
-        let alpha = alpha.merge(beta).unwrap();
-        for (k, v) in beta_movers {
-            alpha_movers.insert(k, v);
+        if let Some(alpha) = alpha.merge(beta) {
+            for (k, v) in beta_movers {
+                alpha_movers.insert(k, v);
+            }
+            Some(SemanticState {
+                expr: alpha,
+                movers: alpha_movers,
+            })
+        } else {
+            None
         }
-        Some(SemanticState {
-            expr: alpha,
-            movers: alpha_movers,
-        })
     }
 }
 
@@ -269,7 +272,7 @@ where
 
     fn get_previous_rules(&mut self, index: RuleIndex) -> Vec<SemanticState> {
         let rule = self.rules.get(index);
-        match rule {
+        let v = match rule {
             Rule::Scan { node } => {
                 vec![SemanticState::new(
                     self.lexicon.interpretation(*node).clone(),
@@ -301,10 +304,9 @@ where
             } => {
                 let stored = self.get_previous_rules(*stored_id);
                 let children = self.get_previous_rules(*child_id);
-
-                children
-                    .into_iter()
-                    .cartesian_product(stored)
+                let product = children.into_iter().cartesian_product(stored);
+                product
+                    .clone()
                     .filter_map(|(mut alpha, beta)| {
                         if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
                             alpha.movers.insert(*trace_id, beta.expr.clone());
@@ -313,6 +315,7 @@ where
                             None
                         }
                     })
+                    .chain(product.filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta)))
                     .collect::<Vec<_>>()
             }
             Rule::Unmove {
@@ -325,65 +328,74 @@ where
                     Rule::UnmoveTrace(trace_id) => trace_id,
                     _ => panic!("Ill-formed tree"),
                 };
-                self.get_previous_rules(*child_id)
+                let children = self.get_previous_rules(*child_id);
+
+                children
                     .into_iter()
-                    .filter_map(|alpha| {
-                        let mut alpha = alpha.clone();
-                        if alpha.expr.lambda_abstract_free_variable(trace_id.0).is_ok() {
-                            alpha.movers.remove(trace_id).and_then(|stored_value| {
-                                let SemanticState { expr, movers } = alpha;
-                                expr.merge(stored_value)
-                                    .map(|expr| SemanticState { expr, movers })
-                            })
+                    .filter_map(|mut alpha| {
+                        if let Some(stored_value) = alpha.movers.remove(trace_id) {
+                            alpha
+                                .expr
+                                .lambda_abstract_free_variable(trace_id.0)
+                                .unwrap();
+                            let SemanticState { expr, movers } = alpha;
+                            expr.merge(stored_value)
+                                .map(|expr| SemanticState { expr, movers })
                         } else {
-                            None
+                            Some(alpha)
                         }
                     })
                     .collect::<Vec<_>>()
             }
-            _ => todo!(), /*
-                          Rule::UnmergeFromMover {
-                              child_id,
-                              stored_id,
-                              trace_id,
-                              ..
-                          } => {
-                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-                              let stored_value = inner_interpretation(rules, lex, *stored_id, trace_h)?.0;
-                              dbg!(child.get_type()?, &stored_value.get_type()?);
-                              trace_h.insert(*trace_id, stored_value);
 
-                              child.apply_new_free_variable(trace_id.0)?;
-                              (child, None)
-                          }
-                          Rule::Unmove {
-                              child_id,
-                              stored_id,
-                          } =>
-                          //We add the lambda extraction to child_id
-                          {
-                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-                              let (stored_value, trace_id) =
-                                  inner_interpretation(rules, lex, *stored_id, trace_h)?;
-                              child.lambda_abstract_free_variable(trace_id.unwrap().0)?;
-                              let merged = stored_value.merge(child).unwrap();
-                              (merged, None)
-                          }
-                          Rule::UnmoveFromMover {
-                              child_id,
-                              stored_id,
-                              trace_id,
-                              ..
-                          } => {
-                              let mut child = inner_interpretation(rules, lex, *child_id, trace_h)?.0;
-                              let (stored_value, next_trace_id) =
-                                  inner_interpretation(rules, lex, *stored_id, trace_h)?;
-                              trace_h.insert(*trace_id, stored_value);
+            Rule::UnmoveFromMover {
+                child_id,
+                stored_id,
+                trace_id,
+                ..
+            } => {
+                let children = self.get_previous_rules(*child_id);
+                let old_trace_id = match self.rules.get(*stored_id) {
+                    Rule::UnmoveTrace(trace_id) => trace_id,
+                    _ => panic!("Ill-formed tree"),
+                };
 
-                              child.apply_new_free_variable(trace_id.0)?;
-                              child.lambda_abstract_free_variable(next_trace_id.unwrap().0)?;
-                              (child, None)
-                          }*/
-        }
+                children
+                    .clone()
+                    .into_iter()
+                    .map(|mut x| {
+                        if let Some(stored_value) = x.movers.remove(old_trace_id) {
+                            x.movers.insert(*trace_id, stored_value);
+
+                            x.expr
+                                .lambda_abstract_free_variable(old_trace_id.0)
+                                .unwrap();
+                            x.expr.apply_new_free_variable(trace_id.0).unwrap();
+                        }
+                        x
+                    })
+                    .chain(children.into_iter().filter_map(|mut x| {
+                        if let Some(stored_value) = x.movers.remove(old_trace_id) {
+                            let SemanticState { mut expr, movers } = x;
+                            expr.lambda_abstract_free_variable(old_trace_id.0).unwrap();
+                            expr.merge(stored_value)
+                                .map(|expr| SemanticState { expr, movers })
+                        } else {
+                            None
+                        }
+                    }))
+                    .collect()
+            }
+        };
+        /*
+        println!(
+            "{:?}: {:?} {:?}",
+            index,
+            rule,
+            v.iter()
+                .map(|x| x.expr.get_type().unwrap().to_string())
+                .collect_vec()
+        );*/
+        v
     }
 }

@@ -181,7 +181,39 @@ mod test {
         let lexical = [
             "everyone::d -k -q::lambda <e,t> P (every(x, all_a, P(x)))",
             "someone::d -k -q::lambda <e,t> P (some(x, all_a, P(x)))",
-            "likes::d= V -v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, x)&p_likes(e)&PatientOf(e, y))))",
+            "likes::d= V::lambda e x (lambda e y (some(e, all_e, AgentOf(e, y)&p_likes(e)&PatientOf(e, x))))",
+            "::v= +k +q t::lambda t x (x)",
+            "::V= +k d= +q v::lambda <e,t> p (p)",
+        ];
+
+        let lexicon = lexical.join("\n");
+        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
+
+        let mut v = vec![];
+        for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
+            let mut s = s.join(" ");
+            for interpretation in rules.to_interpretation(&lex) {
+                s.push('\n');
+                s.push_str(&interpretation.into_pool()?.to_string());
+            }
+            println!("{}", s);
+            v.push(s);
+        }
+        assert_eq!(
+            vec![
+                "someone someone likes\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "someone everyone likes\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "everyone everyone likes\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "everyone someone likes\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))"
+            ],
+            v
+        );
+        println!("sov good");
+
+        let lexical = [
+            "everyone::d -k -q::lambda <e,t> P (every(x, all_a, P(x)))",
+            "someone::d -k -q::lambda <e,t> P (some(x, all_a, P(x)))",
+            "likes::d= V -v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, y)&p_likes(e)&PatientOf(e, x))))",
             "::v= +v +k +q t::lambda t x (x)",
             "::V= +k d= +q v::lambda <e,t> p (p)",
         ];
@@ -192,10 +224,11 @@ mod test {
         for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
             println!("{}", s.join(" "));
             for interpretation in rules.to_interpretation(&lex) {
-                println!("{}", interpretation.into_pool()?)
+                println!("{}", interpretation.into_pool()?);
             }
         }
 
+        panic!();
         Ok(())
     }
 }

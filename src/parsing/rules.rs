@@ -1,5 +1,6 @@
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
-use std::fmt::Debug;
+use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
@@ -47,6 +48,7 @@ pub enum Rule {
         child: NodeIndex,
         child_id: RuleIndex,
         stored_id: RuleIndex,
+        destination_id: RuleIndex,
         trace_id: TraceId,
     },
     Unmove {
@@ -56,20 +58,33 @@ pub enum Rule {
     UnmoveFromMover {
         child_id: RuleIndex,
         stored_id: RuleIndex,
+        destination_id: RuleIndex,
         trace_id: TraceId,
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PartialIndex(usize);
+
+#[derive(Debug, Clone, Copy)]
+struct RuleHolder {
+    rule: Rule,
+    index: RuleIndex,
+    parent: Option<PartialIndex>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PartialRulePool {
-    pool: Vec<Option<Rule>>,
+    pool: Rc<RefCell<Vec<RuleHolder>>>,
     n_traces: usize,
+    n_nodes: usize,
+    most_recent: PartialIndex,
 }
 
 impl PartialRulePool {
     pub fn fresh(&mut self) -> RuleIndex {
-        let id = RuleIndex(self.pool.len()); //Get fresh ID
-        self.pool.push(None);
+        let id = RuleIndex(self.n_nodes); //Get fresh ID
+        self.n_nodes += 1;
         id
     }
     pub fn fresh_trace(&mut self) -> TraceId {
@@ -79,31 +94,68 @@ impl PartialRulePool {
     }
 
     pub fn n_steps(&self) -> usize {
-        self.pool.len()
+        self.n_nodes
     }
 
-    pub fn push_rule(&mut self, r: Rule, r_i: RuleIndex, trace: Option<(TraceId, RuleIndex)>) {
-        if let Some((trace, i)) = trace {
-            self.pool[i.0] = Some(Rule::UnmoveTrace(trace));
-        }
-        self.pool[r_i.0] = Some(r);
+    pub fn push_rule(&mut self, rule: Rule, index: RuleIndex) {
+        let mut pool = self.pool.borrow_mut();
+        pool.push(RuleHolder {
+            rule,
+            index,
+            parent: Some(self.most_recent),
+        });
+        self.most_recent = PartialIndex(pool.len() - 1);
     }
 
     pub fn start_from_category(cat: NodeIndex) -> Self {
         PartialRulePool {
-            pool: vec![
-                Some(Rule::Start {
+            pool: Rc::new(RefCell::new(vec![RuleHolder {
+                rule: Rule::Start {
                     node: cat,
                     child: RuleIndex(1),
-                }),
-                None,
-            ],
+                },
+                index: RuleIndex(0),
+                parent: None,
+            }])),
             n_traces: 0,
+            n_nodes: 2,
+            most_recent: PartialIndex(0),
         }
     }
 
     pub fn into_rule_pool(self) -> RulePool {
-        RulePool(self.pool.into_iter().collect::<Option<Vec<_>>>().unwrap())
+        let big_pool = self.pool.borrow();
+        let mut pool = vec![None; self.n_nodes];
+        let mut i = Some(self.most_recent);
+
+        dbg!(&big_pool, &self);
+
+        while i.is_some() {
+            let RuleHolder {
+                rule,
+                index,
+                parent,
+            } = big_pool[i.unwrap().0];
+            match rule {
+                Rule::UnmoveFromMover {
+                    destination_id,
+                    trace_id,
+                    ..
+                }
+                | Rule::UnmergeFromMover {
+                    destination_id,
+                    trace_id,
+                    ..
+                } => {
+                    pool[destination_id.0] = Some(Rule::UnmoveTrace(trace_id));
+                }
+                _ => (),
+            }
+            pool[index.0] = Some(rule);
+            i = parent;
+        }
+
+        RulePool(pool.into_iter().collect::<Option<Vec<_>>>().unwrap())
     }
 }
 

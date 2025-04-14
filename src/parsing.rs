@@ -57,7 +57,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         if self.beam.scan(s) {
             self.log_prob += child_prob;
             self.rules
-                .push_rule(Rule::Scan { node: child_node }, moment.tree.id, None);
+                .push_rule(Rule::Scan { node: child_node }, moment.tree.id);
             v.push(self);
         }
     }
@@ -173,9 +173,9 @@ fn unmerge_from_mover<
                             child_id,
                             stored_id,
                             trace_id,
+                            destination_id: mover.id,
                         },
                         moment.tree.id,
-                        Some((trace_id, mover.id)),
                     );
                     v.push(beam);
                     new_beam = true;
@@ -234,7 +234,6 @@ fn unmerge<
             complement_id,
         },
         moment.tree.id,
-        None,
     );
     v.push(beam);
     Ok(())
@@ -295,9 +294,9 @@ fn unmove_from_mover<
                             child_id,
                             stored_id,
                             trace_id,
+                            destination_id: mover.id,
                         },
                         moment.tree.id,
-                        Some((trace_id, mover.id)),
                     );
                     v.push(beam);
                     new_beam_found = true;
@@ -343,7 +342,6 @@ fn unmove<
             stored_id,
         },
         moment.tree.id,
-        None,
     );
     v.push(beam);
     Ok(())

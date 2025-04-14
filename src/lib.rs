@@ -5,9 +5,9 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
-use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::RulePool;
-use parsing::{expand, BeamWrapper};
+use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
+use parsing::{BeamWrapper, expand};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
@@ -78,7 +78,7 @@ struct ParseHeap<'a, T, B: Scanner<T>> {
     config: &'a ParsingConfig,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'_, T, B> {
+impl<'a, T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'a, T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }
@@ -90,6 +90,16 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'_, T, B> {
             } else {
                 self.parse_heap.push(v);
             }
+        }
+    }
+
+    fn new(start: BeamWrapper<T, B>, config: &'a ParsingConfig) -> Self {
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        parse_heap.push(start);
+        ParseHeap {
+            parse_heap,
+            phantom: PhantomData,
+            config,
         }
     }
 }
@@ -118,16 +128,14 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(FuzzyScan::new(lexicon, initial_category, sentences)?);
+        let parse_heap = ParseHeap::new(
+            FuzzyScan::new(lexicon, initial_category, sentences)?,
+            config,
+        );
         Ok(FuzzyParser {
             lexicon,
             config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap,
         })
     }
 }
@@ -175,17 +183,15 @@ where
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseScan::new_single(lexicon, initial_category, sentence)?);
+        let parse_heap = ParseHeap::new(
+            ParseScan::new_single(lexicon, initial_category, sentence)?,
+            config,
+        );
         Ok(Parser {
             lexicon,
             config,
             buffer: vec![],
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap,
         })
     }
 
@@ -198,21 +204,15 @@ where
     where
         U: AsRef<[T]>,
     {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(ParseScan::new_multiple(
-            lexicon,
-            initial_category,
-            sentences,
-        )?);
+        let parse_heap = ParseHeap::new(
+            ParseScan::new_multiple(lexicon, initial_category, sentences)?,
+            config,
+        );
         Ok(Parser {
             lexicon,
             buffer: vec![],
             config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap,
         })
     }
 }
@@ -270,16 +270,11 @@ where
         initial_category: Category,
         config: &'a ParsingConfig,
     ) -> Result<Generator<'a, T, Category>> {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
-        parse_heap.push(GeneratorScan::new(lexicon, initial_category)?);
+        let parse_heap = ParseHeap::new(GeneratorScan::new(lexicon, initial_category)?, config);
         Ok(Generator {
             lexicon,
             config,
-            parse_heap: ParseHeap {
-                parse_heap,
-                config,
-                phantom: PhantomData,
-            },
+            parse_heap,
         })
     }
 }

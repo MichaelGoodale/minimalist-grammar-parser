@@ -1,3 +1,4 @@
+use ahash::HashSet;
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
@@ -223,9 +224,7 @@ impl SemanticState {
             movers: beta_movers,
         } = beta;
         if let Some(alpha) = alpha.merge(beta) {
-            for (k, v) in beta_movers {
-                alpha_movers.insert(k, v);
-            }
+            alpha_movers.extend(beta_movers);
             Some(SemanticState {
                 expr: alpha,
                 movers: alpha_movers,
@@ -272,12 +271,11 @@ where
 
     fn get_previous_rules(&mut self, index: RuleIndex) -> Vec<SemanticState> {
         let rule = self.rules.get(index);
-        let v = match rule {
-            Rule::Scan { node } => {
-                vec![SemanticState::new(
-                    self.lexicon.interpretation(*node).clone(),
-                )]
-            }
+        match rule {
+            Rule::Scan { node } => [SemanticState::new(
+                self.lexicon.interpretation(*node).clone(),
+            )]
+            .into(),
             Rule::Start { .. } => {
                 panic!("The start rule should always be skipped");
             } // This shouldn't be called.
@@ -293,7 +291,7 @@ where
                     .into_iter()
                     .cartesian_product(complements)
                     .filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta))
-                    .collect::<Vec<_>>()
+                    .collect()
             }
             Rule::UnmoveTrace(_) => panic!("Traces shouldn't directly be accessed"),
             Rule::UnmergeFromMover {
@@ -309,6 +307,7 @@ where
                     .clone()
                     .filter_map(|(mut alpha, beta)| {
                         if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
+                            alpha.movers.extend(beta.movers);
                             alpha.movers.insert(*trace_id, beta.expr.clone());
                             Some(alpha)
                         } else {
@@ -316,7 +315,7 @@ where
                         }
                     })
                     .chain(product.filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta)))
-                    .collect::<Vec<_>>()
+                    .collect()
             }
             Rule::Unmove {
                 child_id,
@@ -345,7 +344,7 @@ where
                             Some(alpha)
                         }
                     })
-                    .collect::<Vec<_>>()
+                    .collect()
             }
 
             Rule::UnmoveFromMover {
@@ -359,14 +358,12 @@ where
                     Rule::UnmoveTrace(trace_id) => trace_id,
                     _ => panic!("Ill-formed tree"),
                 };
-
                 children
                     .clone()
                     .into_iter()
                     .map(|mut x| {
                         if let Some(stored_value) = x.movers.remove(old_trace_id) {
                             x.movers.insert(*trace_id, stored_value);
-
                             x.expr
                                 .lambda_abstract_free_variable(old_trace_id.0)
                                 .unwrap();
@@ -386,16 +383,6 @@ where
                     }))
                     .collect()
             }
-        };
-        /*
-        println!(
-            "{:?}: {:?} {:?}",
-            index,
-            rule,
-            v.iter()
-                .map(|x| x.expr.get_type().unwrap().to_string())
-                .collect_vec()
-        );*/
-        v
+        }
     }
 }

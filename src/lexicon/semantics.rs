@@ -108,6 +108,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use logprob::LogProb;
 
     use super::SemanticLexicon;
@@ -192,9 +193,13 @@ mod test {
         let mut v = vec![];
         for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
             let mut s = s.join(" ");
-            for interpretation in rules.to_interpretation(&lex) {
+            for interpretation in rules
+                .to_interpretation(&lex)
+                .map(|x| x.into_pool().unwrap().to_string())
+                .unique()
+            {
                 s.push('\n');
-                s.push_str(&interpretation.into_pool()?.to_string());
+                s.push_str(&interpretation);
             }
             println!("{}", s);
             v.push(s);
@@ -221,14 +226,29 @@ mod test {
         let lexicon = lexical.join("\n");
         let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
 
+        let mut v = vec![];
         for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
-            println!("{}", s.join(" "));
-            for interpretation in rules.to_interpretation(&lex) {
-                println!("{}", interpretation.into_pool()?);
+            let mut s = s.join(" ");
+            for interpretation in rules
+                .to_interpretation(&lex)
+                .map(|x| x.into_pool().unwrap().to_string())
+                .unique()
+            {
+                s.push('\n');
+                s.push_str(&interpretation);
             }
+            println!("{}", s);
+            v.push(s);
         }
-
-        panic!();
+        assert_eq!(
+            vec![
+                "everyone likes someone\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "everyone likes everyone\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "someone likes everyone\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "someone likes someone\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+            ],
+            v
+        );
         Ok(())
     }
 }

@@ -5,6 +5,17 @@ use simple_semantics::{lambda::RootedLambdaPool, language::Expr};
 
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum SemanticRule {
+    FunctionalApplication,
+    Store,
+    Identity,
+    Retrieve,
+    UpdateTrace,
+    Trace,
+    Scan,
+}
+
 impl RulePool {
     pub fn to_interpretation<'a, T, C>(
         &'a self,
@@ -24,14 +35,22 @@ impl RulePool {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HistoryId(usize);
+
+#[derive(Debug, Clone, Copy)]
+struct HistoryNode {
+    rule_id: RuleIndex,
+    rule: SemanticRule,
+    children: [Option<HistoryId>; 2],
+}
+
 #[derive(Debug, Clone)]
-#[cfg(feature = "semantics")]
 struct SemanticState {
     expr: RootedLambdaPool<Expr>,
     movers: HashMap<TraceId, RootedLambdaPool<Expr>>,
 }
 
-#[cfg(feature = "semantics")]
 impl SemanticState {
     fn new(alpha: RootedLambdaPool<Expr>) -> Self {
         SemanticState {
@@ -49,10 +68,12 @@ impl SemanticState {
         let SemanticState {
             expr: alpha,
             movers: mut alpha_movers,
+            ..
         } = alpha;
         let SemanticState {
             expr: beta,
             movers: beta_movers,
+            ..
         } = beta;
         if let Some(alpha) = alpha.merge(beta) {
             alpha_movers.extend(beta_movers);
@@ -67,32 +88,33 @@ impl SemanticState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(feature = "semantics")]
 struct SemanticDerivation<'a, T: Eq, C: Eq> {
     lexicon: &'a SemanticLexicon<T, C>,
     rules: &'a RulePool,
+    semantic_history: Vec<HistoryNode>,
 }
 
-#[cfg(feature = "semantics")]
-impl<T, C> SemanticDerivation<'_, T, C>
+impl<'a, T, C> SemanticDerivation<'a, T, C>
 where
     T: Eq + std::fmt::Debug + std::clone::Clone,
     C: Eq + std::fmt::Debug + std::clone::Clone,
 {
     fn interpret(
-        rules: &RulePool,
-        lex: &SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> {
+        rules: &'a RulePool,
+        lex: &'a SemanticLexicon<T, C>,
+    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> + 'a {
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,
+            semantic_history: vec![],
         };
 
         //We jump to rule 1 since the start rule is superfluous
         let last_derivation = derivation.get_previous_rules(RuleIndex(1));
 
-        last_derivation.into_iter().filter_map(|x| {
+        last_derivation.into_iter().filter_map(move |(x, root)| {
             if x.movers.is_empty() {
+                let history = derivation.get_history(root);
                 Some(x.expr)
             } else {
                 None
@@ -100,13 +122,62 @@ where
         })
     }
 
-    fn get_previous_rules(&mut self, index: RuleIndex) -> Vec<SemanticState> {
-        let rule = self.rules.get(index);
+    fn get_history(&self, root: HistoryId) -> Vec<SemanticRule> {
+        let mut stack = vec![root];
+        let mut history: Vec<Option<SemanticRule>> = self
+            .rules
+            .0
+            .iter()
+            .map(|rule| match rule {
+                Rule::Start { .. } => Some(SemanticRule::Identity),
+                Rule::UnmoveTrace(_) => Some(SemanticRule::Trace),
+                _ => None,
+            })
+            .collect();
+
+        while let Some(node) = stack.pop() {
+            let HistoryNode {
+                rule_id,
+                rule,
+                children,
+            } = self.semantic_history.get(node.0).unwrap();
+            history[rule_id.0] = Some(*rule);
+            stack.extend(children.iter().filter_map(|x| *x));
+        }
+
+        history.into_iter().collect::<Option<Vec<_>>>().unwrap()
+    }
+
+    fn history_node(
+        &mut self,
+        rule_id: RuleIndex,
+        child_a: Option<HistoryId>,
+        child_b: Option<HistoryId>,
+    ) -> HistoryId {
+        self.semantic_history.push(HistoryNode {
+            rule_id,
+            rule: SemanticRule::FunctionalApplication,
+            children: [child_a, child_b],
+        });
+        HistoryId(self.semantic_history.len() - 1)
+    }
+
+    fn get_trace(&mut self, trace_id: RuleIndex) -> TraceId {
+        match self.rules.get(trace_id) {
+            Rule::UnmoveTrace(trace_id) => *trace_id,
+            _ => panic!("Ill-formed tree"),
+        }
+    }
+
+    fn get_previous_rules(&mut self, rule_id: RuleIndex) -> Vec<(SemanticState, HistoryId)> {
+        let rule = self.rules.get(rule_id);
         match rule {
-            Rule::Scan { node } => [SemanticState::new(
-                self.lexicon.interpretation(*node).clone(),
+            Rule::Scan { node } => [(
+                SemanticState::new(self.lexicon.interpretation(*node).clone()),
+                self.history_node(rule_id, None, None),
             )]
             .into(),
+            Rule::UnmoveTrace(_) => panic!("Traces shouldn't directly be accessed"),
             Rule::Start { .. } => {
                 panic!("The start rule should always be skipped");
             } // This shouldn't be called.
@@ -121,10 +192,12 @@ where
                 children
                     .into_iter()
                     .cartesian_product(complements)
-                    .filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta))
+                    .filter_map(|((alpha, child_a), (beta, child_b))| {
+                        SemanticState::merge(alpha, beta)
+                            .map(|x| (x, self.history_node(rule_id, Some(child_a), Some(child_b))))
+                    })
                     .collect()
             }
-            Rule::UnmoveTrace(_) => panic!("Traces shouldn't directly be accessed"),
             Rule::UnmergeFromMover {
                 child_id,
                 stored_id,
@@ -134,19 +207,27 @@ where
                 let stored = self.get_previous_rules(*stored_id);
                 let children = self.get_previous_rules(*child_id);
                 let product = children.into_iter().cartesian_product(stored);
-                product
+                let mut new_states = product
                     .clone()
-                    .filter_map(|(mut alpha, beta)| {
+                    .filter_map(|((mut alpha, child_a), (beta, child_b))| {
                         if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
                             alpha.movers.extend(beta.movers);
                             alpha.movers.insert(*trace_id, beta.expr.clone());
-                            Some(alpha)
+                            Some((
+                                alpha,
+                                self.history_node(rule_id, Some(child_a), Some(child_b)),
+                            ))
                         } else {
                             None
                         }
                     })
-                    .chain(product.filter_map(|(alpha, beta)| SemanticState::merge(alpha, beta)))
-                    .collect()
+                    .collect::<Vec<_>>();
+
+                new_states.extend(product.filter_map(|((alpha, child_a), (beta, child_b))| {
+                    SemanticState::merge(alpha, beta)
+                        .map(|x| (x, self.history_node(rule_id, Some(child_a), Some(child_b))))
+                }));
+                new_states
             }
             Rule::Unmove {
                 child_id,
@@ -154,25 +235,26 @@ where
             } =>
             //We add the lambda extraction to child_id
             {
-                let trace_id = match self.rules.get(*stored_id) {
-                    Rule::UnmoveTrace(trace_id) => trace_id,
-                    _ => panic!("Ill-formed tree"),
-                };
+                let trace_id = self.get_trace(*stored_id);
                 let children = self.get_previous_rules(*child_id);
 
                 children
                     .into_iter()
-                    .filter_map(|mut alpha| {
-                        if let Some(stored_value) = alpha.movers.remove(trace_id) {
+                    .filter_map(|(mut alpha, child_a)| {
+                        if let Some(stored_value) = alpha.movers.remove(&trace_id) {
                             alpha
                                 .expr
                                 .lambda_abstract_free_variable(trace_id.0)
                                 .unwrap();
                             let SemanticState { expr, movers } = alpha;
-                            expr.merge(stored_value)
-                                .map(|expr| SemanticState { expr, movers })
+                            expr.merge(stored_value).map(|expr| {
+                                (
+                                    SemanticState { expr, movers },
+                                    self.history_node(rule_id, Some(child_a), None),
+                                )
+                            })
                         } else {
-                            Some(alpha)
+                            Some((alpha, self.history_node(rule_id, Some(child_a), None)))
                         }
                     })
                     .collect()
@@ -185,34 +267,36 @@ where
                 ..
             } => {
                 let children = self.get_previous_rules(*child_id);
-                let old_trace_id = match self.rules.get(*stored_id) {
-                    Rule::UnmoveTrace(trace_id) => trace_id,
-                    _ => panic!("Ill-formed tree"),
-                };
-                children
+                let old_trace_id = self.get_trace(*stored_id);
+                let mut states = children
                     .clone()
                     .into_iter()
-                    .map(|mut x| {
-                        if let Some(stored_value) = x.movers.remove(old_trace_id) {
+                    .map(|(mut x, child_a)| {
+                        if let Some(stored_value) = x.movers.remove(&old_trace_id) {
                             x.movers.insert(*trace_id, stored_value);
                             x.expr
                                 .lambda_abstract_free_variable(old_trace_id.0)
                                 .unwrap();
                             x.expr.apply_new_free_variable(trace_id.0).unwrap();
                         }
-                        x
+                        (x, self.history_node(rule_id, Some(child_a), None))
                     })
-                    .chain(children.into_iter().filter_map(|mut x| {
-                        if let Some(stored_value) = x.movers.remove(old_trace_id) {
-                            let SemanticState { mut expr, movers } = x;
-                            expr.lambda_abstract_free_variable(old_trace_id.0).unwrap();
-                            expr.merge(stored_value)
-                                .map(|expr| SemanticState { expr, movers })
-                        } else {
-                            None
-                        }
-                    }))
-                    .collect()
+                    .collect::<Vec<_>>();
+                states.extend(children.into_iter().filter_map(|(mut x, child_a)| {
+                    if let Some(stored_value) = x.movers.remove(&old_trace_id) {
+                        let SemanticState { mut expr, movers } = x;
+                        expr.lambda_abstract_free_variable(old_trace_id.0).unwrap();
+                        expr.merge(stored_value).map(|expr| {
+                            (
+                                SemanticState { expr, movers },
+                                self.history_node(rule_id, Some(child_a), None),
+                            )
+                        })
+                    } else {
+                        None
+                    }
+                }));
+                states
             }
         }
     }

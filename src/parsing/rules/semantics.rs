@@ -10,7 +10,7 @@ enum SemanticRule {
     FunctionalApplication,
     Store,
     Identity,
-    Retrieve,
+    ApplyFromStorage,
     UpdateTrace,
     Trace,
     Scan,
@@ -162,6 +162,72 @@ where
         HistoryId(self.semantic_history.len() - 1)
     }
 
+    fn identity(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState, HistoryId),
+    ) -> (SemanticState, HistoryId) {
+        let (alpha, child_a) = child;
+        (alpha, self.history_node(rule_id, Some(child_a), None))
+    }
+
+    fn functional_application(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState, HistoryId),
+        complement: (SemanticState, HistoryId),
+    ) -> Option<(SemanticState, HistoryId)> {
+        let (alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+        SemanticState::merge(alpha, beta)
+            .map(|x| (x, self.history_node(rule_id, Some(alpha_id), Some(beta_id))))
+    }
+
+    fn store(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState, HistoryId),
+        complement: (SemanticState, HistoryId),
+        trace_id: TraceId,
+    ) -> Option<(SemanticState, HistoryId)> {
+        let (mut alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+        if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
+            alpha.movers.extend(beta.movers);
+            alpha.movers.insert(trace_id, beta.expr.clone());
+            Some((
+                alpha,
+                self.history_node(rule_id, Some(alpha_id), Some(beta_id)),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn apply_from_storage(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState, HistoryId),
+        trace_id: TraceId,
+    ) -> Option<(SemanticState, HistoryId)> {
+        let (mut alpha, alpha_id) = child;
+        if let Some(stored_value) = alpha.movers.remove(&trace_id) {
+            alpha
+                .expr
+                .lambda_abstract_free_variable(trace_id.0)
+                .unwrap();
+            let SemanticState { expr, movers } = alpha;
+            expr.merge(stored_value).map(|expr| {
+                (
+                    SemanticState { expr, movers },
+                    self.history_node(rule_id, Some(alpha_id), None),
+                )
+            })
+        } else {
+            None
+        }
+    }
+
     fn get_trace(&mut self, trace_id: RuleIndex) -> TraceId {
         match self.rules.get(trace_id) {
             Rule::UnmoveTrace(trace_id) => *trace_id,
@@ -177,10 +243,9 @@ where
                 self.history_node(rule_id, None, None),
             )]
             .into(),
+            // These shouldn't be called.
             Rule::UnmoveTrace(_) => panic!("Traces shouldn't directly be accessed"),
-            Rule::Start { .. } => {
-                panic!("The start rule should always be skipped");
-            } // This shouldn't be called.
+            Rule::Start { .. } => panic!("The start rule must always be skipped"),
             Rule::Unmerge {
                 child_id,
                 complement_id,
@@ -192,9 +257,8 @@ where
                 children
                     .into_iter()
                     .cartesian_product(complements)
-                    .filter_map(|((alpha, child_a), (beta, child_b))| {
-                        SemanticState::merge(alpha, beta)
-                            .map(|x| (x, self.history_node(rule_id, Some(child_a), Some(child_b))))
+                    .filter_map(|(child, complement)| {
+                        self.functional_application(rule_id, child, complement)
                     })
                     .collect()
             }
@@ -209,23 +273,13 @@ where
                 let product = children.into_iter().cartesian_product(stored);
                 let mut new_states = product
                     .clone()
-                    .filter_map(|((mut alpha, child_a), (beta, child_b))| {
-                        if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
-                            alpha.movers.extend(beta.movers);
-                            alpha.movers.insert(*trace_id, beta.expr.clone());
-                            Some((
-                                alpha,
-                                self.history_node(rule_id, Some(child_a), Some(child_b)),
-                            ))
-                        } else {
-                            None
-                        }
+                    .filter_map(|(child, complement)| {
+                        self.store(rule_id, child, complement, *trace_id)
                     })
                     .collect::<Vec<_>>();
 
-                new_states.extend(product.filter_map(|((alpha, child_a), (beta, child_b))| {
-                    SemanticState::merge(alpha, beta)
-                        .map(|x| (x, self.history_node(rule_id, Some(child_a), Some(child_b))))
+                new_states.extend(product.filter_map(|(child, complement)| {
+                    self.functional_application(rule_id, child, complement)
                 }));
                 new_states
             }
@@ -254,7 +308,7 @@ where
                                 )
                             })
                         } else {
-                            Some((alpha, self.history_node(rule_id, Some(child_a), None)))
+                            Some(self.identity(rule_id, (alpha, child_a)))
                         }
                     })
                     .collect()

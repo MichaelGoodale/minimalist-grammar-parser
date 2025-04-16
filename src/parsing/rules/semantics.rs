@@ -94,6 +94,13 @@ struct SemanticDerivation<'a, T: Eq, C: Eq> {
     semantic_history: Vec<HistoryNode>,
 }
 
+#[derive(Debug, Clone)]
+enum ApplyFromStorageResult<T> {
+    SuccesfulMerge(T),
+    FailedMerge,
+    NoTrace(T),
+}
+
 impl<'a, T, C> SemanticDerivation<'a, T, C>
 where
     T: Eq + std::fmt::Debug + std::clone::Clone,
@@ -204,12 +211,31 @@ where
         }
     }
 
+    fn update_trace(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState, HistoryId),
+        old_trace_id: TraceId,
+        trace_id: TraceId,
+    ) -> (SemanticState, HistoryId) {
+        let (mut alpha, alpha_child) = child;
+        if let Some(stored_value) = alpha.movers.remove(&old_trace_id) {
+            alpha.movers.insert(trace_id, stored_value);
+            alpha
+                .expr
+                .lambda_abstract_free_variable(old_trace_id.0)
+                .unwrap();
+            alpha.expr.apply_new_free_variable(trace_id.0).unwrap();
+        }
+        (alpha, self.history_node(rule_id, Some(alpha_child), None))
+    }
+
     fn apply_from_storage(
         &mut self,
         rule_id: RuleIndex,
         child: (SemanticState, HistoryId),
         trace_id: TraceId,
-    ) -> Option<(SemanticState, HistoryId)> {
+    ) -> ApplyFromStorageResult<(SemanticState, HistoryId)> {
         let (mut alpha, alpha_id) = child;
         if let Some(stored_value) = alpha.movers.remove(&trace_id) {
             alpha
@@ -217,14 +243,17 @@ where
                 .lambda_abstract_free_variable(trace_id.0)
                 .unwrap();
             let SemanticState { expr, movers } = alpha;
-            expr.merge(stored_value).map(|expr| {
+            match expr.merge(stored_value).map(|expr| {
                 (
                     SemanticState { expr, movers },
                     self.history_node(rule_id, Some(alpha_id), None),
                 )
-            })
+            }) {
+                Some(x) => ApplyFromStorageResult::SuccesfulMerge(x),
+                None => ApplyFromStorageResult::FailedMerge,
+            }
         } else {
-            None
+            ApplyFromStorageResult::NoTrace((alpha, alpha_id))
         }
     }
 
@@ -294,23 +323,15 @@ where
 
                 children
                     .into_iter()
-                    .filter_map(|(mut alpha, child_a)| {
-                        if let Some(stored_value) = alpha.movers.remove(&trace_id) {
-                            alpha
-                                .expr
-                                .lambda_abstract_free_variable(trace_id.0)
-                                .unwrap();
-                            let SemanticState { expr, movers } = alpha;
-                            expr.merge(stored_value).map(|expr| {
-                                (
-                                    SemanticState { expr, movers },
-                                    self.history_node(rule_id, Some(child_a), None),
-                                )
-                            })
-                        } else {
-                            Some(self.identity(rule_id, (alpha, child_a)))
-                        }
-                    })
+                    .filter_map(
+                        |child| match self.apply_from_storage(rule_id, child, trace_id) {
+                            ApplyFromStorageResult::SuccesfulMerge(x) => Some(x),
+                            ApplyFromStorageResult::FailedMerge => None,
+                            ApplyFromStorageResult::NoTrace(child) => {
+                                Some(self.identity(rule_id, child))
+                            }
+                        },
+                    )
                     .collect()
             }
 
@@ -325,31 +346,16 @@ where
                 let mut states = children
                     .clone()
                     .into_iter()
-                    .map(|(mut x, child_a)| {
-                        if let Some(stored_value) = x.movers.remove(&old_trace_id) {
-                            x.movers.insert(*trace_id, stored_value);
-                            x.expr
-                                .lambda_abstract_free_variable(old_trace_id.0)
-                                .unwrap();
-                            x.expr.apply_new_free_variable(trace_id.0).unwrap();
-                        }
-                        (x, self.history_node(rule_id, Some(child_a), None))
-                    })
+                    .map(|child| self.update_trace(rule_id, child, old_trace_id, *trace_id))
                     .collect::<Vec<_>>();
-                states.extend(children.into_iter().filter_map(|(mut x, child_a)| {
-                    if let Some(stored_value) = x.movers.remove(&old_trace_id) {
-                        let SemanticState { mut expr, movers } = x;
-                        expr.lambda_abstract_free_variable(old_trace_id.0).unwrap();
-                        expr.merge(stored_value).map(|expr| {
-                            (
-                                SemanticState { expr, movers },
-                                self.history_node(rule_id, Some(child_a), None),
-                            )
-                        })
-                    } else {
-                        None
-                    }
-                }));
+                states.extend(children.into_iter().filter_map(
+                    |child| match self.apply_from_storage(rule_id, child, old_trace_id) {
+                        ApplyFromStorageResult::SuccesfulMerge(x) => Some(x),
+                        ApplyFromStorageResult::FailedMerge
+                        | ApplyFromStorageResult::NoTrace(_) => None, //We don't percolate up if
+                                                                      //the trace is missing because the previous rule handles that.
+                    },
+                ));
                 states
             }
         }

@@ -30,7 +30,7 @@ impl std::fmt::Display for SemanticRule {
                 SemanticRule::ApplyFromStorage => "ApplyFromStorage",
                 SemanticRule::UpdateTrace => "UpdateTrace",
                 SemanticRule::Trace => "Trace",
-                SemanticRule::Scan => "Scan",
+                SemanticRule::Scan => "LexicalEntry",
             }
         )
     }
@@ -88,13 +88,36 @@ impl SemanticHistory {
             }
         }
     }
+
+    pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<T, C>, rules: &RulePool) -> Self
+    where
+        T: Eq + std::fmt::Debug + std::clone::Clone,
+        C: Eq + std::fmt::Debug + std::clone::Clone,
+    {
+        match self {
+            SemanticHistory::Rich(items) => SemanticHistory::Rich(items),
+            SemanticHistory::Simple(semantic_rules) => {
+                let mut items = semantic_rules.into_iter().map(|x| (x, None)).collect_vec();
+
+                let mut derivation = SemanticDerivation {
+                    rules,
+                    lexicon,
+                    semantic_history: vec![],
+                };
+
+                derivation.redo_history(RuleIndex(0), &mut items);
+
+                SemanticHistory::Rich(items.into_iter().map(|(x, y)| (x, y.unwrap())).collect())
+            }
+        }
+    }
 }
 
 impl Display for SemanticNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticNode::Rich(_, _) => {
-                todo!("Haven't done rich pretty printing yet!")
+            SemanticNode::Rich(_semantic_rule, interp) => {
+                write!(f, "{}", interp)
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
         }
@@ -105,6 +128,12 @@ impl Display for SemanticNode {
 pub struct SemanticState {
     expr: RootedLambdaPool<Expr>,
     movers: HashMap<TraceId, RootedLambdaPool<Expr>>,
+}
+
+impl Display for SemanticState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.expr)
+    }
 }
 
 impl SemanticState {
@@ -438,5 +467,79 @@ where
                 states
             }
         }
+    }
+
+    fn redo_history(
+        &mut self,
+        rule_id: RuleIndex,
+        history: &mut [(SemanticRule, Option<SemanticState>)],
+    ) {
+        let rule = *self.rules.get(rule_id);
+        let semantic_rule = history.get(rule_id.0).unwrap().0;
+        let children: Vec<_> = self.rules.children(rule_id).collect();
+        for child in children.iter() {
+            self.redo_history(*child, history);
+        }
+
+        let get_child = |i: usize| {
+            history
+                .get(children.get(i).unwrap().0)
+                .unwrap()
+                .1
+                .clone()
+                .unwrap()
+        };
+
+        let trace_id = match &rule {
+            Rule::UnmergeFromMover { trace_id, .. } | Rule::UnmoveFromMover { trace_id, .. } => {
+                Some(*trace_id)
+            }
+            _ => None,
+        };
+
+        let value = match semantic_rule {
+            SemanticRule::FunctionalApplication => {
+                let child = get_child(0);
+                let complement = get_child(1);
+
+                self.functional_application(
+                    rule_id,
+                    (child, HistoryId(0)),
+                    (complement, HistoryId(0)),
+                )
+            }
+            SemanticRule::Store => {
+                let child = get_child(0);
+                let complement = get_child(1);
+                self.store(
+                    rule_id,
+                    (child, HistoryId(0)),
+                    (complement, HistoryId(0)),
+                    trace_id.unwrap(),
+                )
+            }
+            SemanticRule::Identity => {
+                let child = get_child(0);
+                Some(self.identity(rule_id, (child, HistoryId(0))))
+            }
+            SemanticRule::ApplyFromStorage => todo!(),
+            SemanticRule::UpdateTrace => todo!(),
+            SemanticRule::Trace => todo!(),
+            SemanticRule::Scan => {
+                let node = match rule {
+                    Rule::Scan { node } => node,
+                    _ => panic!(
+                        "The scan semantic rule should only happen with scanning when parsing"
+                    ),
+                };
+                Some((
+                    SemanticState::new(self.lexicon.interpretation(node).clone()),
+                    HistoryId(0),
+                ))
+            }
+        };
+        let s = history.get_mut(rule_id.0).unwrap();
+        let state = &mut s.1;
+        *state = Some(value.unwrap().0);
     }
 }

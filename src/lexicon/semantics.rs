@@ -133,12 +133,25 @@ mod test {
             Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
                 .next()
                 .unwrap();
-        let (interpretation, history) = rules.to_interpretation(&semantic).next().unwrap();
+        let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
             interpretation.to_string()
         );
+
+        let latex = rules.to_semantic_latex(&semantic, &history);
+        println!("{latex}");
+        assert_eq!(
+            latex,
+            "\\begin{forest}\n[{\\semder{v}{FA} }\n\t[{\\lex{john}{\\cancel{d}}{LexicalEntry} } ]\n\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t[{\\lex{likes}{\\cancel{d=} =d v}{LexicalEntry} } ]\n\t\t[{\\lex{mary}{\\cancel{d}}{LexicalEntry} } ] ] ]\n\\end{forest}"
+        );
+
+        //TODO: Not passing reliably because node2rule is not bijective in the pretty code
+        history = history.into_rich(&semantic, &rules);
+        let latex = rules.to_semantic_latex(&semantic, &history);
+        println!("{latex}");
+        assert_eq!(latex, "");
         Ok(())
     }
 
@@ -169,8 +182,16 @@ mod test {
         let (interpretation, history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
+            interpretation.to_string(),
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
-            interpretation.to_string()
+        );
+
+        let latex = rules.to_semantic_latex(&semantic, &history);
+
+        println!("{}", latex);
+        assert_eq!(
+            latex,
+            "\\begin{forest}\n[{\\semder{c}{FA} }\n\t[{\\semder{\\cancel{v}}{FA} }\n\t\t[{\\lex{john}{\\cancel{d}}{LexicalEntry} } ]\n\t\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t\t[{\\lex{knows}{\\cancel{c=} =d v}{LexicalEntry} } ]\n\t\t\t[{\\semder{\\cancel{c}}{ApplyFromStorage} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{FA} }\n\t\t\t\t\t[{\\lex{$\\epsilon$}{\\cancel{v=} +wh c}{LexicalEntry} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{Store} }\n\t\t\t\t\t\t[{\\lex{who}{\\cancel{d} -wh}{LexicalEntry} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t\t\t\t\t\t[{\\lex{likes}{\\cancel{d=} =d v}{LexicalEntry} } ]\n\t\t\t\t\t\t\t[{\\lex{mary}{\\cancel{d}}{LexicalEntry} } ] ] ] ] ] ] ]\n\t[{\\lex{$\\epsilon$}{\\cancel{=v} c}{LexicalEntry} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
         );
         Ok(())
     }

@@ -167,4 +167,32 @@ impl RulePool {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub fn children(&self, x: RuleIndex) -> impl Iterator<Item = RuleIndex> {
+        match self.get(x) {
+            Rule::Start { child, .. } => [Some(*child), None],
+            Rule::UnmoveTrace(_) | Rule::Scan { .. } => [None, None],
+            Rule::Unmove {
+                child_id: a,
+                stored_id: b,
+            }
+            | Rule::Unmerge {
+                child_id: a,
+                complement_id: b,
+                ..
+            }
+            | Rule::UnmergeFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            }
+            | Rule::UnmoveFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            } => [Some(*a), Some(*b)],
+        }
+        .into_iter()
+        .flatten()
+    }
 }

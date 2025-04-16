@@ -132,7 +132,7 @@ impl RulePool {
     ) -> (
         StableDiGraph<MgNode<T, C>, MGEdge>,
         NodeIndex,
-        HashMap<RuleIndex, NodeIndex>,
+        HashMap<NodeIndex, RuleIndex>,
     )
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
@@ -142,9 +142,17 @@ impl RulePool {
         let mut g = StableDiGraph::<MgNode<T, C>, MGEdge>::new();
         let mut trace_h = HashMap::new();
         let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
+        let mut nodes_h: HashMap<NodeIndex, RuleIndex> = HashMap::new();
 
-        let (root, _, _, _) =
-            inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
+        let (root, _, _, _) = inner_to_graph(
+            &mut g,
+            lex,
+            self,
+            RuleIndex(0),
+            &mut trace_h,
+            &mut rule_h,
+            &mut nodes_h,
+        );
 
         //Complicated code to add edges between traces and their origins as well as for canceling
         //the features of movers.
@@ -190,7 +198,7 @@ impl RulePool {
         for (trace_origin, trace_node) in movements.into_iter() {
             g.add_edge(trace_origin, trace_node, MGEdge::Move);
         }
-        (g, root, rule_h)
+        (g, root, nodes_h)
     }
 
     pub fn to_semantic_latex<T, C>(
@@ -203,8 +211,7 @@ impl RulePool {
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
-        let (g, root, rule_h) = self.to_graph(semantic_lex.lexicon());
-        let node_to_rule: HashMap<_, _> = rule_h.into_iter().map(|(k, v)| (v, k)).collect();
+        let (g, root, node_to_rule) = self.to_graph(semantic_lex.lexicon());
         let g = g.map(
             |i, node| SemanticMGNode {
                 node: node.clone(),
@@ -396,7 +403,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     "".to_string()
                 },
                 feature_vec_to_string(features, !root),
-                self.semantic
+                self.semantic.to_string().replace("&", "\\&")
             ),
             MgNode::Leaf {
                 lemma,
@@ -411,7 +418,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                         None => "$\\epsilon$".to_string(),
                     },
                     feature_vec_to_string(features, !root),
-                    self.semantic
+                    self.semantic.to_string().replace("&", "\\&")
                 )
             }
             MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
@@ -581,6 +588,7 @@ fn graph_helper<T, C>(
     rules: &RulePool,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
+    nodes_h: &mut HashMap<NodeIndex, RuleIndex>,
 ) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
@@ -588,10 +596,10 @@ where
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
 {
     let (complement_node, complement_features, mut complement_movers, comp_trace_id) =
-        inner_to_graph(g, lex, rules, complement_id, trace_h, rules_h);
+        inner_to_graph(g, lex, rules, complement_id, trace_h, rules_h, nodes_h);
 
     let (child_node, mut features, mut movement, _) =
-        inner_to_graph(g, lex, rules, child_id, trace_h, rules_h);
+        inner_to_graph(g, lex, rules, child_id, trace_h, rules_h, nodes_h);
 
     movement.append(&mut complement_movers);
     match current_rule {
@@ -658,6 +666,7 @@ fn inner_to_graph<T, C>(
     index: RuleIndex,
     trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
     rules_h: &mut HashMap<RuleIndex, NodeIndex>,
+    nodes_h: &mut HashMap<NodeIndex, RuleIndex>,
 ) -> (NodeIndex, Vec<Feature<C>>, Vec<Mover<C>>, Option<TraceId>)
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
@@ -685,7 +694,7 @@ where
         } => {
             trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
             graph_helper(
-                *rule, *child_id, *stored_id, g, lex, rules, trace_h, rules_h,
+                *rule, *child_id, *stored_id, g, lex, rules, trace_h, rules_h, nodes_h,
             )
         }
         Rule::Scan { node } => {
@@ -719,10 +728,11 @@ where
             rules,
             trace_h,
             rules_h,
+            nodes_h,
         ),
         Rule::Start { child, .. } => {
             let (node, features, movers, trace_id) =
-                inner_to_graph(g, lex, rules, *child, trace_h, rules_h);
+                inner_to_graph(g, lex, rules, *child, trace_h, rules_h, nodes_h);
             match g.node_weight_mut(node).unwrap() {
                 MgNode::Node { root, .. } | MgNode::Leaf { root, .. } => *root = true,
                 MgNode::Trace(_) => (),
@@ -732,7 +742,7 @@ where
     };
 
     rules_h.insert(index, node);
-
+    nodes_h.entry(node).or_insert(index);
     (node, features, movers, trace_id)
 }
 

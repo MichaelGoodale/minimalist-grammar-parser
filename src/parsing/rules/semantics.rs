@@ -121,8 +121,7 @@ where
 
         last_derivation.into_iter().filter_map(move |(x, root)| {
             if x.movers.is_empty() {
-                let history = derivation.get_history(root);
-                Some((x.expr, history))
+                Some((x.expr, derivation.get_history(root)))
             } else {
                 None
             }

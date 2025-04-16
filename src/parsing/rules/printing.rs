@@ -263,7 +263,7 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
             0 => write!(f, ""),
             1 => write!(
                 f,
-                "\\texttt{{{}}}_{{{}}}",
+                "\\mover{{{}}}{{{}}}",
                 match self.canceled {
                     true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
                     false => self.features.first().unwrap().to_string(),
@@ -272,17 +272,17 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
             ),
             _ => write!(
                 f,
-                "\\texttt{{{}}}_{{{}}}^{{\\texttt{{{}}}}}",
+                "\\mover[{{{}}}]{{{}}}{{{}}}",
+                self.features
+                    .iter()
+                    .skip(1)
+                    .map(|x| x.to_string())
+                    .join(" "),
                 match self.canceled {
                     true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
                     false => self.features.first().unwrap().to_string(),
                 },
                 self.trace_id.0,
-                self.features
-                    .iter()
-                    .skip(1)
-                    .map(|x| x.to_string())
-                    .join(" ")
             ),
         }
     }
@@ -325,38 +325,30 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
                 movement,
                 root,
             } => format!(
-                "{{\\texttt{{{}}} {}}}",
-                feature_vec_to_string(features, !root),
+                "{{\\der{}{{{}}}}}",
                 if !movement.is_empty() {
                     format!(
-                        "$\\{{{}\\}}$",
+                        "[{{{}}}]",
                         movement.iter().map(|x| x.to_string()).join(", ")
                     )
                 } else {
                     "".to_string()
-                }
+                },
+                feature_vec_to_string(features, !root),
             ),
             MgNode::Leaf {
                 lemma,
                 features,
-                movement,
                 root,
+                ..
             } => {
                 format!(
-                    "{{\\plainlex{{{}}}{{{}}} {}}}",
+                    "{{\\plainlex{{{}}}{{{}}}}}",
                     match lemma {
                         Some(x) => x.to_string(),
                         None => "$\\epsilon$".to_string(),
                     },
                     feature_vec_to_string(features, !root),
-                    if !movement.is_empty() {
-                        format!(
-                            "$\\{{{}\\}}$",
-                            movement.iter().map(|x| x.to_string()).join(", ")
-                        )
-                    } else {
-                        "".to_string()
-                    }
                 )
             }
             MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
@@ -672,7 +664,7 @@ mod test {
             println!("{}", rules.to_latex(&lex));
             assert_eq!(
                 rules.to_latex(&lex),
-                "\\begin{forest}\n[{\\texttt{C} }\n\t[{$t0$},name=node0 ]\n\t[{\\texttt{\\cancel{+W} C} $\\{\\texttt{\\cancel{-W}}_{0}\\}$}\n\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +W C} } ]\n\t\t[{\\texttt{\\cancel{V}} $\\{\\texttt{-W}_{0}\\}$}\n\t\t\t[{\\texttt{\\cancel{D}} }\n\t\t\t\t[{\\plainlex{the}{\\cancel{N=} D} } ]\n\t\t\t\t[{\\plainlex{queen}{\\cancel{N}} } ] ]\n\t\t\t[{\\texttt{\\cancel{=D} V} $\\{\\texttt{-W}_{0}\\}$}\n\t\t\t\t[{\\plainlex{prefers}{\\cancel{D=} =D V} } ]\n\t\t\t\t[{\\texttt{\\cancel{D} -W} },name=node6\n\t\t\t\t\t[{\\plainlex{which}{\\cancel{N=} D -W} } ]\n\t\t\t\t\t[{\\plainlex{wine}{\\cancel{N}} } ] ] ] ] ] ]\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node0);\n\\end{forest}"
+                "\\begin{forest}\n[{\\der{C}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-W}}{0}}]{\\cancel{+W} C}}\n\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +W C}} ]\n\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{V}}}\n\t\t\t[{\\der{\\cancel{D}}}\n\t\t\t\t[{\\plainlex{the}{\\cancel{N=} D}} ]\n\t\t\t\t[{\\plainlex{queen}{\\cancel{N}}} ] ]\n\t\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{=D} V}}\n\t\t\t\t[{\\plainlex{prefers}{\\cancel{D=} =D V}} ]\n\t\t\t\t[{\\der{\\cancel{D} -W}},name=node6\n\t\t\t\t\t[{\\plainlex{which}{\\cancel{N=} D -W}} ]\n\t\t\t\t\t[{\\plainlex{wine}{\\cancel{N}}} ] ] ] ] ] ]\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node0);\n\\end{forest}"
             );
         }
         Ok(())
@@ -699,7 +691,7 @@ mod test {
             println!("{}", rules.to_latex(&lex));
             assert_eq!(
                 rules.to_latex(&lex),
-                "\\begin{forest}\n[{\\texttt{T} }\n\t[{$t0$},name=node0 ]\n\t[{\\texttt{\\cancel{+l} T} $\\{\\texttt{\\cancel{-l}}_{0}\\}$}\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\texttt{\\cancel{+r} +l T} $\\{\\texttt{\\cancel{-r}}_{1}, \\texttt{-l}_{0}\\}$}\n\t\t\t[{\\texttt{\\cancel{T} -l} $\\{\\texttt{-r}_{1}\\}$},name=node18\n\t\t\t\t[{$t2$},name=node2 ]\n\t\t\t\t[{\\texttt{\\cancel{+l} T -l} $\\{\\texttt{\\cancel{-l}}_{2}, \\texttt{-r}_{1}\\}$}\n\t\t\t\t\t[{\\texttt{\\cancel{B} -r} $\\{\\texttt{-l}_{2}\\}$},name=node15\n\t\t\t\t\t\t[{$t3$},name=node3 ]\n\t\t\t\t\t\t[{\\texttt{\\cancel{+r} B -r} $\\{\\texttt{\\cancel{-r}}_{3}, \\texttt{-l}_{2}\\}$}\n\t\t\t\t\t\t\t[{\\texttt{\\cancel{T} -l} $\\{\\texttt{-r}_{3}\\}$},name=node12\n\t\t\t\t\t\t\t\t[{$t4$},name=node4 ]\n\t\t\t\t\t\t\t\t[{\\texttt{\\cancel{+l} T -l} $\\{\\texttt{\\cancel{-l}}_{4}, \\texttt{-r}_{3}\\}$}\n\t\t\t\t\t\t\t\t\t[{\\texttt{\\cancel{A} -r} $\\{\\texttt{-l}_{4}\\}$},name=node9\n\t\t\t\t\t\t\t\t\t\t[{$t5$},name=node5 ]\n\t\t\t\t\t\t\t\t\t\t[{\\texttt{\\cancel{+r} A -r} $\\{\\texttt{\\cancel{-r}}_{5}^{\\texttt{-l}}\\}$}\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{T} -r -l} },name=node6 ]\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=T} +r A -r} } ] ] ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=A} +l T -l} } ] ] ]\n\t\t\t\t\t\t\t[{\\plainlex{b}{\\cancel{=T} +r B -r} } ] ] ]\n\t\t\t\t\t[{\\plainlex{b}{\\cancel{=B} +l T -l} } ] ] ]\n\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{=T} +r +l T} } ] ] ] ]\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node4);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node9) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node12) to[out=west,in=south west] (node2);\n\\draw[densely dotted,->] (node15) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node18) to[out=west,in=south west] (node0);\n\\end{forest}"
+                "\\begin{forest}\n[{\\der{T}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-l}}{0}}]{\\cancel{+l} T}}\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\der[{\\mover{\\cancel{-r}}{1}, \\mover{-l}{0}}]{\\cancel{+r} +l T}}\n\t\t\t[{\\der[{\\mover{-r}{1}}]{\\cancel{T} -l}},name=node18\n\t\t\t\t[{$t2$},name=node2 ]\n\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{2}, \\mover{-r}{1}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t[{\\der[{\\mover{-l}{2}}]{\\cancel{B} -r}},name=node15\n\t\t\t\t\t\t[{$t3$},name=node3 ]\n\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-r}}{3}, \\mover{-l}{2}}]{\\cancel{+r} B -r}}\n\t\t\t\t\t\t\t[{\\der[{\\mover{-r}{3}}]{\\cancel{T} -l}},name=node12\n\t\t\t\t\t\t\t\t[{$t4$},name=node4 ]\n\t\t\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{4}, \\mover{-r}{3}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t\t\t\t\t[{\\der[{\\mover{-l}{4}}]{\\cancel{A} -r}},name=node9\n\t\t\t\t\t\t\t\t\t\t[{$t5$},name=node5 ]\n\t\t\t\t\t\t\t\t\t\t[{\\der[{\\mover[{-l}]{\\cancel{-r}}{5}}]{\\cancel{+r} A -r}}\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{T} -r -l}},name=node6 ]\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=T} +r A -r}} ] ] ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=A} +l T -l}} ] ] ]\n\t\t\t\t\t\t\t[{\\plainlex{b}{\\cancel{=T} +r B -r}} ] ] ]\n\t\t\t\t\t[{\\plainlex{b}{\\cancel{=B} +l T -l}} ] ] ]\n\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{=T} +r +l T}} ] ] ] ]\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node4);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node9) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node12) to[out=west,in=south west] (node2);\n\\draw[densely dotted,->] (node15) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node18) to[out=west,in=south west] (node0);\n\\end{forest}"
             );
         }
         Ok(())

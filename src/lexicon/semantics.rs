@@ -75,6 +75,10 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
             .expect("There is no lemma of that node index!")
     }
 
+    pub fn lexicon(&self) -> &Lexicon<T, C> {
+        &self.lexicon
+    }
+
     pub fn parse_and_interpret<'a>(
         &'a self,
         initial_category: C,

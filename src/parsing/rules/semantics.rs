@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
 use itertools::Itertools;
@@ -5,7 +7,7 @@ use simple_semantics::{lambda::RootedLambdaPool, language::Expr};
 
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq, Copy, Eq)]
 pub enum SemanticRule {
     FunctionalApplication,
     Store,
@@ -16,11 +18,29 @@ pub enum SemanticRule {
     Scan,
 }
 
+impl std::fmt::Display for SemanticRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                SemanticRule::FunctionalApplication => "FA",
+                SemanticRule::Store => "Store",
+                SemanticRule::Identity => "Id",
+                SemanticRule::ApplyFromStorage => "ApplyFromStorage",
+                SemanticRule::UpdateTrace => "UpdateTrace",
+                SemanticRule::Trace => "Trace",
+                SemanticRule::Scan => "Scan",
+            }
+        )
+    }
+}
+
 impl RulePool {
     pub fn to_interpretation<'a, T, C>(
         &'a self,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, Vec<SemanticRule>)> + 'a
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory)> + 'a
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
@@ -35,18 +55,54 @@ impl RulePool {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct HistoryId(usize);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct HistoryNode {
     rule_id: RuleIndex,
     rule: SemanticRule,
     children: [Option<HistoryId>; 2],
 }
 
-#[derive(Debug, Clone)]
-struct SemanticState {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SemanticHistory {
+    Rich(Vec<(SemanticRule, SemanticState)>),
+    Simple(Vec<SemanticRule>),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum SemanticNode {
+    Rich(SemanticRule, SemanticState),
+    Simple(SemanticRule),
+}
+
+impl SemanticHistory {
+    pub fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
+        match self {
+            SemanticHistory::Rich(items) => items
+                .get(i.0)
+                .map(|(rule, interp)| SemanticNode::Rich(*rule, interp.clone())),
+            SemanticHistory::Simple(items) => {
+                items.get(i.0).map(|rule| SemanticNode::Simple(*rule))
+            }
+        }
+    }
+}
+
+impl Display for SemanticNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SemanticNode::Rich(_, _) => {
+                todo!("Haven't done rich pretty printing yet!")
+            }
+            SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticState {
     expr: RootedLambdaPool<Expr>,
     movers: HashMap<TraceId, RootedLambdaPool<Expr>>,
 }
@@ -109,7 +165,7 @@ where
     fn interpret(
         rules: &'a RulePool,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, Vec<SemanticRule>)> + 'a {
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory)> + 'a {
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,
@@ -121,7 +177,10 @@ where
 
         last_derivation.into_iter().filter_map(move |(x, root)| {
             if x.movers.is_empty() {
-                Some((x.expr, derivation.get_history(root)))
+                Some((
+                    x.expr,
+                    SemanticHistory::Simple(derivation.get_history(root)),
+                ))
             } else {
                 None
             }

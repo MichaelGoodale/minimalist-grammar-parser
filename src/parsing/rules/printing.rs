@@ -15,7 +15,14 @@ use crate::lexicon::Lexicon;
 
 use crate::Direction;
 
+#[cfg(feature = "semantics")]
+use crate::lexicon::SemanticLexicon;
+
+use super::semantics::SemanticNode;
 use super::{Rule, RuleIndex, RulePool, TraceId};
+
+#[cfg(feature = "semantics")]
+use super::semantics::SemanticHistory;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum MGEdge {
@@ -122,7 +129,11 @@ impl RulePool {
     fn to_graph<T, C>(
         &self,
         lex: &Lexicon<T, C>,
-    ) -> (StableDiGraph<MgNode<T, C>, MGEdge>, NodeIndex)
+    ) -> (
+        StableDiGraph<MgNode<T, C>, MGEdge>,
+        NodeIndex,
+        HashMap<RuleIndex, NodeIndex>,
+    )
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
@@ -135,7 +146,7 @@ impl RulePool {
         let (root, _, _, _) =
             inner_to_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
 
-        //Complicated code to add nodes between traces and their origins as well as for canceling
+        //Complicated code to add edges between traces and their origins as well as for canceling
         //the features of movers.
         let movements = trace_h
             .into_iter()
@@ -179,15 +190,40 @@ impl RulePool {
         for (trace_origin, trace_node) in movements.into_iter() {
             g.add_edge(trace_origin, trace_node, MGEdge::Move);
         }
-        (g, root)
+        (g, root, rule_h)
     }
-    pub fn to_latex<T, C>(&self, lex: &Lexicon<T, C>) -> String
+
+    pub fn to_semantic_latex<T, C>(
+        &self,
+        semantic_lex: &SemanticLexicon<T, C>,
+        history: &SemanticHistory,
+    ) -> String
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
-        let (g, root) = self.to_graph(lex);
+        let (g, root, rule_h) = self.to_graph(semantic_lex.lexicon());
+        let node_to_rule: HashMap<_, _> = rule_h.into_iter().map(|(k, v)| (v, k)).collect();
+        let g = g.map(
+            |i, node| SemanticMGNode {
+                node: node.clone(),
+                semantic: history
+                    .semantic_node(*node_to_rule.get(&i).unwrap())
+                    .unwrap(),
+            },
+            |_, e| *e,
+        );
+        self.inner_latex(&g, root)
+    }
+
+    fn inner_latex<N, T, C>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
+    where
+        N: LaTeXify,
+        FeatureOrLemma<T, C>: std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    {
         let mut g = g.map(|_, n| n.to_latex(), |_, e| *e);
         let movement_edges = g
             .edge_references()
@@ -212,7 +248,7 @@ impl RulePool {
             });
 
         let mut s = String::new();
-        inner_latex(&g, root, &mut s, 0);
+        recursive_latex(&g, root, &mut s, 0);
         s = format!("\\begin{{forest}}\n{s}");
         for [a, b] in movement_edges.into_iter().sorted() {
             s.push_str(&format!(
@@ -224,9 +260,24 @@ impl RulePool {
         s.push_str("\n\\end{forest}");
         s
     }
+
+    pub fn to_latex<T, C>(&self, lex: &Lexicon<T, C>) -> String
+    where
+        FeatureOrLemma<T, C>: std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    {
+        let (g, root, _) = self.to_graph(lex);
+        self.inner_latex(&g, root)
+    }
 }
 
-fn inner_latex(g: &StableDiGraph<String, MGEdge>, node: NodeIndex, s: &mut String, depth: usize) {
+fn recursive_latex(
+    g: &StableDiGraph<String, MGEdge>,
+    node: NodeIndex,
+    s: &mut String,
+    depth: usize,
+) {
     let indent = (0..depth).map(|_| '\t').collect::<String>();
     s.push_str(&format!("{}[{}", indent, g.node_weight(node).unwrap()));
     let children = g
@@ -242,7 +293,7 @@ fn inner_latex(g: &StableDiGraph<String, MGEdge>, node: NodeIndex, s: &mut Strin
         s.push('\n');
         let n_children = children.len();
         for (i, child) in children.into_iter().enumerate() {
-            inner_latex(g, child, s, depth + 1);
+            recursive_latex(g, child, s, depth + 1);
             if i < n_children - 1 {
                 s.push('\n');
             }
@@ -304,6 +355,12 @@ enum MgNode<T, C: Eq> {
     Trace(TraceId),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SemanticMGNode<T, C: Eq> {
+    node: MgNode<T, C>,
+    semantic: SemanticNode,
+}
+
 fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: bool) -> String {
     v.iter()
         .enumerate()
@@ -317,7 +374,52 @@ fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: b
         .join(" ")
 }
 
-impl<T: Eq + Debug + Display, C: Eq + Debug + Display> MgNode<T, C> {
+trait LaTeXify {
+    fn to_latex(&self) -> String;
+}
+
+impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNode<T, C> {
+    fn to_latex(&self) -> String {
+        match &self.node {
+            MgNode::Node {
+                features,
+                movement,
+                root,
+            } => format!(
+                "{{\\semder{}{{{}}}{{{}}} }}",
+                if !movement.is_empty() {
+                    format!(
+                        "[{{{}}}]",
+                        movement.iter().map(|x| x.to_string()).join(", ")
+                    )
+                } else {
+                    "".to_string()
+                },
+                feature_vec_to_string(features, !root),
+                self.semantic
+            ),
+            MgNode::Leaf {
+                lemma,
+                features,
+                root,
+                ..
+            } => {
+                format!(
+                    "{{\\lex{{{}}}{{{}}}{{{}}} }}",
+                    match lemma {
+                        Some(x) => x.to_string(),
+                        None => "$\\epsilon$".to_string(),
+                    },
+                    feature_vec_to_string(features, !root),
+                    self.semantic
+                )
+            }
+            MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
+        }
+    }
+}
+
+impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C> {
     fn to_latex(&self) -> String {
         match self {
             MgNode::Node {
@@ -657,7 +759,7 @@ mod test {
                 Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &config)?
                     .next()
                     .unwrap();
-            let (g, _) = rules.to_graph(&lex);
+            let (g, _, _) = rules.to_graph(&lex);
             let g = g.map(|_, n| n.to_latex(), |_, e| e);
             let dot = Dot::new(&g);
             println!("{dot}");
@@ -684,7 +786,7 @@ mod test {
                 Parser::new(&lex, "T", &sentence.split(' ').collect::<Vec<_>>(), &config)?
                     .next()
                     .unwrap();
-            let (g, _) = rules.to_graph(&lex);
+            let (g, _, _) = rules.to_graph(&lex);
             let g = g.map(|_, n| n.to_latex(), |_, e| e);
             let dot = Dot::new(&g);
             println!("{dot}");

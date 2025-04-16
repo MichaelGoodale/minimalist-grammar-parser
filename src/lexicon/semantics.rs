@@ -96,7 +96,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
                         p,
                         s,
                         r.to_interpretation(self)
-                            .filter_map(|x| x.into_pool().ok())
+                            .filter_map(|(pool, _)| pool.into_pool().ok())
                             .collect_vec()
                             .into_iter(),
                     )
@@ -129,7 +129,7 @@ mod test {
             Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
                 .next()
                 .unwrap();
-        let interpretation = rules.to_interpretation(&semantic).next().unwrap();
+        let (interpretation, history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
@@ -162,7 +162,7 @@ mod test {
         .next()
         .unwrap();
         dbg!(&rules);
-        let interpretation = rules.to_interpretation(&semantic).next().unwrap();
+        let (interpretation, history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
@@ -195,7 +195,7 @@ mod test {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
-                .map(|x| x.into_pool().unwrap().to_string())
+                .map(|(pool, _)| pool.into_pool().unwrap().to_string())
                 .unique()
             {
                 s.push('\n');
@@ -231,7 +231,7 @@ mod test {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
-                .map(|x| x.into_pool().unwrap().to_string())
+                .map(|(pool, _)| pool.into_pool().unwrap().to_string())
                 .unique()
             {
                 s.push('\n');

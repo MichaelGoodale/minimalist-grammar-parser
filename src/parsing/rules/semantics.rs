@@ -6,7 +6,7 @@ use simple_semantics::{lambda::RootedLambdaPool, language::Expr};
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
 #[derive(Debug, Clone, PartialEq, Copy)]
-enum SemanticRule {
+pub enum SemanticRule {
     FunctionalApplication,
     Store,
     Identity,
@@ -20,14 +20,14 @@ impl RulePool {
     pub fn to_interpretation<'a, T, C>(
         &'a self,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> + 'a
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, Vec<SemanticRule>)> + 'a
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
-        SemanticDerivation::interpret(self, lex).filter_map(|mut pool| {
+        SemanticDerivation::interpret(self, lex).filter_map(|(mut pool, history)| {
             if pool.reduce().is_ok() {
-                Some(pool)
+                Some((pool, history))
             } else {
                 None
             }
@@ -109,7 +109,7 @@ where
     fn interpret(
         rules: &'a RulePool,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = RootedLambdaPool<Expr>> + 'a {
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, Vec<SemanticRule>)> + 'a {
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,
@@ -122,7 +122,7 @@ where
         last_derivation.into_iter().filter_map(move |(x, root)| {
             if x.movers.is_empty() {
                 let history = derivation.get_history(root);
-                Some(x.expr)
+                Some((x.expr, history))
             } else {
                 None
             }
@@ -158,12 +158,13 @@ where
     fn history_node(
         &mut self,
         rule_id: RuleIndex,
+        semantic: SemanticRule,
         child_a: Option<HistoryId>,
         child_b: Option<HistoryId>,
     ) -> HistoryId {
         self.semantic_history.push(HistoryNode {
             rule_id,
-            rule: SemanticRule::FunctionalApplication,
+            rule: semantic,
             children: [child_a, child_b],
         });
         HistoryId(self.semantic_history.len() - 1)
@@ -175,7 +176,10 @@ where
         child: (SemanticState, HistoryId),
     ) -> (SemanticState, HistoryId) {
         let (alpha, child_a) = child;
-        (alpha, self.history_node(rule_id, Some(child_a), None))
+        (
+            alpha,
+            self.history_node(rule_id, SemanticRule::Identity, Some(child_a), None),
+        )
     }
 
     fn functional_application(
@@ -186,8 +190,17 @@ where
     ) -> Option<(SemanticState, HistoryId)> {
         let (alpha, alpha_id) = child;
         let (beta, beta_id) = complement;
-        SemanticState::merge(alpha, beta)
-            .map(|x| (x, self.history_node(rule_id, Some(alpha_id), Some(beta_id))))
+        SemanticState::merge(alpha, beta).map(|x| {
+            (
+                x,
+                self.history_node(
+                    rule_id,
+                    SemanticRule::FunctionalApplication,
+                    Some(alpha_id),
+                    Some(beta_id),
+                ),
+            )
+        })
     }
 
     fn store(
@@ -204,7 +217,7 @@ where
             alpha.movers.insert(trace_id, beta.expr.clone());
             Some((
                 alpha,
-                self.history_node(rule_id, Some(alpha_id), Some(beta_id)),
+                self.history_node(rule_id, SemanticRule::Store, Some(alpha_id), Some(beta_id)),
             ))
         } else {
             None
@@ -227,7 +240,10 @@ where
                 .unwrap();
             alpha.expr.apply_new_free_variable(trace_id.0).unwrap();
         }
-        (alpha, self.history_node(rule_id, Some(alpha_child), None))
+        (
+            alpha,
+            self.history_node(rule_id, SemanticRule::UpdateTrace, Some(alpha_child), None),
+        )
     }
 
     fn apply_from_storage(
@@ -246,7 +262,12 @@ where
             match expr.merge(stored_value).map(|expr| {
                 (
                     SemanticState { expr, movers },
-                    self.history_node(rule_id, Some(alpha_id), None),
+                    self.history_node(
+                        rule_id,
+                        SemanticRule::ApplyFromStorage,
+                        Some(alpha_id),
+                        None,
+                    ),
                 )
             }) {
                 Some(x) => ApplyFromStorageResult::SuccesfulMerge(x),
@@ -269,7 +290,7 @@ where
         match rule {
             Rule::Scan { node } => [(
                 SemanticState::new(self.lexicon.interpretation(*node).clone()),
-                self.history_node(rule_id, None, None),
+                self.history_node(rule_id, SemanticRule::Scan, None, None),
             )]
             .into(),
             // These shouldn't be called.

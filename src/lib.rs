@@ -72,6 +72,17 @@ impl ParsingConfig {
     }
 }
 
+impl Default for ParsingConfig {
+    fn default() -> Self {
+        ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            256,
+            256,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ParseHeap<'a, T, B: Scanner<T>> {
     parse_heap: MinMaxHeap<BeamWrapper<T, B>>,

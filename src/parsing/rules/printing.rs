@@ -4,6 +4,7 @@ use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::visit::IntoEdgeReferences;
+use regex::Regex;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -13,16 +14,14 @@ use crate::lexicon::FeatureOrLemma;
 use crate::lexicon::LexicalEntry;
 use crate::lexicon::Lexicon;
 
+use super::{Rule, RuleIndex, RulePool, TraceId};
 use crate::Direction;
 
 #[cfg(feature = "semantics")]
 use crate::lexicon::SemanticLexicon;
 
-use super::semantics::SemanticNode;
-use super::{Rule, RuleIndex, RulePool, TraceId};
-
 #[cfg(feature = "semantics")]
-use super::semantics::SemanticHistory;
+use super::semantics::{SemanticHistory, SemanticNode};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum MGEdge {
@@ -201,6 +200,7 @@ impl RulePool {
         (g, root, nodes_h)
     }
 
+    #[cfg(feature = "semantics")]
     pub fn to_semantic_latex<T, C>(
         &self,
         semantic_lex: &SemanticLexicon<T, C>,
@@ -362,6 +362,7 @@ enum MgNode<T, C: Eq> {
     Trace(TraceId),
 }
 
+#[cfg(feature = "semantics")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SemanticMGNode<T, C: Eq> {
     node: MgNode<T, C>,
@@ -385,14 +386,47 @@ trait LaTeXify {
     fn to_latex(&self) -> String;
 }
 
+fn clean_up_expr(s: String) -> String {
+    let re = Regex::new(r"lambda (?<t>[et,< >]+) ").unwrap();
+    let s = s.replace("&", "\\&").replace("_", "\\_");
+    re.replace_all(s.as_str(), "{$\\lambda_{$t}$}")
+        .to_string()
+        .replace("<", "\\left\\langle ")
+        .replace(">", "\\right\\rangle ")
+}
+
+#[cfg(feature = "semantics")]
 impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNode<T, C> {
     fn to_latex(&self) -> String {
-        match &self.node {
-            MgNode::Node {
-                features,
-                movement,
-                root,
-            } => format!(
+        match (&self.node, &self.semantic) {
+            (
+                MgNode::Node {
+                    features,
+                    movement,
+                    root,
+                },
+                SemanticNode::Simple(_),
+            ) => format!(
+                "{{\\rulesemder{}{{{}}}{{{}}} }}",
+                if !movement.is_empty() {
+                    format!(
+                        "[{{{}}}]",
+                        movement.iter().map(|x| x.to_string()).join(", ")
+                    )
+                } else {
+                    "".to_string()
+                },
+                feature_vec_to_string(features, !root),
+                self.semantic
+            ),
+            (
+                MgNode::Node {
+                    features,
+                    movement,
+                    root,
+                },
+                SemanticNode::Rich(_, _),
+            ) => format!(
                 "{{\\semder{}{{{}}}{{{}}} }}",
                 if !movement.is_empty() {
                     format!(
@@ -403,25 +437,46 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     "".to_string()
                 },
                 feature_vec_to_string(features, !root),
-                self.semantic.to_string().replace("&", "\\&")
+                clean_up_expr(self.semantic.to_string())
             ),
-            MgNode::Leaf {
-                lemma,
-                features,
-                root,
-                ..
-            } => {
+            (
+                MgNode::Leaf {
+                    lemma,
+                    features,
+                    root,
+                    ..
+                },
+                SemanticNode::Simple(_),
+            ) => {
                 format!(
-                    "{{\\lex{{{}}}{{{}}}{{{}}} }}",
+                    "{{\\plainlex{{{}}}{{{}}} }}",
                     match lemma {
                         Some(x) => x.to_string(),
                         None => "$\\epsilon$".to_string(),
                     },
                     feature_vec_to_string(features, !root),
-                    self.semantic.to_string().replace("&", "\\&")
                 )
             }
-            MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
+            (
+                MgNode::Leaf {
+                    lemma,
+                    features,
+                    root,
+                    ..
+                },
+                SemanticNode::Rich(_, _),
+            ) => {
+                format!(
+                    "{{\\semlex{{{}}}{{{}}}{{{}}} }}",
+                    match lemma {
+                        Some(x) => x.to_string(),
+                        None => "$\\epsilon$".to_string(),
+                    },
+                    feature_vec_to_string(features, !root),
+                    clean_up_expr(self.semantic.to_string())
+                )
+            }
+            (MgNode::Trace(trace_id), _) => format!("{{${}$}}", trace_id),
         }
     }
 }

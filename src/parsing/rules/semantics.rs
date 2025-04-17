@@ -67,13 +67,13 @@ struct HistoryNode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticHistory {
-    Rich(Vec<(SemanticRule, SemanticState)>),
+    Rich(Vec<(SemanticRule, Option<SemanticState>)>),
     Simple(Vec<SemanticRule>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SemanticNode {
-    Rich(SemanticRule, SemanticState),
+    Rich(SemanticRule, Option<SemanticState>),
     Simple(SemanticRule),
 }
 
@@ -107,7 +107,7 @@ impl SemanticHistory {
 
                 derivation.redo_history(RuleIndex(0), &mut items);
 
-                SemanticHistory::Rich(items.into_iter().map(|(x, y)| (x, y.unwrap())).collect())
+                SemanticHistory::Rich(items)
             }
         }
     }
@@ -116,8 +116,11 @@ impl SemanticHistory {
 impl Display for SemanticNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticNode::Rich(_semantic_rule, interp) => {
-                write!(f, "{}", interp)
+            SemanticNode::Rich(semantic_rule, Some(interp)) => {
+                write!(f, "\\semanticRule[{}]{{{}}}", semantic_rule, interp)
+            }
+            SemanticNode::Rich(semantic_rule, None) => {
+                write!(f, "{{[\\textsc{{{}}}]}}", semantic_rule)
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
         }
@@ -522,9 +525,20 @@ where
                 let child = get_child(0);
                 Some(self.identity(rule_id, (child, HistoryId(0))))
             }
-            SemanticRule::ApplyFromStorage => todo!(),
-            SemanticRule::UpdateTrace => todo!(),
-            SemanticRule::Trace => todo!(),
+            SemanticRule::ApplyFromStorage => {
+                let child = get_child(0);
+                let trace_id = self.get_trace(children[1]);
+                match self.apply_from_storage(rule_id, (child, HistoryId(0)), trace_id) {
+                    ApplyFromStorageResult::SuccesfulMerge(x) => Some(x),
+                    ApplyFromStorageResult::FailedMerge | ApplyFromStorageResult::NoTrace(_) => {
+                        None
+                    }
+                }
+            }
+            SemanticRule::UpdateTrace => todo!("update trace"),
+            SemanticRule::Trace => {
+                return;
+            }
             SemanticRule::Scan => {
                 let node = match rule {
                     Rule::Scan { node } => node,
@@ -540,6 +554,9 @@ where
         };
         let s = history.get_mut(rule_id.0).unwrap();
         let state = &mut s.1;
-        *state = Some(value.unwrap().0);
+        let mut value = value.unwrap().0;
+        value.expr.reduce().unwrap();
+
+        *state = Some(value);
     }
 }

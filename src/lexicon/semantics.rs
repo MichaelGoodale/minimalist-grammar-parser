@@ -136,22 +136,27 @@ mod test {
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
-            "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
+            "some(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & p0(x)))",
             interpretation.to_string()
         );
 
-        let latex = rules.to_semantic_latex(&semantic, &history);
-        println!("{latex}");
-        assert_eq!(
-            latex,
-            "\\begin{forest}\n[{\\semder{v}{FA} }\n\t[{\\lex{john}{\\cancel{d}}{LexicalEntry} } ]\n\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t[{\\lex{likes}{\\cancel{d=} =d v}{LexicalEntry} } ]\n\t\t[{\\lex{mary}{\\cancel{d}}{LexicalEntry} } ] ] ]\n\\end{forest}"
-        );
+        #[cfg(feature = "pretty")]
+        {
+            let latex = rules.to_semantic_latex(&semantic, &history);
+            println!("{latex}");
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\rulesemder{v}{FA} }\n\t[{\\plainlex{john}{\\cancel{d}} } ]\n\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t[{\\plainlex{likes}{\\cancel{d=} =d v} } ]\n\t\t[{\\plainlex{mary}{\\cancel{d}} } ] ] ]\n\\end{forest}"
+            );
 
-        //TODO: Not passing reliably because node2rule is not bijective in the pretty code
-        history = history.into_rich(&semantic, &rules);
-        let latex = rules.to_semantic_latex(&semantic, &history);
-        println!("{latex}");
-        assert_eq!(latex, "");
+            history = history.into_rich(&semantic, &rules);
+            let latex = rules.to_semantic_latex(&semantic, &history);
+            println!("{latex}");
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\semder{v}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& p0(x)))))}} } ]\n\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ]\n\\end{forest}"
+            );
+        }
         Ok(())
     }
 
@@ -179,20 +184,30 @@ mod test {
         .next()
         .unwrap();
         dbg!(&rules);
-        let (interpretation, history) = rules.to_interpretation(&semantic).next().unwrap();
+        let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             interpretation.to_string(),
-            "some(x0,all_e,((AgentOf(x0,a1))&(PatientOf(x0,a0)))&(p0(x0)))",
+            "some(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & p0(x)))",
         );
+        #[cfg(feature = "pretty")]
+        {
+            let latex = rules.to_semantic_latex(&semantic, &history);
 
-        let latex = rules.to_semantic_latex(&semantic, &history);
+            println!("{}", latex);
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\rulesemder{c}{FA} }\n\t[{\\rulesemder{\\cancel{v}}{FA} }\n\t\t[{\\plainlex{john}{\\cancel{d}} } ]\n\t\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t\t[{\\plainlex{knows}{\\cancel{c=} =d v} } ]\n\t\t\t[{\\rulesemder{\\cancel{c}}{ApplyFromStorage} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\rulesemder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{FA} }\n\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{v=} +wh c} } ]\n\t\t\t\t\t[{\\rulesemder[{\\mover{-wh}{0}}]{\\cancel{v}}{Store} }\n\t\t\t\t\t\t[{\\plainlex{who}{\\cancel{d} -wh} },name=node2 ]\n\t\t\t\t\t\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t\t\t\t\t\t[{\\plainlex{likes}{\\cancel{d=} =d v} } ]\n\t\t\t\t\t\t\t[{\\plainlex{mary}{\\cancel{d}} } ] ] ] ] ] ] ]\n\t[{\\plainlex{$\\epsilon$}{\\cancel{=v} c} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
+            );
 
-        println!("{}", latex);
-        assert_eq!(
-            latex,
-            "\\begin{forest}\n[{\\semder{c}{FA} }\n\t[{\\semder{\\cancel{v}}{FA} }\n\t\t[{\\lex{john}{\\cancel{d}}{LexicalEntry} } ]\n\t\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t\t[{\\lex{knows}{\\cancel{c=} =d v}{LexicalEntry} } ]\n\t\t\t[{\\semder{\\cancel{c}}{ApplyFromStorage} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{FA} }\n\t\t\t\t\t[{\\lex{$\\epsilon$}{\\cancel{v=} +wh c}{LexicalEntry} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{Store} }\n\t\t\t\t\t\t[{\\lex{who}{\\cancel{d} -wh}{LexicalEntry} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{FA} }\n\t\t\t\t\t\t\t[{\\lex{likes}{\\cancel{d=} =d v}{LexicalEntry} } ]\n\t\t\t\t\t\t\t[{\\lex{mary}{\\cancel{d}}{LexicalEntry} } ] ] ] ] ] ] ]\n\t[{\\lex{$\\epsilon$}{\\cancel{=v} c}{LexicalEntry} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
-        );
+            history = history.into_rich(&semantic, &rules);
+            let latex = rules.to_semantic_latex(&semantic, &history);
+            println!("{latex}");
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\semder{c}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t[{\\semder{\\cancel{v}}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t[{\\semlex{knows}{\\cancel{c=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l ({$\\lambda_{e}$}y\\_l ((x\\_l)(y\\_l)))}} } ]\n\t\t\t[{\\semder{\\cancel{c}}{\\semanticRule[ApplyFromStorage]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& p0(x)))}} }\n\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +wh c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{\\semanticRule[Store]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& p0(x)))}} }\n\t\t\t\t\t\t[{\\semlex{who}{\\cancel{d} -wh}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (x\\_l)}} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& p0(x)))))}} } ]\n\t\t\t\t\t\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ] ] ] ] ]\n\t[{\\semlex{$\\epsilon$}{\\cancel{=v} c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
+            );
+        }
         Ok(())
     }
 
@@ -231,10 +246,10 @@ mod test {
         }
         assert_eq!(
             vec![
-                "someone someone likes\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "someone everyone likes\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "everyone everyone likes\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "everyone someone likes\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))"
+                "someone someone likes\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "someone everyone likes\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "everyone everyone likes\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "everyone someone likes\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))"
             ],
             v
         );
@@ -267,10 +282,10 @@ mod test {
         }
         assert_eq!(
             vec![
-                "everyone likes someone\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "everyone likes everyone\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "someone likes everyone\nsome(x0,all_a,every(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nevery(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
-                "someone likes someone\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x0))&(p0(x2)))&(PatientOf(x2,x1)))))\nsome(x0,all_a,some(x1,all_a,some(x2,all_e,((AgentOf(x2,x1))&(p0(x2)))&(PatientOf(x2,x0)))))",
+                "everyone likes someone\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "everyone likes everyone\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "someone likes everyone\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "someone likes someone\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
             ],
             v
         );

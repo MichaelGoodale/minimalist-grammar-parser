@@ -15,6 +15,7 @@ petgraph = "0.8.1"
 thin-vec = "0.2.14"
 tinyvec = { version = "1.9.0", features = ["alloc"] }
 simple-semantics = { git = "ssh://git@github.com/MichaelGoodale/simple-semantics.git", optional = true }
+regex = "1.11.1"
 
 
 [dev-dependencies]

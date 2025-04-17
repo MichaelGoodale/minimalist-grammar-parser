@@ -45,7 +45,7 @@ impl From<bool> for Direction {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ParsingConfig {
     min_log_prob: LogProb<f64>,
     move_prob: LogProb<f64>,

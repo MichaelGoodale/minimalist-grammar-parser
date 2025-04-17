@@ -505,6 +505,44 @@ impl<'src> Lexicon<&'src str, &'src str> {
     }
 }
 
+impl<'a> Lexicon<&'a str, &'a str> {
+    pub fn to_owned_values(&self) -> Lexicon<String, String> {
+        let Lexicon {
+            graph,
+            root,
+            leaves,
+        } = self;
+
+        let graph = graph.map(
+            |_, x| match *x {
+                FeatureOrLemma::Root => FeatureOrLemma::Root,
+                FeatureOrLemma::Lemma(s) => FeatureOrLemma::Lemma(s.map(|x| x.to_owned())),
+                FeatureOrLemma::Feature(Feature::Category(c)) => {
+                    FeatureOrLemma::Feature(Feature::Category(c.to_owned()))
+                }
+                FeatureOrLemma::Feature(Feature::Licensor(c)) => {
+                    FeatureOrLemma::Feature(Feature::Licensor(c.to_owned()))
+                }
+                FeatureOrLemma::Feature(Feature::Licensee(c)) => {
+                    FeatureOrLemma::Feature(Feature::Licensee(c.to_owned()))
+                }
+                FeatureOrLemma::Feature(Feature::Selector(c, d)) => {
+                    FeatureOrLemma::Feature(Feature::Selector(c.to_owned(), d))
+                }
+                FeatureOrLemma::Complement(c, direction) => {
+                    FeatureOrLemma::Complement(c.to_owned(), direction)
+                }
+            },
+            |_, e| *e,
+        );
+        Lexicon {
+            graph,
+            root: *root,
+            leaves: leaves.clone(),
+        }
+    }
+}
+
 pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
 impl LexicalEntry<&str, &str> {
@@ -833,6 +871,13 @@ mod tests {
         assert_eq!(3, n_categories);
         let n_licensors = lex.licensor_types().collect::<HashSet<_>>().len();
         assert_eq!(2, n_licensors);
+        Ok(())
+    }
+
+    #[test]
+    fn conversion() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(STABLER2011)?;
+        lex.to_owned_values();
         Ok(())
     }
 }

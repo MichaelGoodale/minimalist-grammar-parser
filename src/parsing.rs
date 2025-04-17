@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::marker::PhantomData;
@@ -355,17 +356,18 @@ fn unmove<
 }
 
 pub fn expand<
-    'a,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Scanner<T> + Eq + Clone + 'a,
+    B: Scanner<T> + Eq + Clone,
+    L: Borrow<Lexicon<T, Category>>,
 >(
-    extender: &mut ParseHeap<'a, T, B>,
+    extender: &mut ParseHeap<T, B>,
     moment: ParseMoment,
     beam: BeamWrapper<T, B>,
-    lexicon: &'a Lexicon<T, Category>,
+    lexicon: L,
     config: &ParsingConfig,
 ) {
+    let lexicon = lexicon.borrow();
     let n_children = lexicon.n_children(moment.tree.node);
     let new_beams = itertools::repeat_n(beam, n_children);
 

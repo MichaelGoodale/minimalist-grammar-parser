@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use anyhow::Result;
@@ -84,14 +85,14 @@ impl Default for ParsingConfig {
 }
 
 #[derive(Debug, Clone)]
-struct ParseHeap<'a, T, B: Scanner<T>> {
+struct ParseHeap<T, B: Scanner<T>> {
     parse_heap: MinMaxHeap<BeamWrapper<T, B>>,
     phantom: PhantomData<T>,
-    config: &'a ParsingConfig,
+    config: ParsingConfig,
     rule_arena: Vec<RuleHolder>,
 }
 
-impl<'a, T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'a, T, B> {
+impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }
@@ -106,13 +107,13 @@ impl<'a, T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<'a, T, B> {
         }
     }
 
-    fn new(start: BeamWrapper<T, B>, config: &'a ParsingConfig, cat: NodeIndex) -> Self {
+    fn new(start: BeamWrapper<T, B>, config: &ParsingConfig, cat: NodeIndex) -> Self {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
         parse_heap.push(start);
         ParseHeap {
             parse_heap,
             phantom: PhantomData,
-            config,
+            config: *config,
             rule_arena: PartialRulePool::default_pool(cat),
         }
     }
@@ -128,7 +129,7 @@ type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, RulePool);
 pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
 {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, FuzzyScan<'a, T>>,
+    parse_heap: ParseHeap<T, FuzzyScan<'a, T>>,
     config: &'a ParsingConfig,
 }
 
@@ -183,7 +184,7 @@ where
 
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, ParseScan<'a, T>>,
+    parse_heap: ParseHeap<T, ParseScan<'a, T>>,
     config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
 }
@@ -267,34 +268,41 @@ where
 }
 
 #[derive(Debug)]
-pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
-    lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<'a, T, GeneratorScan<T>>,
-    config: &'a ParsingConfig,
+pub struct Generator<L, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
+where
+    L: Borrow<Lexicon<T, Category>>,
+{
+    lexicon: L,
+    phantom: PhantomData<Category>,
+    parse_heap: ParseHeap<T, GeneratorScan<T>>,
+    config: ParsingConfig,
 }
 
-impl<'a, T, Category> Generator<'a, T, Category>
+impl<L, T, Category> Generator<L, T, Category>
 where
+    L: Borrow<Lexicon<T, Category>>,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
     pub fn new(
-        lexicon: &'a Lexicon<T, Category>,
+        lexicon: L,
         initial_category: Category,
-        config: &'a ParsingConfig,
-    ) -> Result<Generator<'a, T, Category>> {
-        let cat = lexicon.find_category(&initial_category)?;
+        config: &ParsingConfig,
+    ) -> Result<Generator<L, T, Category>> {
+        let cat = lexicon.borrow().find_category(&initial_category)?;
         let parse_heap = ParseHeap::new(GeneratorScan::new(cat)?, config, cat);
         Ok(Generator {
             lexicon,
-            config,
+            config: *config,
             parse_heap,
+            phantom: PhantomData,
         })
     }
 }
 
-impl<T, Category> Iterator for Generator<'_, T, Category>
+impl<L, T, Category> Iterator for Generator<L, T, Category>
 where
+    L: Borrow<Lexicon<T, Category>>,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
@@ -307,8 +315,8 @@ where
                     &mut self.parse_heap,
                     moment,
                     beam,
-                    self.lexicon,
-                    self.config,
+                    self.lexicon.borrow(),
+                    &self.config,
                 );
             } else if let Some(x) =
                 GeneratorScan::yield_good_parse(beam, &self.parse_heap.rule_arena)

@@ -15,7 +15,7 @@ petgraph = "0.8.1"
 thin-vec = "0.2.14"
 tinyvec = { version = "1.9.0", features = ["alloc"] }
 simple-semantics = { git = "ssh://git@github.com/MichaelGoodale/simple-semantics.git", optional = true }
-regex = "1.11.1"
+regex = { version = "1.11.1", optional = true }
 
 
 [dev-dependencies]
@@ -24,7 +24,7 @@ divan = "0.1.8"
 lazy_static = "1.4.0"
 
 [features]
-semantics = ["dep:simple-semantics"]
+semantics = ["dep:simple-semantics", "dep:regex"]
 pretty = []
 
 [[bench]]

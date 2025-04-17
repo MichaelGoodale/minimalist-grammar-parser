@@ -289,6 +289,35 @@ mod test {
             ],
             v
         );
+
+        #[cfg(feature = "pretty")]
+        {
+            let (_, _, rules) = Parser::new(
+                &lex.lexicon,
+                "t",
+                &["everyone", "likes", "someone"],
+                &config,
+            )?
+            .next()
+            .unwrap();
+
+            let (_, mut history) = rules.to_interpretation(&lex).next().unwrap();
+            let latex = rules.to_semantic_latex(&lex, &history);
+
+            println!("{}", latex);
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\rulesemder{t}{ApplyFromStorage} }\n\t[{$t0$},name=node0 ]\n\t[{\\rulesemder[{\\mover{\\cancel{-q}}{0}}]{\\cancel{+q} t}{UpdateTrace} }\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\rulesemder[{\\mover[{-q}]{\\cancel{-k}}{1}}]{\\cancel{+k} +q t}{Id} }\n\t\t\t[{$t3$},name=node2 ]\n\t\t\t[{\\rulesemder[{\\mover{\\cancel{-v}}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+v} +k +q t}{FA} }\n\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{v=} +v +k +q t} } ]\n\t\t\t\t[{\\rulesemder[{\\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{v}}{ApplyFromStorage} }\n\t\t\t\t\t[{$t2$},name=node3 ]\n\t\t\t\t\t[{\\rulesemder[{\\mover{\\cancel{-q}}{2}, \\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+q} v}{Store} }\n\t\t\t\t\t\t[{\\rulesemder[{\\mover{-q}{2}, \\mover{-v}{3}}]{\\cancel{d=} +q v}{UpdateTrace} }\n\t\t\t\t\t\t\t[{$t4$},name=node5 ]\n\t\t\t\t\t\t\t[{\\rulesemder[{\\mover[{-q}]{\\cancel{-k}}{4}, \\mover{-v}{3}}]{\\cancel{+k} d= +q v}{FA} }\n\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +k d= +q v} } ]\n\t\t\t\t\t\t\t\t[{\\rulesemder[{\\mover[{-q}]{-k}{4}}]{\\cancel{V} -v}{Store} },name=node8\n\t\t\t\t\t\t\t\t\t[{\\plainlex{likes}{\\cancel{d=} V -v} } ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{someone}{\\cancel{d} -k -q} },name=node6 ] ] ] ]\n\t\t\t\t\t\t[{\\plainlex{everyone}{\\cancel{d} -k -q} },name=node4 ] ] ] ] ] ] ]\n\\draw[densely dotted,->] (node1) to[out=west,in=south west] (node0);\n\\draw[densely dotted,->] (node4) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node8) to[out=west,in=south west] (node2);\n\\end{forest}"
+            );
+
+            history = history.into_rich(&lex, &rules);
+            let latex = rules.to_semantic_latex(&lex, &history);
+            println!("{latex}");
+            assert_eq!(
+                latex,
+                "\\begin{forest}\n[{\\semder{t}{\\semanticRule[ApplyFromStorage]{every(x,all\\_a,some(y,all\\_a,some(z,all\\_e,((AgentOf(z,x) \\& p0(z)) \\& PatientOf(z,y)))))}} }\n\t[{$t0$},name=node0 ]\n\t[{\\semder[{\\mover{\\cancel{-q}}{0}}]{\\cancel{+q} t}{\\semanticRule[UpdateTrace]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,0\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{1}}]{\\cancel{+k} +q t}{\\semanticRule[Id]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t[{$t3$},name=node2 ]\n\t\t\t[{\\semder[{\\mover{\\cancel{-v}}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+v} +k +q t}{\\semanticRule[FA]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +v +k +q t}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t[{\\semder[{\\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{v}}{\\semanticRule[ApplyFromStorage]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t\t[{$t2$},name=node3 ]\n\t\t\t\t\t[{\\semder[{\\mover{\\cancel{-q}}{2}, \\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+q} v}{\\semanticRule[Store]{some(x,all\\_e,((AgentOf(x,1\\_f) \\& p0(x)) \\& PatientOf(x,2\\_f)))}} }\n\t\t\t\t\t\t[{\\semder[{\\mover{-q}{2}, \\mover{-v}{3}}]{\\cancel{d=} +q v}{\\semanticRule[UpdateTrace]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,2\\_f))))}} }\n\t\t\t\t\t\t\t[{$t4$},name=node5 ]\n\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{4}, \\mover{-v}{3}}]{\\cancel{+k} d= +q v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,4\\_f))))}} }\n\t\t\t\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{V=} +k d= +q v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{-k}{4}}]{\\cancel{V} -v}{\\semanticRule[Store]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,4\\_f))))}} },name=node8\n\t\t\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} V -v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,y\\_l) \\& p0(x)) \\& PatientOf(x,x\\_l)))))}} } ]\n\t\t\t\t\t\t\t\t\t[{\\semlex{someone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (some(x,all\\_a,(x\\_l)(x)))}} },name=node6 ] ] ] ]\n\t\t\t\t\t\t[{\\semlex{everyone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (every(x,all\\_a,(x\\_l)(x)))}} },name=node4 ] ] ] ] ] ] ]\n\\draw[densely dotted,->] (node1) to[out=west,in=south west] (node0);\n\\draw[densely dotted,->] (node4) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node8) to[out=west,in=south west] (node2);\n\\end{forest}"
+            );
+        }
         Ok(())
     }
 }

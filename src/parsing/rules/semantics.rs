@@ -485,12 +485,15 @@ where
         }
 
         let get_child = |i: usize| {
-            history
-                .get(children.get(i).unwrap().0)
-                .unwrap()
-                .1
-                .clone()
-                .unwrap()
+            (
+                history
+                    .get(children.get(i).unwrap().0)
+                    .unwrap()
+                    .1
+                    .clone()
+                    .unwrap(),
+                HistoryId(0),
+            )
         };
 
         let trace_id = match &rule {
@@ -505,37 +508,32 @@ where
                 let child = get_child(0);
                 let complement = get_child(1);
 
-                self.functional_application(
-                    rule_id,
-                    (child, HistoryId(0)),
-                    (complement, HistoryId(0)),
-                )
+                self.functional_application(rule_id, child, complement)
             }
             SemanticRule::Store => {
                 let child = get_child(0);
                 let complement = get_child(1);
-                self.store(
-                    rule_id,
-                    (child, HistoryId(0)),
-                    (complement, HistoryId(0)),
-                    trace_id.unwrap(),
-                )
+                self.store(rule_id, child, complement, trace_id.unwrap())
             }
             SemanticRule::Identity => {
                 let child = get_child(0);
-                Some(self.identity(rule_id, (child, HistoryId(0))))
+                Some(self.identity(rule_id, child))
             }
             SemanticRule::ApplyFromStorage => {
                 let child = get_child(0);
                 let trace_id = self.get_trace(children[1]);
-                match self.apply_from_storage(rule_id, (child, HistoryId(0)), trace_id) {
+                match self.apply_from_storage(rule_id, child, trace_id) {
                     ApplyFromStorageResult::SuccesfulMerge(x) => Some(x),
                     ApplyFromStorageResult::FailedMerge | ApplyFromStorageResult::NoTrace(_) => {
                         None
                     }
                 }
             }
-            SemanticRule::UpdateTrace => todo!("update trace"),
+            SemanticRule::UpdateTrace => {
+                let child = get_child(0);
+                let old_trace_id = self.get_trace(children[1]);
+                Some(self.update_trace(rule_id, child, old_trace_id, trace_id.unwrap()))
+            }
             SemanticRule::Trace => {
                 return;
             }

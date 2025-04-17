@@ -4,7 +4,7 @@ use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::visit::IntoEdgeReferences;
-use regex::Regex;
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -22,6 +22,9 @@ use crate::lexicon::SemanticLexicon;
 
 #[cfg(feature = "semantics")]
 use super::semantics::{SemanticHistory, SemanticNode};
+
+#[cfg(feature = "semantics")]
+use regex::Regex;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub enum MGEdge {
@@ -386,6 +389,7 @@ trait LaTeXify {
     fn to_latex(&self) -> String;
 }
 
+#[cfg(feature = "semantics")]
 fn clean_up_expr(s: String) -> String {
     let re = Regex::new(r"lambda (?<t>[et,< >]+) ").unwrap();
     let s = s.replace("&", "\\&").replace("_", "\\_");

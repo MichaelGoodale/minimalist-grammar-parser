@@ -5,6 +5,7 @@ use chumsky::{
     prelude::*,
     text::{inline_whitespace, newline},
 };
+use itertools::Itertools;
 use logprob::{LogProb, Softmax};
 use petgraph::dot::Dot;
 use petgraph::{
@@ -478,16 +479,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 }
 
-impl<T, Category> std::fmt::Display for Lexicon<T, Category>
-where
-    T: Eq,
-    Category: Eq,
-    FeatureOrLemma<T, Category>: std::fmt::Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", petgraph::dot::Dot::new(&self.graph))
-    }
-}
 impl<'src> Lexicon<&'src str, &'src str> {
     pub fn parse(s: &'src str) -> Result<Self> {
         grammar_parser()
@@ -561,7 +552,11 @@ impl LexicalEntry<&str, &str> {
     }
 }
 
-impl std::fmt::Display for FeatureOrLemma<&str, &str> {
+impl<T, C> std::fmt::Display for FeatureOrLemma<T, C>
+where
+    T: Eq + Display,
+    C: Eq + Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FeatureOrLemma::Root => write!(f, "root"),
@@ -575,6 +570,24 @@ impl std::fmt::Display for FeatureOrLemma<&str, &str> {
             FeatureOrLemma::Feature(feature) => write!(f, "{}", feature),
             FeatureOrLemma::Complement(c, d) => write!(f, "{}", Feature::Selector(c, *d)),
         }
+    }
+}
+
+impl<T, C> Display for Lexicon<T, C>
+where
+    T: Eq + Display + std::fmt::Debug + Clone,
+    C: Eq + Display + std::fmt::Debug + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.lexemes()
+                .unwrap()
+                .iter()
+                .map(|(l, _p)| l.to_string())
+                .join("\n")
+        )
     }
 }
 

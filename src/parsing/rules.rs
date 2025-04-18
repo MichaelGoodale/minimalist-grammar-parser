@@ -160,15 +160,13 @@ pub struct RulePool(Vec<Rule>);
 mod semantics;
 
 impl RulePool {
-    pub fn get(&self, x: RuleIndex) -> &Rule {
+    #[cfg(any(feature = "pretty", feature = "semantics"))]
+    fn get(&self, x: RuleIndex) -> &Rule {
         &self.0[x.0]
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn children(&self, x: RuleIndex) -> impl Iterator<Item = RuleIndex> {
+    #[cfg(feature = "semantics")]
+    fn children(&self, x: RuleIndex) -> impl Iterator<Item = RuleIndex> {
         match self.get(x) {
             Rule::Start { child, .. } => [Some(*child), None],
             Rule::UnmoveTrace(_) | Rule::Scan { .. } => [None, None],

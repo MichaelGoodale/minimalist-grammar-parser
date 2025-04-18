@@ -6,9 +6,10 @@ use lexicon::Lexicon;
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
+use parsing::RuleHolder;
+pub use parsing::RulePool;
 use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::{BeamWrapper, PartialRulePool, expand};
-use parsing::{RuleHolder, RulePool};
 use petgraph::graph::NodeIndex;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

@@ -128,6 +128,7 @@ impl RulePool {
         g
     }
 
+    #[allow(clippy::type_complexity)]
     fn to_graph<T, C>(
         &self,
         lex: &Lexicon<T, C>,
@@ -280,6 +281,20 @@ impl RulePool {
         let (g, root, _) = self.to_graph(lex);
         self.inner_latex(&g, root)
     }
+
+    pub fn to_tree<T, C>(
+        &self,
+        lex: &Lexicon<T, C>,
+    ) -> (StableDiGraph<MgNode<T, C>, MGEdge>, NodeIndex)
+    where
+        FeatureOrLemma<T, C>: std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+    {
+        let (g, root, _) = self.to_graph(lex);
+
+        (g, root)
+    }
 }
 
 fn recursive_latex(
@@ -313,11 +328,12 @@ fn recursive_latex(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Mover<C: Eq> {
+pub struct Mover<C: Eq> {
     trace_id: TraceId,
     canceled: bool,
     features: Vec<Feature<C>>,
 }
+
 impl<C: Eq + std::fmt::Display> Display for Mover<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.features.len() {
@@ -350,7 +366,7 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum MgNode<T, C: Eq> {
+pub enum MgNode<T, C: Eq> {
     Node {
         features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
@@ -363,6 +379,34 @@ enum MgNode<T, C: Eq> {
         root: bool,
     },
     Trace(TraceId),
+}
+
+impl<T, C: Eq> MgNode<T, C> {
+    pub fn features(&self) -> &[Feature<C>] {
+        match self {
+            MgNode::Node { features, .. } => features,
+            MgNode::Leaf { features, .. } => features,
+            MgNode::Trace(_) => &[],
+        }
+    }
+
+    pub fn trace(&self) -> anyhow::Result<TraceId> {
+        match self {
+            MgNode::Trace(t) => Ok(*t),
+            MgNode::Node { .. } | MgNode::Leaf { .. } => {
+                Err(anyhow::anyhow!("The node isn't a trace!"))
+            }
+        }
+    }
+
+    pub fn lemma(&self) -> anyhow::Result<Option<&T>> {
+        match self {
+            MgNode::Leaf { lemma, .. } => Ok(lemma.as_ref()),
+            MgNode::Node { .. } | MgNode::Trace(_) => {
+                Err(anyhow::anyhow!("The node isn't a lemma!"))
+            }
+        }
+    }
 }
 
 #[cfg(feature = "semantics")]

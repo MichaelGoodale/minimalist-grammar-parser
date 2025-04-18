@@ -355,7 +355,7 @@ fn unmove<
     Ok(())
 }
 
-pub fn expand<
+pub(crate) fn expand<
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
     B: Scanner<T> + Eq + Clone,
@@ -441,8 +441,10 @@ pub fn expand<
 }
 
 pub mod beam;
-mod rules;
-#[cfg(test)]
-mod tests;
+pub mod rules;
+
 mod trees;
 pub use trees::MAX_STEPS;
+
+#[cfg(test)]
+mod tests;

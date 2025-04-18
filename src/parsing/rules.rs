@@ -4,6 +4,9 @@ use std::{fmt::Debug, hash::Hash};
 #[cfg(feature = "pretty")]
 mod printing;
 
+#[cfg(feature = "pretty")]
+pub use printing::{MGEdge, MgNode};
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct RuleIndex(usize);
 impl RuleIndex {

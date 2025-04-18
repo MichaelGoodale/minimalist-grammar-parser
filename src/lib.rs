@@ -331,7 +331,7 @@ where
 
 pub mod grammars;
 pub mod lexicon;
-mod parsing;
+pub mod parsing;
 
 #[cfg(test)]
 mod tests;

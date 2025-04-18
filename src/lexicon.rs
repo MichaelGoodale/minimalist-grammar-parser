@@ -26,6 +26,8 @@ fn grammar_parser<'src>()
 -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
     entry_parser::<extra::Err<Rich<'src, char>>>()
         .separated_by(newline())
+        .allow_leading()
+        .allow_trailing()
         .collect::<Vec<_>>()
         .map(Lexicon::new)
         .then_ignore(end())

@@ -62,7 +62,11 @@ where
 
     choice((just("ε").to(None), text::ident().or_not()))
         .labelled("lemma")
-        .then_ignore(just("::").padded().labelled("lemma feature seperator"))
+        .then_ignore(
+            just("::")
+                .padded_by(inline_whitespace())
+                .labelled("lemma feature seperator"),
+        )
         .then(
             pre_category_features
                 .separated_by(inline_whitespace())

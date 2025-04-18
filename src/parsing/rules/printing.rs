@@ -365,6 +365,12 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
     }
 }
 
+impl<C: Eq> Mover<C> {
+    pub fn features(&self) -> &[Feature<C>] {
+        &self.features
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MgNode<T, C: Eq> {
     Node {

@@ -482,6 +482,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 impl<'src> Lexicon<&'src str, &'src str> {
     pub fn parse(s: &'src str) -> Result<Self> {
         grammar_parser()
+            .padded()
             .then_ignore(end())
             .parse(s)
             .into_result()

@@ -2,11 +2,9 @@ use std::fmt::Debug;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::AHashSet;
-use chumsky::prelude::todo;
 use petgraph::{
     Direction::{Incoming, Outgoing},
     graph::NodeIndex,
-    visit::EdgeCount,
 };
 
 #[derive(Debug)]
@@ -50,16 +48,35 @@ where
         );
     }
 
+    ///Climb up a lexeme marking it unsatisfiable until you reach a branch.
+    fn mark_unsatisfiable(&mut self, mut node: NodeIndex) {
+        self.unsatisfiable.insert(node);
+        let get_parent = |node| self.lex.graph.neighbors_directed(node, Incoming).next();
+        while let Some(parent) = get_parent(node) {
+            //Check for sisters
+            if self.lex.graph.neighbors_directed(node, Outgoing).count() > 1 {
+                break;
+            } else if !matches!(
+                self.lex.graph.node_weight(parent).unwrap(),
+                FeatureOrLemma::Root
+            ) {
+                self.unsatisfiable.insert(parent);
+            }
+            node = parent;
+        }
+    }
+
     fn add_indirect_children(&mut self, node: NodeIndex) {
         match self.lex.graph.node_weight(node).unwrap() {
             FeatureOrLemma::Feature(Feature::Selector(c, _)) | FeatureOrLemma::Complement(c, _) => {
                 match self.lex.find_category(c) {
                     Ok(x) => {
-                        self.stack.push(x);
+                        if !self.seen.contains(&x) {
+                            self.stack.push(x);
+                        }
                     }
-                    Err(_) => {
-                        self.unsatisfiable.insert(node);
-                    }
+                    Err(_) if !self.lex.has_moving_category(c) => self.mark_unsatisfiable(node),
+                    Err(_) => (),
                 }
             }
             FeatureOrLemma::Feature(Feature::Licensor(c)) => {
@@ -68,11 +85,11 @@ where
                     //internally  (e.g. if we have type z= w+ c but the -w is not in buildable
                     //starting from z.
                     Ok(x) => {
-                        self.stack.push(x);
+                        if !self.seen.contains(&x) {
+                            self.stack.push(x);
+                        }
                     }
-                    Err(_) => {
-                        self.unsatisfiable.insert(node);
-                    }
+                    Err(_) => self.mark_unsatisfiable(node),
                 }
             }
             FeatureOrLemma::Root
@@ -88,6 +105,29 @@ where
     T: Eq + Debug + Clone,
     C: Eq + Debug + Clone,
 {
+    fn has_moving_category(&self, cat: &C) -> bool {
+        let mut stack: Vec<_> = self
+            .graph
+            .neighbors_directed(self.root, Outgoing)
+            .filter(|a| {
+                matches!(
+                    self.graph.node_weight(*a).unwrap(),
+                    FeatureOrLemma::Feature(Feature::Licensee(_))
+                )
+            })
+            .collect();
+        while let Some(x) = stack.pop() {
+            for x in self.graph.neighbors_directed(x, Outgoing) {
+                match &self.graph[x] {
+                    FeatureOrLemma::Feature(Feature::Licensee(_)) => stack.push(x),
+                    FeatureOrLemma::Feature(Feature::Category(c)) if c == cat => return true,
+                    _ => (),
+                }
+            }
+        }
+        false
+    }
+
     pub fn prune(&mut self, start: &C) {
         loop {
             let start = match self.find_category(start) {
@@ -146,8 +186,18 @@ mod test {
     fn pruning() -> anyhow::Result<()> {
         let mut lex = Lexicon::parse("A::c= s\nB::d\nC::c")?;
         lex.prune(&"s");
-        dbg!(lex);
-        panic!();
+        assert_eq!(lex.to_string(), "A::c= s\nC::c");
+
+        let mut lex = Lexicon::parse("A::z= c= s\nB::d\nC::c")?;
+        lex.prune(&"s");
+        assert_eq!(lex.to_string(), "");
+
+        let mut lex = Lexicon::parse("A::z= c= s\nB::d\nC::d= c\nD::z")?;
+        lex.prune(&"s");
+        assert_eq!(lex.to_string(), "A::z= c= s\nB::d\nC::d= c\nD::z");
+        let mut lex = Lexicon::parse("A::z= +w s\nD::z -w")?;
+        lex.prune(&"s");
+        assert_eq!(lex.to_string(), "A::z= +w s\nD::z -w");
         Ok(())
     }
 }

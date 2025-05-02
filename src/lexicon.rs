@@ -605,6 +605,7 @@ mod semantics;
 pub use semantics::SemanticLexicon;
 
 mod mdl;
+mod mutations;
 
 #[cfg(test)]
 mod tests {

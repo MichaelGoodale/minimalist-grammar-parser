@@ -185,6 +185,8 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
+
+    //TODO: See if you really need this f64 or if it is vestigial
     leaves: Vec<(NodeIndex, f64)>,
 }
 
@@ -220,6 +222,42 @@ where
             format!("{}", dot)
         }
     }
+}
+
+fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
+    mut graph: DiGraph<FeatureOrLemma<T, C>, f64>,
+) -> DiGraph<FeatureOrLemma<T, C>, LogProb<f64>> {
+    //Renormalise probabilities to sum to one.
+    for node_index in graph.node_indices() {
+        let edges: Vec<_> = graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|e| (*e.weight(), e.id()))
+            .collect();
+
+        match edges.len().cmp(&1) {
+            std::cmp::Ordering::Equal => {
+                for (_, edge) in edges {
+                    graph[edge] = 0.0;
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                let dist = edges
+                    .iter()
+                    .map(|(w, _edge)| *w)
+                    .softmax()
+                    .unwrap()
+                    .map(|x| x.into_inner());
+
+                for (new_weight, (_weight, edge)) in dist.zip(edges.iter()) {
+                    graph[*edge] = new_weight;
+                }
+            }
+            _ => (),
+        }
+    }
+
+    //TODO: Get rid of this annoying clone.
+    graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap())
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
@@ -348,37 +386,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 };
             }
         }
-        //Renormalise probabilities to sum to one.
-        for node_index in graph.node_indices() {
-            let edges: Vec<_> = graph
-                .edges_directed(node_index, petgraph::Direction::Outgoing)
-                .map(|e| (*e.weight(), e.id()))
-                .collect();
-
-            match edges.len().cmp(&1) {
-                std::cmp::Ordering::Equal => {
-                    for (_, edge) in edges {
-                        graph[edge] = 0.0;
-                    }
-                }
-                std::cmp::Ordering::Greater => {
-                    let dist = edges
-                        .iter()
-                        .map(|(w, _edge)| *w)
-                        .softmax()
-                        .unwrap()
-                        .map(|x| x.into_inner());
-
-                    for (new_weight, (_weight, edge)) in dist.zip(edges.iter()) {
-                        graph[*edge] = new_weight;
-                    }
-                }
-                _ => (),
-            }
-        }
-
-        //TODO: Get rid of this annoying clone.
-        let graph = graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap());
+        let graph = renormalise_weights(graph);
         Lexicon {
             graph,
             leaves,

@@ -165,12 +165,11 @@ where
         self.leaves = self
             .graph
             .node_indices()
-            .filter_map(|x| {
-                if matches!(self.graph.node_weight(x).unwrap(), FeatureOrLemma::Lemma(_)) {
-                    Some(x)
-                } else {
-                    None
-                }
+            .filter(|x| {
+                matches!(
+                    self.graph.node_weight(*x).unwrap(),
+                    FeatureOrLemma::Lemma(_)
+                )
             })
             .collect();
     }

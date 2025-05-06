@@ -9,13 +9,13 @@ use crate::lexicon::SemanticLexicon;
 use super::*;
 
 #[derive(Debug, Clone)]
-enum TypeConstraintData<C> {
+pub enum TypeConstraintData<C> {
     None,
     Featural(HashMap<C, Vec<LambdaType>>),
 }
 
 #[derive(Debug, Clone)]
-struct LearntSemanticLexicon<T: Eq, C: Eq> {
+pub struct LearntSemanticLexicon<T: Eq, C: Eq> {
     lexicon: SemanticLexicon<T, C>,
     typing: TypeConstraintData<C>,
 }
@@ -42,6 +42,10 @@ where
             lexicon: SemanticLexicon::new(lexicon, semantic_entries),
             typing: TypeConstraintData::None,
         }
+    }
+
+    pub fn lexicon(&self) -> &SemanticLexicon<T, C> {
+        &self.lexicon
     }
 }
 

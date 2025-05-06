@@ -188,6 +188,40 @@ impl FreshCategory for usize {
     }
 }
 
+impl FreshCategory for u8 {
+    fn fresh(categories: &[Self]) -> Self {
+        match categories.iter().max() {
+            Some(x) => x + 1,
+            None => 0,
+        }
+    }
+}
+impl FreshCategory for u16 {
+    fn fresh(categories: &[Self]) -> Self {
+        match categories.iter().max() {
+            Some(x) => x + 1,
+            None => 0,
+        }
+    }
+}
+impl FreshCategory for u32 {
+    fn fresh(categories: &[Self]) -> Self {
+        match categories.iter().max() {
+            Some(x) => x + 1,
+            None => 0,
+        }
+    }
+}
+
+impl FreshCategory for u64 {
+    fn fresh(categories: &[Self]) -> Self {
+        match categories.iter().max() {
+            Some(x) => x + 1,
+            None => 0,
+        }
+    }
+}
+
 impl<T, C> Lexicon<T, C>
 where
     T: Eq + Debug + Clone,
@@ -453,6 +487,9 @@ enum ParentNodeType {
 
 #[cfg(feature = "semantics")]
 mod semantics;
+
+#[cfg(feature = "semantics")]
+pub use semantics::{LearntSemanticLexicon, TypeConstraintData};
 
 #[cfg(test)]
 mod test {

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, num::FpCategory};
 
 use crate::Direction;
 
@@ -212,16 +212,43 @@ where
     ) -> Self {
         let mut graph = DiGraph::new();
         let root = graph.add_node(FeatureOrLemma::Root);
-        let nx = graph.add_node(FeatureOrLemma::Feature(Feature::Category(
-            base_category.clone(),
-        )));
-        graph.add_edge(root, nx, 1.0);
-
         let mut leaves = vec![];
-
         let config = config.unwrap_or_default();
         let mut probs = LexicalProbs::new(&config, base_category.clone());
 
+        random_branch(lemmas, root, &mut leaves, &mut graph, &mut probs, rng);
+
+        for (leaf, _) in leaves.iter() {
+            let parent = graph.neighbors_directed(*leaf, Incoming).next().unwrap();
+            let weight = graph.node_weight_mut(parent).unwrap();
+            if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = weight {
+                *weight = FeatureOrLemma::Complement(c.clone(), *d);
+            }
+        }
+
+        Lexicon {
+            graph: renormalise_weights(graph),
+            root,
+            leaves,
+        }
+    }
+}
+
+fn random_branch<C: Eq + Clone + Debug + FreshCategory, T: Eq + Clone + Debug>(
+    lemmas: &[T],
+    root: NodeIndex,
+    leaves: &mut Vec<(NodeIndex, f64)>,
+    graph: &mut DiGraph<FeatureOrLemma<T, C>, f64>,
+    probs: &mut LexicalProbs<C>,
+    rng: &mut impl Rng,
+) {
+    while let Some(branch_root) = probs.to_branch.pop() {
+        let nx = graph.add_node(FeatureOrLemma::Feature(match branch_root {
+            MoverOrSelector::Selector(category) => Feature::Category(category),
+            MoverOrSelector::Mover(category) => Feature::Licensee(category),
+        }));
+
+        graph.add_edge(root, nx, 1.0);
         let mut stack = vec![nx];
         while let Some(n) = stack.pop() {
             probs.set_state(graph.node_weight(n).unwrap());
@@ -235,7 +262,7 @@ where
                             let c = probs.choose_category_for_licensee(rng);
                             graph.add_node(FeatureOrLemma::Feature(Feature::Licensee(c.clone())))
                         } else {
-                            let c = probs.choose_category_for_feature(rng);
+                            let c = probs.choose_category_for_category(rng);
                             graph.add_node(FeatureOrLemma::Feature(Feature::Category(c)))
                         };
                         graph.add_edge(n, node, 1.0);
@@ -255,7 +282,7 @@ where
                             leaves.push((node, 0.0));
                         } else {
                             let node = if probs.is_licensor(rng) {
-                                let c = probs.choose_category_for_licensee(rng);
+                                let c = probs.choose_category_for_licensor(rng);
                                 graph
                                     .add_node(FeatureOrLemma::Feature(Feature::Licensor(c.clone())))
                             } else {
@@ -272,21 +299,12 @@ where
                 }
             }
         }
-
-        for (leaf, _) in leaves.iter() {
-            let parent = graph.neighbors_directed(*leaf, Incoming).next().unwrap();
-            let weight = graph.node_weight_mut(parent).unwrap();
-            if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = weight {
-                *weight = FeatureOrLemma::Complement(c.clone(), *d);
-            }
-        }
-
-        Lexicon {
-            graph: renormalise_weights(graph),
-            root,
-            leaves,
-        }
     }
+}
+#[derive(Debug, Clone)]
+enum MoverOrSelector<C> {
+    Selector(C),
+    Mover(C),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -304,12 +322,12 @@ impl Default for LexicalProbConfig {
     fn default() -> Self {
         Self {
             children_width: 0.8,
-            lemma_prob: 0.5,
+            lemma_prob: 0.75,
             empty_prob: 0.25,
             left_prob: 0.5,
-            add_cat_prob: 0.5,
+            add_cat_prob: 0.65,
             mover_prob: 0.2,
-            licensee_prob: 0.5,
+            licensee_prob: 0.05,
         }
     }
 }
@@ -318,8 +336,9 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
     fn new(config: &'a LexicalProbConfig, category: C) -> Self {
         LexicalProbs {
             children_distr: Geometric::new(config.children_width).unwrap(),
-            categories: vec![category],
+            categories: vec![category.clone()],
             licensee_features: vec![],
+            to_branch: vec![MoverOrSelector::Selector(category)],
             config,
             state: ParentNodeType::Category,
         }
@@ -368,7 +387,14 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
         }
     }
 
+    fn choose_category_for_category(&mut self, rng: &mut impl Rng) -> C {
+        self.categories.choose(rng).cloned().unwrap()
+    }
     fn choose_category_for_licensee(&mut self, rng: &mut impl Rng) -> C {
+        self.licensee_features.choose(rng).cloned().unwrap()
+    }
+
+    fn choose_category_for_licensor(&mut self, rng: &mut impl Rng) -> C {
         if self.licensee_features.is_empty()
             || rng.random_bool(self.config.add_cat_prob / self.licensee_features.len() as f64)
         {
@@ -379,9 +405,12 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
                 ]
                 .concat(),
             );
-            self.licensee_features.push(new_cat);
+            self.licensee_features.push(new_cat.clone());
+            self.to_branch.push(MoverOrSelector::Mover(new_cat.clone()));
+            new_cat
+        } else {
+            self.licensee_features.choose(rng).cloned().unwrap()
         }
-        self.licensee_features.choose(rng).cloned().unwrap()
     }
 
     fn choose_category_for_feature(&mut self, rng: &mut impl Rng) -> C {
@@ -393,9 +422,13 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
                 ]
                 .concat(),
             );
-            self.categories.push(new_cat);
+            self.categories.push(new_cat.clone());
+            self.to_branch
+                .push(MoverOrSelector::Selector(new_cat.clone()));
+            new_cat
+        } else {
+            self.categories.choose(rng).cloned().unwrap()
         }
-        self.categories.choose(rng).cloned().unwrap()
     }
 
     fn set_state<T: Eq>(&mut self, feature: &FeatureOrLemma<T, C>) {
@@ -415,6 +448,7 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
 struct LexicalProbs<'a, C: Eq> {
     children_distr: Geometric,
     categories: Vec<C>,
+    to_branch: Vec<MoverOrSelector<C>>,
     licensee_features: Vec<C>,
     config: &'a LexicalProbConfig,
     state: ParentNodeType,

@@ -1,18 +1,14 @@
-use std::{fmt::Debug, num::FpCategory};
+use std::fmt::Debug;
 
 use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon, renormalise_weights};
 use ahash::AHashSet;
-use chumsky::container::Container;
 use petgraph::{
     Direction::{Incoming, Outgoing},
     graph::{DiGraph, NodeIndex},
 };
-use rand::{
-    Rng,
-    seq::{IndexedRandom, IteratorRandom},
-};
+use rand::{Rng, seq::IndexedRandom};
 use rand_distr::{Distribution, Geometric};
 
 #[derive(Debug)]
@@ -171,13 +167,7 @@ where
             .node_indices()
             .filter_map(|x| {
                 if matches!(self.graph.node_weight(x).unwrap(), FeatureOrLemma::Lemma(_)) {
-                    let w = self
-                        .graph
-                        .edges_directed(x, Incoming)
-                        .next()
-                        .unwrap()
-                        .weight();
-                    Some((x, w.into_inner()))
+                    Some(x)
                 } else {
                     None
                 }
@@ -218,7 +208,7 @@ where
 
         random_branch(lemmas, root, &mut leaves, &mut graph, &mut probs, rng);
 
-        for (leaf, _) in leaves.iter() {
+        for leaf in leaves.iter() {
             let parent = graph.neighbors_directed(*leaf, Incoming).next().unwrap();
             let weight = graph.node_weight_mut(parent).unwrap();
             if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = weight {
@@ -237,7 +227,7 @@ where
 fn random_branch<C: Eq + Clone + Debug + FreshCategory, T: Eq + Clone + Debug>(
     lemmas: &[T],
     root: NodeIndex,
-    leaves: &mut Vec<(NodeIndex, f64)>,
+    leaves: &mut Vec<NodeIndex>,
     graph: &mut DiGraph<FeatureOrLemma<T, C>, f64>,
     probs: &mut LexicalProbs<C>,
     rng: &mut impl Rng,
@@ -279,7 +269,7 @@ fn random_branch<C: Eq + Clone + Debug + FreshCategory, T: Eq + Clone + Debug>(
                             };
                             let node = graph.add_node(FeatureOrLemma::Lemma(lemma));
                             graph.add_edge(n, node, 1.0);
-                            leaves.push((node, 0.0));
+                            leaves.push(node);
                         } else {
                             let node = if probs.is_licensor(rng) {
                                 let c = probs.choose_category_for_licensor(rng);
@@ -462,10 +452,14 @@ enum ParentNodeType {
     Root,
 }
 
+mod semantics;
+
 #[cfg(test)]
 mod test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    use crate::{Generator, ParsingConfig};
 
     use super::*;
 
@@ -491,12 +485,15 @@ mod test {
     #[test]
     fn random_lexicon() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        for i in 0..100 {
+        for _ in 0..100 {
             let x = Lexicon::<_, usize>::random(&0, &["the", "dog", "runs"], None, &mut rng);
             println!("{}", x);
+            let config = ParsingConfig::default();
+            Generator::new(x, 0, &config)?
+                .take(50)
+                .for_each(|(p, s, _)| println!("{:.2}: {}", p, s.join(" ")));
             println!("_______________________________________________");
         }
-        panic!();
         Ok(())
     }
 }

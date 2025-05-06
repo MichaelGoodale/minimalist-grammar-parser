@@ -35,7 +35,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
             //  Assumes that the leaves iterator goes in order of lexical_entries
             let lexicon = Lexicon::new(lexical_entries);
             let mut semantic_entries = HashMap::default();
-            for ((leaf, _), entry) in lexicon.leaves.iter().zip(interpretations.into_iter()) {
+            for (leaf, entry) in lexicon.leaves.iter().zip(interpretations.into_iter()) {
                 semantic_entries.insert(*leaf, entry);
             }
 

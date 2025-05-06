@@ -186,8 +186,7 @@ pub struct Lexicon<T: Eq, Category: Eq> {
     graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
 
-    //TODO: See if you really need this f64 or if it is vestigial
-    leaves: Vec<(NodeIndex, f64)>,
+    leaves: Vec<NodeIndex>,
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
@@ -268,9 +267,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         )
     }
 
-    pub fn lexemes(&self) -> Result<Vec<(LexicalEntry<T, Category>, f64)>> {
+    pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
         let mut v = vec![];
-        for (leaf, weight) in self.leaves.iter() {
+        for leaf in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut features = vec![];
                 let mut nx = *leaf;
@@ -285,13 +284,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     nx = parent;
                 }
 
-                v.push((
-                    LexicalEntry {
-                        lemma: lemma.as_ref().cloned(),
-                        features,
-                    },
-                    *weight,
-                ))
+                v.push(LexicalEntry {
+                    lemma: lemma.as_ref().cloned(),
+                    features,
+                })
             } else {
                 bail!("Bad lexicon!");
             }
@@ -343,12 +339,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
-        self.leaves
-            .iter()
-            .filter_map(|(x, _w)| match &self.graph[*x] {
-                FeatureOrLemma::Lemma(x) => Some(x),
-                _ => None,
-            })
+        self.leaves.iter().filter_map(|x| match &self.graph[*x] {
+            FeatureOrLemma::Lemma(x) => Some(x),
+            _ => None,
+        })
     }
 
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
@@ -382,7 +376,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 };
 
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
-                    leaves.push((node_index, weight));
+                    leaves.push(node_index);
                 };
             }
         }
@@ -600,7 +594,7 @@ where
             self.lexemes()
                 .unwrap()
                 .iter()
-                .map(|(l, _p)| l.to_string())
+                .map(|l| l.to_string())
                 .join("\n")
         )
     }
@@ -686,7 +680,7 @@ mod tests {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<_>>()?;
         let lex = Lexicon::parse(STABLER2011)?;
-        for (nx, _) in &lex.leaves {
+        for nx in &lex.leaves {
             let lexical_entry = lex.get_lexical_entry(*nx)?;
             assert!(entries.contains(&lexical_entry));
         }
@@ -741,8 +735,7 @@ mod tests {
         let strings: Vec<&str> = STABLER2011.split('\n').collect();
 
         let lex = Lexicon::parse(STABLER2011)?;
-        for (lex, weight) in lex.lexemes()? {
-            assert_eq!(weight, 1.0);
+        for lex in lex.lexemes()? {
             assert!(
                 strings.contains(&format!("{}", lex).as_str())
                     || strings.contains(&format!("{}", lex).replace('ε', "").as_str())
@@ -752,7 +745,7 @@ mod tests {
             lex.lexemes()
                 .unwrap()
                 .into_iter()
-                .map(|(word, _weight)| word)
+                .map(|word| word)
                 .collect::<Vec<_>>(),
         );
         assert_eq!(lex, lex_2);

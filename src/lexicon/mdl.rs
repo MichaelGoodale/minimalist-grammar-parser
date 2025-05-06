@@ -61,7 +61,7 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
         let mut category_symbols = AHashSet::new();
         let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
-        for (leaf, _weight) in self.leaves.iter() {
+        for leaf in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let n_phonemes = T::symbol_cost(lemma)?;
 

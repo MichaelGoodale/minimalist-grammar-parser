@@ -452,6 +452,7 @@ enum ParentNodeType {
     Root,
 }
 
+#[cfg(feature = "semantics")]
 mod semantics;
 
 #[cfg(test)]

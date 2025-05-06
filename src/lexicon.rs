@@ -269,6 +269,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 
     pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
         let mut v = vec![];
+
+        //NOTE: Must guarantee to iterate in this order.
         for leaf in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
                 let mut features = vec![];
@@ -741,13 +743,7 @@ mod tests {
                     || strings.contains(&format!("{}", lex).replace('ε', "").as_str())
             )
         }
-        let lex_2 = Lexicon::new(
-            lex.lexemes()
-                .unwrap()
-                .into_iter()
-                .map(|word| word)
-                .collect::<Vec<_>>(),
-        );
+        let lex_2 = Lexicon::new(lex.lexemes().unwrap());
         assert_eq!(lex, lex_2);
         assert_eq!(
             format!("{}", Dot::new(&lex.graph)),

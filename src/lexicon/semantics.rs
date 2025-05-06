@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::HashMap;
 use std::fmt::Debug;
 
 use crate::ParsingConfig;
@@ -16,6 +16,18 @@ use simple_semantics::lot_parser;
 pub struct SemanticLexicon<T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
     semantic_entries: HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+}
+
+impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
+    pub fn new(
+        lexicon: Lexicon<T, C>,
+        semantic_entries: HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+    ) -> Self {
+        SemanticLexicon {
+            lexicon,
+            semantic_entries,
+        }
+    }
 }
 
 fn semantic_grammar_parser<'src>() -> impl Parser<
@@ -110,6 +122,25 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
     }
 }
 
+impl<T, C> Display for SemanticLexicon<T, C>
+where
+    T: Eq + Display + std::fmt::Debug + Clone,
+    C: Eq + Display + std::fmt::Debug + Clone,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.lexicon
+                .lexemes()
+                .unwrap()
+                .iter()
+                .zip(self.lexicon.leaves.iter())
+                .map(|(l, n)| format!("{l}::{}", self.semantic_entries[n]))
+                .join("\n")
+        )
+    }
+}
 #[cfg(test)]
 mod test {
     use itertools::Itertools;

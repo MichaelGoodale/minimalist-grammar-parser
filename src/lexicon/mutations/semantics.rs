@@ -1,7 +1,7 @@
 use ahash::HashMap;
 use simple_semantics::{
     Entity,
-    lambda::{self, RootedLambdaPool, types::LambdaType},
+    lambda::{RootedLambdaPool, types::LambdaType},
 };
 
 use crate::lexicon::SemanticLexicon;
@@ -60,11 +60,10 @@ mod test {
     fn random_semantic_lexicon() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         for _ in 0..100 {
-            let lex = LearntSemanticLexicon::new_random(&["the", "dog", "runs"], &0, &mut rng);
+            let lex = LearntSemanticLexicon::new_random(&["the", "dog", "runs"], &0_u32, &mut rng);
             println!("{}", lex.lexicon);
             println!("______________________________________________________");
         }
-        panic!();
         Ok(())
     }
 }

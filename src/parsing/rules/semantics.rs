@@ -3,7 +3,10 @@ use std::fmt::Display;
 use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
 use itertools::Itertools;
-use simple_semantics::{lambda::RootedLambdaPool, language::Expr};
+use simple_semantics::{
+    lambda::{RootedLambdaPool, types::LambdaType},
+    language::Expr,
+};
 
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
@@ -130,7 +133,7 @@ impl Display for SemanticNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticState {
     expr: RootedLambdaPool<Expr>,
-    movers: HashMap<TraceId, RootedLambdaPool<Expr>>,
+    movers: HashMap<TraceId, (RootedLambdaPool<Expr>, LambdaType)>,
 }
 
 impl Display for SemanticState {
@@ -302,9 +305,11 @@ where
     ) -> Option<(SemanticState, HistoryId)> {
         let (mut alpha, alpha_id) = child;
         let (beta, beta_id) = complement;
-        if alpha.expr.apply_new_free_variable(trace_id.0).is_ok() {
+        if let Ok(trace_type) = alpha.expr.apply_new_free_variable(trace_id.0) {
             alpha.movers.extend(beta.movers);
-            alpha.movers.insert(trace_id, beta.expr.clone());
+            alpha
+                .movers
+                .insert(trace_id, (beta.expr.clone(), trace_type));
             Some((
                 alpha,
                 self.history_node(rule_id, SemanticRule::Store, Some(alpha_id), Some(beta_id)),
@@ -322,11 +327,14 @@ where
         trace_id: TraceId,
     ) -> (SemanticState, HistoryId) {
         let (mut alpha, alpha_child) = child;
-        if let Some(stored_value) = alpha.movers.remove(&old_trace_id) {
-            alpha.movers.insert(trace_id, stored_value);
+        if let Some((stored_value, stored_type)) = alpha.movers.remove(&old_trace_id) {
+            alpha
+                .movers
+                .insert(trace_id, (stored_value, stored_type.clone()));
+
             alpha
                 .expr
-                .lambda_abstract_free_variable(old_trace_id.0)
+                .lambda_abstract_free_variable(old_trace_id.0, stored_type, true)
                 .unwrap();
             alpha.expr.apply_new_free_variable(trace_id.0).unwrap();
         }
@@ -343,10 +351,10 @@ where
         trace_id: TraceId,
     ) -> ApplyFromStorageResult<(SemanticState, HistoryId)> {
         let (mut alpha, alpha_id) = child;
-        if let Some(stored_value) = alpha.movers.remove(&trace_id) {
+        if let Some((stored_value, stored_type)) = alpha.movers.remove(&trace_id) {
             alpha
                 .expr
-                .lambda_abstract_free_variable(trace_id.0)
+                .lambda_abstract_free_variable(trace_id.0, stored_type, false)
                 .unwrap();
             let SemanticState { expr, movers } = alpha;
             match expr.merge(stored_value).map(|expr| {
@@ -556,5 +564,30 @@ where
         value.expr.reduce().unwrap();
 
         *state = Some(value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::lexicon::SemanticLexicon;
+    use crate::{Parser, ParsingConfig};
+
+    #[test]
+    fn doesnt_crash_with_bad_typed_double_movement() -> anyhow::Result<()> {
+        let (lexicon, _) = SemanticLexicon::parse(
+            "mary::0 -1 -1::a0\n::=0 +1 0::lambda <e,e> x_l (a1)\nran::=0 +1 0::a1",
+        )?;
+        for (_, _, r) in Parser::new(
+            lexicon.lexicon(),
+            "0",
+            &["mary", "ran"],
+            &ParsingConfig::default(),
+        )? {
+            for (x, _h) in r.to_interpretation(&lexicon).take(10) {
+                println!("{x}");
+            }
+        }
+        Ok(())
     }
 }

@@ -2,11 +2,13 @@ use std::fmt::Debug;
 
 use crate::Direction;
 
-use super::{Feature, FeatureOrLemma, Lexicon, renormalise_weights};
+use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::AHashSet;
+use logprob::{LogProb, LogSumExp};
 use petgraph::{
     Direction::{Incoming, Outgoing},
     graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
 };
 use rand::{Rng, seq::IndexedRandom};
 use rand_distr::{Distribution, Geometric};
@@ -222,6 +224,28 @@ impl FreshCategory for u64 {
     }
 }
 
+fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
+    graph: &mut DiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
+) {
+    //Renormalise probabilities to sum to one.
+    for node_index in graph.node_indices() {
+        let sum = graph
+            .edges_directed(node_index, Outgoing)
+            .map(|x| x.weight())
+            .log_sum_exp_float();
+
+        if sum > 0.0 {
+            let edges: Vec<_> = graph
+                .edges_directed(node_index, Outgoing)
+                .map(|e| e.id())
+                .collect();
+            for e in edges {
+                graph[e] = LogProb::new(graph[e].into_inner() - sum).unwrap();
+            }
+        }
+    }
+}
+
 impl<T, C> Lexicon<T, C>
 where
     T: Eq + Debug + Clone,
@@ -235,95 +259,95 @@ where
     ) -> Self {
         let mut graph = DiGraph::new();
         let root = graph.add_node(FeatureOrLemma::Root);
-        let mut leaves = vec![];
-        let config = config.unwrap_or_default();
-        let mut probs = LexicalProbs::new(&config, base_category.clone());
+        let node = graph.add_node(FeatureOrLemma::Feature(Feature::Category(
+            base_category.clone(),
+        )));
+        graph.add_edge(root, node, LogProb::prob_of_one());
 
-        random_branch(lemmas, root, &mut leaves, &mut graph, &mut probs, rng);
-
-        for leaf in leaves.iter() {
-            let parent = graph.neighbors_directed(*leaf, Incoming).next().unwrap();
-            let weight = graph.node_weight_mut(parent).unwrap();
-            if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = weight {
-                *weight = FeatureOrLemma::Complement(c.clone(), *d);
-            }
-        }
-
-        Lexicon {
-            graph: renormalise_weights(graph),
+        let mut lexicon = Lexicon {
+            graph,
             root,
-            leaves,
+            leaves: vec![],
+        };
+        let config = config.unwrap_or_default();
+        let mut probs = LexicalProbs::from_lexicon(&mut lexicon, lemmas, &config);
+        probs.descend_from(node, rng);
+        probs.add_novel_branches(rng);
+        lexicon.clean_up();
+        lexicon
+    }
+
+    pub fn change_feature(
+        &mut self,
+        lemmas: &[T],
+        config: Option<LexicalProbConfig>,
+        rng: &mut impl Rng,
+    ) {
+        let config = config.unwrap_or_default();
+        if let Some(&node) = self
+            .graph
+            .node_indices()
+            .filter(|nx| !matches!(self.graph.node_weight(*nx).unwrap(), FeatureOrLemma::Root))
+            .collect::<Vec<_>>()
+            .choose(rng)
+        {
+            let mut probs = LexicalProbs::from_lexicon(self, lemmas, &config);
+            probs.set_node(node, rng);
+            self.clean_up();
         }
     }
-}
 
-fn random_branch<C: Eq + Clone + Debug + FreshCategory, T: Eq + Clone + Debug>(
-    lemmas: &[T],
-    root: NodeIndex,
-    leaves: &mut Vec<NodeIndex>,
-    graph: &mut DiGraph<FeatureOrLemma<T, C>, f64>,
-    probs: &mut LexicalProbs<C>,
-    rng: &mut impl Rng,
-) {
-    while let Some(branch_root) = probs.to_branch.pop() {
-        let nx = graph.add_node(FeatureOrLemma::Feature(match branch_root {
-            MoverOrSelector::Selector(category) => Feature::Category(category),
-            MoverOrSelector::Mover(category) => Feature::Licensee(category),
-        }));
-
-        graph.add_edge(root, nx, 1.0);
-        let mut stack = vec![nx];
-        while let Some(n) = stack.pop() {
-            probs.set_state(graph.node_weight(n).unwrap());
-
-            let n_children = probs.n_children(rng);
-
-            for _ in 0..n_children {
-                match probs.state {
-                    ParentNodeType::Root | ParentNodeType::Licensee => {
-                        let node = if probs.is_licensee(rng) {
-                            let c = probs.choose_category_for_licensee(rng);
-                            graph.add_node(FeatureOrLemma::Feature(Feature::Licensee(c.clone())))
-                        } else {
-                            let c = probs.choose_category_for_category(rng);
-                            graph.add_node(FeatureOrLemma::Feature(Feature::Category(c)))
-                        };
-                        graph.add_edge(n, node, 1.0);
-                        stack.push(node);
-                    }
-                    ParentNodeType::Category
-                    | ParentNodeType::Licensor
-                    | ParentNodeType::Selector => {
-                        if probs.is_lemma(rng) {
-                            let lemma = if probs.is_empty(rng) {
-                                None
-                            } else {
-                                lemmas.choose(rng).cloned()
-                            };
-                            let node = graph.add_node(FeatureOrLemma::Lemma(lemma));
-                            graph.add_edge(n, node, 1.0);
-                            leaves.push(node);
-                        } else {
-                            let node = if probs.is_licensor(rng) {
-                                let c = probs.choose_category_for_licensor(rng);
-                                graph
-                                    .add_node(FeatureOrLemma::Feature(Feature::Licensor(c.clone())))
-                            } else {
-                                let c = probs.choose_category_for_feature(rng);
-                                graph.add_node(FeatureOrLemma::Feature(Feature::Selector(
-                                    c.clone(),
-                                    probs.direction(rng),
-                                )))
-                            };
-                            graph.add_edge(n, node, 1.0);
-                            stack.push(node);
-                        }
-                    }
-                }
+    pub fn resample_below_node(
+        &mut self,
+        lemmas: &[T],
+        config: Option<LexicalProbConfig>,
+        rng: &mut impl Rng,
+    ) {
+        let config = config.unwrap_or_default();
+        if let Some(&node) = self
+            .graph
+            .node_indices()
+            .filter(|nx| {
+                !matches!(
+                    self.graph.node_weight(*nx).unwrap(),
+                    FeatureOrLemma::Root | FeatureOrLemma::Lemma(_)
+                )
+            })
+            .collect::<Vec<_>>()
+            .choose(rng)
+        {
+            let mut children: Vec<_> = self.children_of(node).collect();
+            while let Some(child) = children.pop() {
+                children.extend(
+                    self.graph
+                        .edges_directed(child, Outgoing)
+                        .map(|x| x.target()),
+                );
+                self.graph.remove_node(child);
             }
+
+            let mut probs = LexicalProbs::from_lexicon(self, lemmas, &config);
+            probs.descend_from(node, rng);
+            probs.add_novel_branches(rng);
+            self.clean_up();
         }
     }
+
+    fn clean_up(&mut self) {
+        fix_weights(&mut self.graph);
+        self.leaves = self
+            .graph
+            .node_indices()
+            .filter(|x| {
+                matches!(
+                    self.graph.node_weight(*x).unwrap(),
+                    FeatureOrLemma::Lemma(_)
+                )
+            })
+            .collect();
+    }
 }
+
 #[derive(Debug, Clone)]
 enum MoverOrSelector<C> {
     Selector(C),
@@ -355,50 +379,142 @@ impl Default for LexicalProbConfig {
     }
 }
 
-impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
-    fn new(config: &'a LexicalProbConfig, category: C) -> Self {
+impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
+    LexicalProbs<'a, 'b, 'c, T, C>
+{
+    fn from_lexicon(
+        lexicon: &'b mut Lexicon<T, C>,
+        lemmas: &'c [T],
+        config: &'a LexicalProbConfig,
+    ) -> Self {
         LexicalProbs {
             children_distr: Geometric::new(config.children_width).unwrap(),
-            categories: vec![category.clone()],
-            licensee_features: vec![],
-            to_branch: vec![MoverOrSelector::Selector(category)],
+            categories: lexicon.categories().cloned().collect(),
+            licensee_features: lexicon.licensor_types().cloned().collect(),
+            to_branch: vec![],
             config,
-            state: ParentNodeType::Category,
+            lemmas,
+            lexicon,
         }
     }
-
     fn n_children(&self, rng: &mut impl Rng) -> u64 {
         self.children_distr.sample(rng) + 1
     }
 
     fn is_lemma(&self, rng: &mut impl Rng) -> bool {
-        match self.state {
-            ParentNodeType::Licensor | ParentNodeType::Licensee | ParentNodeType::Root => false,
-            ParentNodeType::Category | ParentNodeType::Selector => {
-                rng.random_bool(self.config.lemma_prob)
+        rng.random_bool(self.config.lemma_prob)
+    }
+
+    fn get_feature(&mut self, rng: &mut impl Rng) -> Feature<C> {
+        if rng.random_bool(self.config.mover_prob) {
+            let c = self.choose_category_for_licensor(rng);
+            Feature::Licensor(c)
+        } else {
+            let c = self.choose_category_for_feature(rng);
+            Feature::Selector(c, self.direction(rng))
+        }
+    }
+
+    fn get_licensee_or_category(&mut self, rng: &mut impl Rng) -> Feature<C> {
+        if rng.random_bool(self.config.licensee_prob) {
+            let c = self.choose_category_for_licensee(rng);
+            Feature::Licensee(c)
+        } else {
+            let c = self.choose_category_for_category(rng);
+            Feature::Category(c)
+        }
+    }
+
+    fn add_novel_branches(&mut self, rng: &mut impl Rng) {
+        while let Some(p) = self.to_branch.pop() {
+            let f = FeatureOrLemma::Feature(match p {
+                MoverOrSelector::Selector(c) => Feature::Category(c),
+                MoverOrSelector::Mover(c) => Feature::Licensor(c),
+            });
+            let node = self.lexicon.graph.add_node(f);
+            self.lexicon
+                .graph
+                .add_edge(self.lexicon.root, node, LogProb::prob_of_one());
+            self.descend_from(node, rng);
+        }
+    }
+
+    fn descend_from(&mut self, node: NodeIndex, rng: &mut impl Rng) {
+        let mut stack = vec![node];
+
+        while let Some(node) = stack.pop() {
+            let feature = self.lexicon.graph.node_weight(node).unwrap();
+            match feature {
+                FeatureOrLemma::Root => todo!(),
+                FeatureOrLemma::Lemma(_) => (),
+                FeatureOrLemma::Feature(Feature::Licensee(_)) => {
+                    let n_children = self.n_children(rng);
+                    for _ in 0..n_children {
+                        let feature = FeatureOrLemma::Feature(self.get_licensee_or_category(rng));
+                        let child = self.lexicon.graph.add_node(feature);
+                        self.lexicon
+                            .graph
+                            .add_edge(node, child, LogProb::prob_of_one());
+                        stack.push(child);
+                    }
+                }
+                FeatureOrLemma::Feature(Feature::Licensor(_))
+                | FeatureOrLemma::Feature(Feature::Selector(_, _)) => {
+                    let n_children = self.n_children(rng);
+                    for _ in 0..n_children {
+                        let is_lemma = self.is_lemma(rng);
+                        let feature = if is_lemma {
+                            let c = self.choose_category_for_feature(rng);
+                            FeatureOrLemma::Complement(c, self.direction(rng))
+                        } else {
+                            FeatureOrLemma::Feature(self.get_feature(rng))
+                        };
+                        let child = self.lexicon.graph.add_node(feature);
+                        self.lexicon
+                            .graph
+                            .add_edge(node, child, LogProb::prob_of_one());
+                        stack.push(child);
+                    }
+                }
+                FeatureOrLemma::Feature(Feature::Category(_)) => {
+                    let n_children = self.n_children(rng);
+                    for _ in 0..n_children {
+                        let is_lemma = self.is_lemma(rng);
+                        let feature = if is_lemma {
+                            FeatureOrLemma::Lemma(self.get_lemma(rng))
+                        } else {
+                            FeatureOrLemma::Feature(self.get_feature(rng))
+                        };
+                        let child = self.lexicon.graph.add_node(feature);
+                        self.lexicon
+                            .graph
+                            .add_edge(node, child, LogProb::prob_of_one());
+                        if !is_lemma {
+                            stack.push(child);
+                        }
+                    }
+                }
+                FeatureOrLemma::Complement(_, _) => {
+                    let n_children = self.n_children(rng);
+                    for _ in 0..n_children {
+                        let child = self
+                            .lexicon
+                            .graph
+                            .add_node(FeatureOrLemma::Lemma(self.get_lemma(rng)));
+                        self.lexicon
+                            .graph
+                            .add_edge(node, child, LogProb::prob_of_one());
+                    }
+                }
             }
         }
     }
 
-    fn is_empty(&self, rng: &mut impl Rng) -> bool {
-        rng.random_bool(self.config.empty_prob)
-    }
-
-    fn is_licensor(&mut self, rng: &mut impl Rng) -> bool {
-        match self.state {
-            ParentNodeType::Licensee | ParentNodeType::Root => false,
-            ParentNodeType::Category | ParentNodeType::Licensor | ParentNodeType::Selector => {
-                rng.random_bool(self.config.mover_prob)
-            }
-        }
-    }
-
-    fn is_licensee(&mut self, rng: &mut impl Rng) -> bool {
-        match self.state {
-            ParentNodeType::Licensee | ParentNodeType::Root => {
-                rng.random_bool(self.config.licensee_prob)
-            }
-            ParentNodeType::Category | ParentNodeType::Licensor | ParentNodeType::Selector => false,
+    fn get_lemma(&self, rng: &mut impl Rng) -> Option<T> {
+        if rng.random_bool(self.config.empty_prob) {
+            None
+        } else {
+            self.lemmas.choose(rng).cloned()
         }
     }
 
@@ -408,6 +524,44 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
         } else {
             Direction::Right
         }
+    }
+
+    fn set_node(&mut self, node: NodeIndex, rng: &mut impl Rng) {
+        let n = self.lexicon.graph.node_weight(node).unwrap();
+
+        let new_feature = match n {
+            FeatureOrLemma::Root => FeatureOrLemma::Root,
+            FeatureOrLemma::Lemma(_) => FeatureOrLemma::Lemma(self.get_lemma(rng)),
+            FeatureOrLemma::Feature(f) => FeatureOrLemma::Feature(match f {
+                Feature::Category(_) => Feature::Category(self.choose_category_for_category(rng)),
+                Feature::Licensee(_) => Feature::Licensee(self.choose_category_for_licensee(rng)),
+                _ => {
+                    let lemma_children =
+                        self.lexicon
+                            .graph
+                            .neighbors_directed(node, Outgoing)
+                            .any(|x| {
+                                matches!(
+                                    self.lexicon.graph.node_weight(x).unwrap(),
+                                    FeatureOrLemma::Lemma(_)
+                                )
+                            });
+
+                    if rng.random_bool(self.config.mover_prob) && !lemma_children {
+                        let feature = self.choose_category_for_licensor(rng);
+                        Feature::Licensor(feature)
+                    } else {
+                        let feature = self.choose_category_for_feature(rng);
+                        Feature::Selector(feature, self.direction(rng))
+                    }
+                }
+            }),
+            FeatureOrLemma::Complement(..) => FeatureOrLemma::Complement(
+                self.choose_category_for_feature(rng),
+                self.direction(rng),
+            ),
+        };
+        *self.lexicon.graph.node_weight_mut(node).unwrap() = new_feature;
     }
 
     fn choose_category_for_category(&mut self, rng: &mut impl Rng) -> C {
@@ -453,36 +607,16 @@ impl<'a, C: Eq + FreshCategory + Clone + Debug> LexicalProbs<'a, C> {
             self.categories.choose(rng).cloned().unwrap()
         }
     }
-
-    fn set_state<T: Eq>(&mut self, feature: &FeatureOrLemma<T, C>) {
-        self.state = match feature {
-            FeatureOrLemma::Feature(Feature::Selector(_, _)) => ParentNodeType::Selector,
-            FeatureOrLemma::Feature(Feature::Category(_)) => ParentNodeType::Category,
-            FeatureOrLemma::Feature(Feature::Licensor(_)) => ParentNodeType::Licensor,
-            FeatureOrLemma::Feature(Feature::Licensee(_)) => ParentNodeType::Licensee,
-            FeatureOrLemma::Root => ParentNodeType::Root,
-            FeatureOrLemma::Complement(_, _) | FeatureOrLemma::Lemma(_) => {
-                panic!("These should not be encountered in random generation")
-            }
-        };
-    }
 }
 
-struct LexicalProbs<'a, C: Eq> {
+struct LexicalProbs<'a, 'b, 'c, T: Eq, C: Eq> {
     children_distr: Geometric,
     categories: Vec<C>,
     to_branch: Vec<MoverOrSelector<C>>,
     licensee_features: Vec<C>,
     config: &'a LexicalProbConfig,
-    state: ParentNodeType,
-}
-
-enum ParentNodeType {
-    Licensor,
-    Licensee,
-    Category,
-    Selector,
-    Root,
+    lemmas: &'c [T],
+    lexicon: &'b mut Lexicon<T, C>,
 }
 
 #[cfg(feature = "semantics")]
@@ -496,9 +630,70 @@ mod test {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    use crate::{Generator, ParsingConfig};
-
     use super::*;
+    use crate::{Generator, ParsingConfig};
+    use petgraph::algo::connected_components;
+
+    fn total_prob<T: Eq, C: Eq + Debug>(lex: &Lexicon<T, C>, node: NodeIndex) -> f64 {
+        lex.graph
+            .edges_directed(node, Outgoing)
+            .map(|x| x.weight())
+            .log_sum_exp_float()
+    }
+
+    fn validate_lexicon<T: Eq, C: Eq + Debug>(lex: &Lexicon<T, C>) {
+        let mut found_leaves = AHashSet::default();
+        let mut found_root = None;
+
+        for node in lex.graph.node_indices() {
+            let mut parent_iter = lex.graph.neighbors_directed(node, Incoming);
+            let parent = parent_iter.next();
+            assert!(parent_iter.next().is_none());
+
+            match lex.graph.node_weight(node).unwrap() {
+                FeatureOrLemma::Root => {
+                    assert!(parent.is_none());
+                    if found_root.is_some() {
+                        panic!("Multiple roots!");
+                    }
+                    found_root = Some(node);
+                }
+                FeatureOrLemma::Lemma(_) => {
+                    assert!(parent.is_some());
+                    found_leaves.insert(node);
+                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
+
+                    assert!(matches!(
+                        lex.graph.node_weight(parent.unwrap()).unwrap(),
+                        FeatureOrLemma::Complement(_, _)
+                            | FeatureOrLemma::Feature(Feature::Category(_))
+                    ));
+                    assert!(children.is_empty());
+                }
+                FeatureOrLemma::Feature(_) => {
+                    assert!(parent.is_some());
+                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
+                    assert!(!children.is_empty());
+                    assert_eq!(total_prob(lex, node), 0.0);
+                }
+                FeatureOrLemma::Complement(_, _) => {
+                    assert!(parent.is_some());
+                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
+                    assert!(!children.is_empty());
+                    assert!(children.into_iter().all(|x| matches!(
+                        lex.graph.node_weight(x).unwrap(),
+                        FeatureOrLemma::Lemma(_)
+                    )));
+                    assert_eq!(total_prob(lex, node), 0.0);
+                }
+            }
+        }
+
+        let leaves: AHashSet<_> = lex.leaves.iter().copied().collect();
+        assert_eq!(leaves, found_leaves);
+        assert_eq!(leaves.len(), lex.leaves.len());
+        assert_eq!(connected_components(&lex.graph), 1);
+    }
 
     #[test]
     fn pruning() -> anyhow::Result<()> {
@@ -524,11 +719,48 @@ mod test {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         for _ in 0..100 {
             let x = Lexicon::<_, usize>::random(&0, &["the", "dog", "runs"], None, &mut rng);
+            dbg!(&x);
             println!("{}", x);
+            validate_lexicon(&x);
             let config = ParsingConfig::default();
             Generator::new(x, 0, &config)?
                 .take(50)
                 .for_each(|(p, s, _)| println!("{:.2}: {}", p, s.join(" ")));
+            println!("_______________________________________________");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn random_redone_lexicon() -> anyhow::Result<()> {
+        let mut main_rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..100 {
+            let mut rng = ChaCha8Rng::seed_from_u64(497);
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            println!("{}", lex);
+            validate_lexicon(&lex);
+            println!("NEW VERSION");
+            lex.resample_below_node(lemmas, None, &mut main_rng);
+            println!("{lex}");
+            validate_lexicon(&lex);
+            println!("_______________________________________________");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn random_change_feat() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..100 {
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            println!("{}", lex);
+            validate_lexicon(&lex);
+            println!("NEW VERSION");
+            lex.change_feature(lemmas, None, &mut rng);
+            println!("{lex}");
+            validate_lexicon(&lex);
             println!("_______________________________________________");
         }
         Ok(())

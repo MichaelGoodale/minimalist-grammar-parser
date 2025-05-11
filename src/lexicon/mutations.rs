@@ -1,9 +1,9 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
     Direction::{Incoming, Outgoing},
@@ -232,7 +232,7 @@ fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
         let sum = graph
             .edges_directed(node_index, Outgoing)
             .map(|x| x.weight())
-            .log_sum_exp_float();
+            .log_sum_exp_float_no_alloc();
 
         if sum > 0.0 {
             let edges: Vec<_> = graph
@@ -248,8 +248,8 @@ fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
 
 impl<T, C> Lexicon<T, C>
 where
-    T: Eq + Debug + Clone,
-    C: Eq + Debug + Clone + FreshCategory,
+    T: Eq + Debug + Clone + Hash,
+    C: Eq + Debug + Clone + FreshCategory + Hash,
 {
     pub fn random(
         base_category: &C,
@@ -335,6 +335,75 @@ where
 
     fn clean_up(&mut self) {
         fix_weights(&mut self.graph);
+
+        let mut stack = vec![self.root];
+
+        while let Some(n) = stack.pop() {
+            let mut features: AHashMap<_, Vec<_>> = AHashMap::default();
+
+            for child in self.children_of(n) {
+                let feature = self.graph.node_weight(child).unwrap();
+                features.entry(feature).or_default().push(child);
+            }
+
+            let values: Vec<_> = features.into_values().collect();
+            for mut nodes_to_merge in values {
+                if nodes_to_merge.len() == 1 {
+                    stack.push(nodes_to_merge.pop().unwrap());
+                } else {
+                    let sum = nodes_to_merge
+                        .iter()
+                        .flat_map(|&a| self.graph.edges_directed(a, Outgoing))
+                        .map(|x| x.weight())
+                        .log_sum_exp_float_no_alloc();
+
+                    let incoming_weight = nodes_to_merge
+                        .iter()
+                        .flat_map(|&a| self.graph.edges_directed(a, Incoming))
+                        .map(|x| x.weight())
+                        .log_sum_exp_float_no_alloc();
+
+                    let node_to_keep = nodes_to_merge.pop().unwrap();
+
+                    let new_edges: Vec<_> = nodes_to_merge
+                        .iter()
+                        .flat_map(|&a| self.graph.edges_directed(a, Outgoing))
+                        .map(|e| {
+                            (
+                                e.target(),
+                                LogProb::new(e.weight().into_inner() - sum).unwrap(),
+                            )
+                        })
+                        .collect();
+
+                    for (e, p) in self
+                        .graph
+                        .edges_directed(node_to_keep, Outgoing)
+                        .map(|e| (e.id(), LogProb::new(e.weight().into_inner() - sum).unwrap()))
+                        .collect::<Vec<_>>()
+                    {
+                        self.graph[e] = p;
+                    }
+
+                    new_edges.into_iter().for_each(|(tgt, weight)| {
+                        self.graph.add_edge(node_to_keep, tgt, weight);
+                    });
+
+                    if let Some(e) = self
+                        .graph
+                        .edges_directed(node_to_keep, Incoming)
+                        .next()
+                        .map(|e| e.id())
+                    {
+                        self.graph[e] = LogProb::new(incoming_weight).unwrap();
+                    }
+                    nodes_to_merge.into_iter().for_each(|x| {
+                        self.graph.remove_node(x);
+                    });
+                }
+            }
+        }
+
         self.leaves = self
             .graph
             .node_indices()
@@ -445,7 +514,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         while let Some(node) = stack.pop() {
             let feature = self.lexicon.graph.node_weight(node).unwrap();
             match feature {
-                FeatureOrLemma::Root => todo!(),
+                FeatureOrLemma::Root => unimplemented!(),
                 FeatureOrLemma::Lemma(_) => (),
                 FeatureOrLemma::Feature(Feature::Licensee(_)) => {
                     let n_children = self.n_children(rng);
@@ -627,6 +696,7 @@ pub use semantics::{LearntSemanticLexicon, TypeConstraintData};
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -649,6 +719,13 @@ mod test {
             let mut parent_iter = lex.graph.neighbors_directed(node, Incoming);
             let parent = parent_iter.next();
             assert!(parent_iter.next().is_none());
+            let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
+            let de_duped: Vec<_> = children
+                .iter()
+                .map(|&x| lex.graph.node_weight(x))
+                .dedup()
+                .collect();
+            assert_eq!(de_duped.len(), children.len());
 
             match lex.graph.node_weight(node).unwrap() {
                 FeatureOrLemma::Root => {
@@ -661,7 +738,6 @@ mod test {
                 FeatureOrLemma::Lemma(_) => {
                     assert!(parent.is_some());
                     found_leaves.insert(node);
-                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
 
                     assert!(matches!(
                         lex.graph.node_weight(parent.unwrap()).unwrap(),
@@ -672,19 +748,17 @@ mod test {
                 }
                 FeatureOrLemma::Feature(_) => {
                     assert!(parent.is_some());
-                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
                     assert!(!children.is_empty());
-                    assert_eq!(total_prob(lex, node), 0.0);
+                    approx::assert_relative_eq!(total_prob(lex, node), 0.0);
                 }
                 FeatureOrLemma::Complement(_, _) => {
                     assert!(parent.is_some());
-                    let children: Vec<_> = lex.graph.neighbors_directed(node, Outgoing).collect();
                     assert!(!children.is_empty());
                     assert!(children.into_iter().all(|x| matches!(
                         lex.graph.node_weight(x).unwrap(),
                         FeatureOrLemma::Lemma(_)
                     )));
-                    assert_eq!(total_prob(lex, node), 0.0);
+                    approx::assert_relative_eq!(total_prob(lex, node), 0.0);
                 }
             }
         }

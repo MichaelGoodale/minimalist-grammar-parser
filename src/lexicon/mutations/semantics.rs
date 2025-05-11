@@ -22,8 +22,8 @@ pub struct LearntSemanticLexicon<T: Eq, C: Eq> {
 
 impl<T, C> LearntSemanticLexicon<T, C>
 where
-    T: Eq + Debug + Clone,
-    C: Eq + Debug + Clone + FreshCategory,
+    T: Eq + Debug + Clone + Hash,
+    C: Eq + Debug + Clone + FreshCategory + Hash,
 {
     pub fn new_random(lemmas: &[T], base_category: &C, rng: &mut impl Rng) -> Self {
         let lexicon = Lexicon::random(base_category, lemmas, None, rng);

@@ -275,6 +275,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         )
     }
 
+    pub fn n_nodes(&self) -> usize {
+        self.graph.node_count()
+    }
+
     pub fn leaves(&self) -> &[NodeIndex] {
         &self.leaves
     }

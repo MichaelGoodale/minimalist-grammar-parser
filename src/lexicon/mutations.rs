@@ -260,7 +260,7 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
-    pub fn delete_node(&mut self, rng: &mut impl Rng) {
+    pub fn delete_node(&mut self, rng: &mut impl Rng) -> Option<NodeIndex> {
         if let Some(&node) = self
             .graph
             .node_indices()
@@ -358,6 +358,9 @@ where
             }
             self.graph.remove_node(node);
             self.clean_up();
+            Some(node)
+        } else {
+            None
         }
     }
 

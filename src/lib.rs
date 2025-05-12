@@ -195,7 +195,7 @@ where
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<T, ParseScan<'a, T>>,
-    start_time: Instant,
+    start_time: Option<Instant>,
     config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
 }
@@ -216,7 +216,7 @@ where
         Ok(Parser {
             lexicon,
             config,
-            start_time: Instant::now(),
+            start_time: None,
             buffer: vec![],
             parse_heap,
         })
@@ -236,7 +236,7 @@ where
         Ok(Parser {
             lexicon,
             buffer: vec![],
-            start_time: Instant::now(),
+            start_time: None,
             config,
             parse_heap,
         })
@@ -251,10 +251,14 @@ where
     type Item = ParserOutput<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.start_time.is_none() {
+            self.start_time = Some(Instant::now());
+        }
+
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
                 if let Some(max_time) = self.config.max_time {
-                    if max_time < self.start_time.elapsed() {
+                    if max_time < self.start_time.unwrap().elapsed() {
                         return None;
                     }
                 }

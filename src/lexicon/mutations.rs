@@ -794,12 +794,6 @@ struct LexicalProbs<'a, 'b, 'c, T: Eq, C: Eq> {
     lexicon: &'b mut Lexicon<T, C>,
 }
 
-#[cfg(feature = "semantics")]
-mod semantics;
-
-#[cfg(feature = "semantics")]
-pub use semantics::{LearntSemanticLexicon, TypeConstraintData};
-
 #[cfg(test)]
 mod test {
     use itertools::Itertools;

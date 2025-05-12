@@ -91,6 +91,23 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         &self.lexicon
     }
 
+    pub fn lexicon_mut(&mut self) -> &mut Lexicon<T, C> {
+        &mut self.lexicon
+    }
+
+    pub fn interpretation_mut(&mut self) -> &mut HashMap<NodeIndex, RootedLambdaPool<Expr>> {
+        &mut self.semantic_entries
+    }
+
+    pub fn lexicon_and_interpretation_mut(
+        &mut self,
+    ) -> (
+        &mut Lexicon<T, C>,
+        &mut HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+    ) {
+        (&mut self.lexicon, &mut self.semantic_entries)
+    }
+
     pub fn parse_and_interpret<'a>(
         &'a self,
         initial_category: C,

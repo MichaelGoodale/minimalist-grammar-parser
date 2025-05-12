@@ -612,7 +612,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         while let Some(p) = self.to_branch.pop() {
             let f = FeatureOrLemma::Feature(match p {
                 MoverOrSelector::Selector(c) => Feature::Category(c),
-                MoverOrSelector::Mover(c) => Feature::Licensor(c),
+                MoverOrSelector::Mover(c) => Feature::Licensee(c),
             });
             let node = self.lexicon.graph.add_node(f);
             self.lexicon
@@ -801,6 +801,7 @@ struct LexicalProbs<'a, 'b, 'c, T: Eq, C: Eq> {
 
 #[cfg(test)]
 mod test {
+    use anyhow::bail;
     use itertools::Itertools;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -814,9 +815,70 @@ mod test {
             .log_sum_exp_float()
     }
 
-    fn validate_lexicon<T: Eq + Debug, C: Eq + Debug>(lex: &Lexicon<T, C>) {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Position {
+        Root,
+        PreCategory,
+        Category,
+        PostCategory,
+        NextIsLemma,
+        Done,
+    }
+
+    impl Position {
+        fn next_pos<T: Eq + Debug, C: Eq + Debug>(
+            &self,
+            f: &FeatureOrLemma<T, C>,
+        ) -> anyhow::Result<Self> {
+            match self {
+                Position::Root | Position::PreCategory => match f {
+                    FeatureOrLemma::Feature(Feature::Category(_)) => Ok(Position::Category),
+                    FeatureOrLemma::Feature(Feature::Licensee(_)) => Ok(Position::PreCategory),
+                    _ => bail!("can't go from {:?} to {:?} !", self, f),
+                },
+                Position::Category => match f {
+                    FeatureOrLemma::Feature(Feature::Selector(..))
+                    | FeatureOrLemma::Feature(Feature::Licensor(_)) => Ok(Position::PostCategory),
+                    FeatureOrLemma::Complement(..) => Ok(Position::NextIsLemma),
+                    FeatureOrLemma::Lemma(_) => Ok(Position::Done),
+                    _ => bail!("can't go from {:?} to {:?} !", self, f),
+                },
+                Position::PostCategory => match f {
+                    FeatureOrLemma::Feature(Feature::Selector(..))
+                    | FeatureOrLemma::Feature(Feature::Licensor(_)) => Ok(Position::PostCategory),
+                    FeatureOrLemma::Complement(..) => Ok(Position::NextIsLemma),
+                    _ => bail!("can't go from {:?} to {:?} !", self, f),
+                },
+                Position::NextIsLemma => match f {
+                    FeatureOrLemma::Lemma(_) => Ok(Position::Done),
+                    _ => bail!("can't go from {:?} to {:?} !", self, f),
+                },
+                Position::Done => bail!("Done can't be continued"),
+            }
+        }
+    }
+
+    fn validate_lexicon<T: Eq + Debug + Clone, C: Eq + Debug + Clone>(
+        lex: &Lexicon<T, C>,
+    ) -> anyhow::Result<()> {
         let mut found_leaves = AHashSet::default();
         let mut found_root = None;
+
+        let mut stack = vec![(lex.root, Position::Root)];
+        while let Some((nx, pos)) = stack.pop() {
+            let children = lex.children_of(nx).collect::<Vec<_>>();
+
+            if pos == Position::Done {
+                assert!(children.is_empty())
+            } else {
+                assert!(!children.is_empty())
+            }
+            for child in children {
+                let f = lex.graph.node_weight(child).unwrap();
+                let next_pos = pos.next_pos(f)?;
+                stack.push((child, next_pos))
+            }
+        }
 
         for node in lex.graph.node_indices() {
             let mut parent_iter = lex.graph.neighbors_directed(node, Incoming);
@@ -880,6 +942,8 @@ mod test {
         let leaves: AHashSet<_> = lex.leaves.iter().copied().collect();
         assert_eq!(leaves, found_leaves);
         assert_eq!(leaves.len(), lex.leaves.len());
+
+        Ok(())
     }
 
     #[test]
@@ -906,7 +970,8 @@ mod test {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         for _ in 0..1000 {
             let x = Lexicon::<_, usize>::random(&0, &["the", "dog", "runs"], None, &mut rng);
-            validate_lexicon(&x);
+            dbg!(&x);
+            validate_lexicon(&x)?;
         }
         Ok(())
     }
@@ -918,9 +983,9 @@ mod test {
         for _ in 0..1000 {
             let mut rng = ChaCha8Rng::seed_from_u64(497);
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
             lex.resample_below_node(lemmas, None, &mut main_rng);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
         }
         Ok(())
     }
@@ -931,9 +996,9 @@ mod test {
         let lemmas = &["the", "dog", "runs"];
         for _ in 0..1000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
             lex.delete_node(&mut rng);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
         }
         Ok(())
     }
@@ -945,10 +1010,10 @@ mod test {
         for _ in 0..1000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             println!("{}", lex);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
             println!("NEW VERSION");
             lex.change_feature(lemmas, None, &mut rng);
-            validate_lexicon(&lex);
+            validate_lexicon(&lex)?;
             println!("{lex}");
             println!("_______________________________________________");
         }

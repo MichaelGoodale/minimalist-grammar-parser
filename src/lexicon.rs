@@ -275,6 +275,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         )
     }
 
+    pub fn leaves(&self) -> &[NodeIndex] {
+        &self.leaves
+    }
+
     pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
         let mut v = vec![];
 

@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
+use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use lexicon::Lexicon;
@@ -53,6 +55,7 @@ pub struct ParsingConfig {
     dont_move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
+    max_time: Option<Duration>,
 }
 
 impl ParsingConfig {
@@ -70,7 +73,13 @@ impl ParsingConfig {
             dont_move_prob: merge_prob,
             max_steps,
             max_beams,
+            max_time: None,
         }
+    }
+
+    pub fn with_max_time(mut self, duration: Duration) -> Self {
+        self.max_time = Some(duration);
+        self
     }
 }
 
@@ -186,6 +195,7 @@ where
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<T, ParseScan<'a, T>>,
+    start_time: Instant,
     config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
 }
@@ -206,6 +216,7 @@ where
         Ok(Parser {
             lexicon,
             config,
+            start_time: Instant::now(),
             buffer: vec![],
             parse_heap,
         })
@@ -225,6 +236,7 @@ where
         Ok(Parser {
             lexicon,
             buffer: vec![],
+            start_time: Instant::now(),
             config,
             parse_heap,
         })
@@ -241,6 +253,12 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
+                if let Some(max_time) = self.config.max_time {
+                    if max_time < self.start_time.elapsed() {
+                        return None;
+                    }
+                }
+
                 if let Some(moment) = beam.pop_moment() {
                     expand(
                         &mut self.parse_heap,

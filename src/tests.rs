@@ -163,6 +163,7 @@ fn generation() -> Result<()> {
             dont_move_prob: LogProb::from_raw_prob(0.5).unwrap(),
             max_steps: 100,
             max_beams: 1000,
+            max_time: None,
         },
     )?
     .collect();

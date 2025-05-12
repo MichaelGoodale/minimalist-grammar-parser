@@ -8,8 +8,8 @@ use chumsky::{
 use itertools::Itertools;
 use logprob::{LogProb, Softmax};
 use petgraph::dot::Dot;
+use petgraph::prelude::StableDiGraph;
 use petgraph::{
-    graph::DiGraph,
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
@@ -107,6 +107,14 @@ pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Complement(Category, Direction),
 }
 
+impl<T: Eq, C: Eq + Clone> FeatureOrLemma<T, C> {
+    fn into_complement(&mut self) {
+        if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = self {
+            *self = FeatureOrLemma::Complement(c.clone(), *d);
+        }
+    }
+}
+
 impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma<T, Category>> {
     fn from(value: LexicalEntry<T, Category>) -> Self {
         let LexicalEntry { lemma, features } = value;
@@ -183,7 +191,7 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 
 #[derive(Debug, Clone)]
 pub struct Lexicon<T: Eq, Category: Eq> {
-    graph: DiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
+    graph: StableDiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
 
     leaves: Vec<NodeIndex>,
@@ -224,10 +232,10 @@ where
 }
 
 fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
-    mut graph: DiGraph<FeatureOrLemma<T, C>, f64>,
-) -> DiGraph<FeatureOrLemma<T, C>, LogProb<f64>> {
+    mut graph: StableDiGraph<FeatureOrLemma<T, C>, f64>,
+) -> StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>> {
     //Renormalise probabilities to sum to one.
-    for node_index in graph.node_indices() {
+    for node_index in graph.node_indices().collect_vec() {
         let edges: Vec<_> = graph
             .edges_directed(node_index, petgraph::Direction::Outgoing)
             .map(|e| (*e.weight(), e.id()))
@@ -353,7 +361,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     pub fn new_with_weights(items: Vec<LexicalEntry<T, Category>>, weights: Vec<f64>) -> Self {
-        let mut graph = DiGraph::new();
+        let mut graph = StableDiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
 

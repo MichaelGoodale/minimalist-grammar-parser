@@ -1,13 +1,15 @@
-use std::{fmt::Debug, hash::Hash};
+use std::{f64::consts::LN_2, fmt::Debug, hash::Hash};
 
 use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::{AHashMap, AHashSet};
+use itertools::Itertools;
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
     Direction::{Incoming, Outgoing},
-    graph::{DiGraph, NodeIndex},
+    graph::NodeIndex,
+    prelude::StableDiGraph,
     visit::EdgeRef,
 };
 use rand::{Rng, seq::IndexedRandom};
@@ -224,25 +226,32 @@ impl FreshCategory for u64 {
     }
 }
 
+fn fix_weights_per_node<T: Eq + Clone, C: Eq + Clone>(
+    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
+    node_index: NodeIndex,
+) {
+    let sum = graph
+        .edges_directed(node_index, Outgoing)
+        .map(|x| x.weight())
+        .log_sum_exp_float_no_alloc();
+
+    if sum != 0.0 {
+        let edges: Vec<_> = graph
+            .edges_directed(node_index, Outgoing)
+            .map(|e| e.id())
+            .collect();
+        for e in edges {
+            graph[e] = LogProb::new(graph[e].into_inner() - sum).unwrap();
+        }
+    }
+}
+
 fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
-    graph: &mut DiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
+    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
 ) {
     //Renormalise probabilities to sum to one.
-    for node_index in graph.node_indices() {
-        let sum = graph
-            .edges_directed(node_index, Outgoing)
-            .map(|x| x.weight())
-            .log_sum_exp_float_no_alloc();
-
-        if sum > 0.0 {
-            let edges: Vec<_> = graph
-                .edges_directed(node_index, Outgoing)
-                .map(|e| e.id())
-                .collect();
-            for e in edges {
-                graph[e] = LogProb::new(graph[e].into_inner() - sum).unwrap();
-            }
-        }
+    for node_index in graph.node_indices().collect_vec() {
+        fix_weights_per_node(graph, node_index);
     }
 }
 
@@ -251,13 +260,110 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    pub fn delete_node(&mut self, rng: &mut impl Rng) {
+        if let Some(&node) = self
+            .graph
+            .node_indices()
+            .filter(|&nx| match self.graph.node_weight(nx).unwrap() {
+                FeatureOrLemma::Root | FeatureOrLemma::Feature(Feature::Category(_)) => false,
+                FeatureOrLemma::Lemma(_) => {
+                    let parent = self.parent_of(nx).unwrap();
+                    //If the lemma node has no siblings, deleting it will make an invalid grammar.
+                    self.graph.edges_directed(parent, Outgoing).count() > 1
+                }
+                FeatureOrLemma::Complement(_, _) => {
+                    let parent = self.parent_of(nx).unwrap();
+                    //If the parent of a complement is a licensor, we can't delete it
+                    !matches!(
+                        self.graph[parent],
+                        FeatureOrLemma::Feature(Feature::Licensor(_))
+                    )
+                }
+                _ => true,
+            })
+            .collect::<Vec<_>>()
+            .choose(rng)
+        {
+            let e = self.graph.edges_directed(node, Incoming).next().unwrap();
+            let parent = e.source();
+            let w = *e.weight();
+
+            let edges = self
+                .graph
+                .edges_directed(node, Outgoing)
+                .map(|e| (e.target(), w + e.weight()))
+                .collect::<Vec<_>>();
+
+            if !edges.is_empty() {
+                if matches!(
+                    self.graph.node_weight(parent).unwrap(),
+                    FeatureOrLemma::Feature(Feature::Selector(_, _))
+                ) {
+                    let mut complement_edges = vec![];
+                    let mut selector_edges = vec![];
+
+                    for (child, w) in edges {
+                        if matches!(
+                            self.graph.node_weight(child).unwrap(),
+                            FeatureOrLemma::Lemma(_)
+                        ) {
+                            complement_edges.push((child, w));
+                        } else {
+                            selector_edges.push((child, w));
+                        }
+                    }
+                    if complement_edges.is_empty() {
+                        for (child, w) in selector_edges {
+                            self.graph.add_edge(parent, child, w);
+                        }
+                    } else if selector_edges.is_empty()
+                        && self.graph.edges_directed(parent, Outgoing).count() == 1
+                    {
+                        for (child, w) in complement_edges {
+                            self.graph.add_edge(parent, child, w);
+                        }
+                        self.graph[parent].into_complement();
+                    } else {
+                        let mut f = self.graph[parent].clone();
+                        f.into_complement();
+                        let alt_parent = self.graph.add_node(f);
+                        let grand_parent = self.parent_of(parent).unwrap();
+                        let parent_e = self
+                            .graph
+                            .edges_directed(grand_parent, Incoming)
+                            .next()
+                            .unwrap()
+                            .id();
+
+                        self.graph[parent_e] += LogProb::new(-LN_2).unwrap();
+                        self.graph
+                            .add_edge(grand_parent, alt_parent, self.graph[parent_e]);
+
+                        for (child, w) in selector_edges {
+                            self.graph.add_edge(parent, child, w);
+                        }
+                        for (child, w) in complement_edges {
+                            self.graph.add_edge(alt_parent, child, w);
+                        }
+                    }
+                } else {
+                    for (child, w) in edges {
+                        self.graph.add_edge(parent, child, w);
+                    }
+                }
+            }
+            self.graph.remove_node(node);
+            self.clean_up();
+        }
+    }
+
     pub fn random(
         base_category: &C,
         lemmas: &[T],
         config: Option<LexicalProbConfig>,
         rng: &mut impl Rng,
     ) -> Self {
-        let mut graph = DiGraph::new();
+        let mut graph = StableDiGraph::new();
         let root = graph.add_node(FeatureOrLemma::Root);
         let node = graph.add_node(FeatureOrLemma::Feature(Feature::Category(
             base_category.clone(),
@@ -317,6 +423,10 @@ where
             .choose(rng)
         {
             let mut children: Vec<_> = self.children_of(node).collect();
+
+            let mut probs = LexicalProbs::from_lexicon(self, lemmas, &config);
+            probs.descend_from(node, rng);
+            probs.add_novel_branches(rng);
             while let Some(child) = children.pop() {
                 children.extend(
                     self.graph
@@ -325,10 +435,6 @@ where
                 );
                 self.graph.remove_node(child);
             }
-
-            let mut probs = LexicalProbs::from_lexicon(self, lemmas, &config);
-            probs.descend_from(node, rng);
-            probs.add_novel_branches(rng);
             self.clean_up();
         }
     }
@@ -342,14 +448,15 @@ where
             let mut features: AHashMap<_, Vec<_>> = AHashMap::default();
 
             for child in self.children_of(n) {
-                let feature = self.graph.node_weight(child).unwrap();
+                let feature = self.graph.node_weight(child).unwrap().clone();
                 features.entry(feature).or_default().push(child);
             }
 
-            let values: Vec<_> = features.into_values().collect();
-            for mut nodes_to_merge in values {
+            for (key, mut nodes_to_merge) in features.into_iter() {
                 if nodes_to_merge.len() == 1 {
                     stack.push(nodes_to_merge.pop().unwrap());
+                } else if matches!(key, FeatureOrLemma::Lemma(_)) {
+                    stack.extend(nodes_to_merge);
                 } else {
                     let sum = nodes_to_merge
                         .iter()
@@ -361,7 +468,7 @@ where
                         .iter()
                         .flat_map(|&a| self.graph.edges_directed(a, Incoming))
                         .map(|x| x.weight())
-                        .log_sum_exp_float_no_alloc();
+                        .log_sum_exp_clamped_no_alloc();
 
                     let node_to_keep = nodes_to_merge.pop().unwrap();
 
@@ -395,11 +502,12 @@ where
                         .next()
                         .map(|e| e.id())
                     {
-                        self.graph[e] = LogProb::new(incoming_weight).unwrap();
+                        self.graph[e] = incoming_weight;
                     }
                     nodes_to_merge.into_iter().for_each(|x| {
                         self.graph.remove_node(x);
                     });
+                    stack.push(node_to_keep);
                 }
             }
         }
@@ -474,13 +582,17 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         rng.random_bool(self.config.lemma_prob)
     }
 
-    fn get_feature(&mut self, rng: &mut impl Rng) -> Feature<C> {
+    fn get_feature(&mut self, rng: &mut impl Rng) -> FeatureOrLemma<T, C> {
         if rng.random_bool(self.config.mover_prob) {
             let c = self.choose_category_for_licensor(rng);
-            Feature::Licensor(c)
+            FeatureOrLemma::Feature(Feature::Licensor(c))
         } else {
             let c = self.choose_category_for_feature(rng);
-            Feature::Selector(c, self.direction(rng))
+            if self.is_lemma(rng) {
+                FeatureOrLemma::Complement(c, self.direction(rng))
+            } else {
+                FeatureOrLemma::Feature(Feature::Selector(c, self.direction(rng)))
+            }
         }
     }
 
@@ -531,13 +643,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                 | FeatureOrLemma::Feature(Feature::Selector(_, _)) => {
                     let n_children = self.n_children(rng);
                     for _ in 0..n_children {
-                        let is_lemma = self.is_lemma(rng);
-                        let feature = if is_lemma {
-                            let c = self.choose_category_for_feature(rng);
-                            FeatureOrLemma::Complement(c, self.direction(rng))
-                        } else {
-                            FeatureOrLemma::Feature(self.get_feature(rng))
-                        };
+                        let feature = self.get_feature(rng);
                         let child = self.lexicon.graph.add_node(feature);
                         self.lexicon
                             .graph
@@ -552,7 +658,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         let feature = if is_lemma {
                             FeatureOrLemma::Lemma(self.get_lemma(rng))
                         } else {
-                            FeatureOrLemma::Feature(self.get_feature(rng))
+                            self.get_feature(rng)
                         };
                         let child = self.lexicon.graph.add_node(feature);
                         self.lexicon
@@ -701,8 +807,6 @@ mod test {
     use rand_chacha::ChaCha8Rng;
 
     use super::*;
-    use crate::{Generator, ParsingConfig};
-    use petgraph::algo::connected_components;
 
     fn total_prob<T: Eq, C: Eq + Debug>(lex: &Lexicon<T, C>, node: NodeIndex) -> f64 {
         lex.graph
@@ -711,7 +815,7 @@ mod test {
             .log_sum_exp_float()
     }
 
-    fn validate_lexicon<T: Eq, C: Eq + Debug>(lex: &Lexicon<T, C>) {
+    fn validate_lexicon<T: Eq + Debug, C: Eq + Debug>(lex: &Lexicon<T, C>) {
         let mut found_leaves = AHashSet::default();
         let mut found_root = None;
 
@@ -723,9 +827,20 @@ mod test {
             let de_duped: Vec<_> = children
                 .iter()
                 .map(|&x| lex.graph.node_weight(x))
+                .filter(|x| !matches!(x.unwrap(), FeatureOrLemma::Lemma(_)))
                 .dedup()
                 .collect();
-            assert_eq!(de_duped.len(), children.len());
+
+            assert_eq!(
+                de_duped.len(),
+                children
+                    .iter()
+                    .filter(|&&a| !matches!(
+                        lex.graph.node_weight(a).unwrap(),
+                        FeatureOrLemma::Lemma(_)
+                    ))
+                    .count()
+            );
 
             match lex.graph.node_weight(node).unwrap() {
                 FeatureOrLemma::Root => {
@@ -766,7 +881,6 @@ mod test {
         let leaves: AHashSet<_> = lex.leaves.iter().copied().collect();
         assert_eq!(leaves, found_leaves);
         assert_eq!(leaves.len(), lex.leaves.len());
-        assert_eq!(connected_components(&lex.graph), 1);
     }
 
     #[test]
@@ -791,16 +905,9 @@ mod test {
     #[test]
     fn random_lexicon() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        for _ in 0..100 {
+        for _ in 0..1000 {
             let x = Lexicon::<_, usize>::random(&0, &["the", "dog", "runs"], None, &mut rng);
-            dbg!(&x);
-            println!("{}", x);
             validate_lexicon(&x);
-            let config = ParsingConfig::default();
-            Generator::new(x, 0, &config)?
-                .take(50)
-                .for_each(|(p, s, _)| println!("{:.2}: {}", p, s.join(" ")));
-            println!("_______________________________________________");
         }
         Ok(())
     }
@@ -809,16 +916,25 @@ mod test {
     fn random_redone_lexicon() -> anyhow::Result<()> {
         let mut main_rng = ChaCha8Rng::seed_from_u64(0);
         let lemmas = &["the", "dog", "runs"];
-        for _ in 0..100 {
+        for _ in 0..1000 {
             let mut rng = ChaCha8Rng::seed_from_u64(497);
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
-            println!("{}", lex);
             validate_lexicon(&lex);
-            println!("NEW VERSION");
             lex.resample_below_node(lemmas, None, &mut main_rng);
-            println!("{lex}");
             validate_lexicon(&lex);
-            println!("_______________________________________________");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn random_delete_feat() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..1000 {
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            validate_lexicon(&lex);
+            lex.delete_node(&mut rng);
+            validate_lexicon(&lex);
         }
         Ok(())
     }
@@ -827,14 +943,14 @@ mod test {
     fn random_change_feat() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let lemmas = &["the", "dog", "runs"];
-        for _ in 0..100 {
+        for _ in 0..1000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             println!("{}", lex);
             validate_lexicon(&lex);
             println!("NEW VERSION");
             lex.change_feature(lemmas, None, &mut rng);
-            println!("{lex}");
             validate_lexicon(&lex);
+            println!("{lex}");
             println!("_______________________________________________");
         }
         Ok(())

@@ -620,7 +620,7 @@ mod semantics;
 #[cfg(feature = "semantics")]
 pub use semantics::SemanticLexicon;
 
-mod mdl;
+pub mod mdl;
 pub mod mutations;
 
 #[cfg(test)]

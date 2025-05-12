@@ -352,6 +352,10 @@ where
                     }
                 }
             }
+
+            if matches!(self.graph[node], FeatureOrLemma::Lemma(_)) {
+                self.leaves.retain(|&a| a != node);
+            }
             self.graph.remove_node(node);
             self.clean_up();
         }
@@ -433,6 +437,12 @@ where
                         .edges_directed(child, Outgoing)
                         .map(|x| x.target()),
                 );
+                if matches!(
+                    self.graph.node_weight(child).unwrap(),
+                    FeatureOrLemma::Lemma(_)
+                ) {
+                    self.leaves.retain(|&x| x != child);
+                }
                 self.graph.remove_node(child);
             }
             self.clean_up();
@@ -511,17 +521,6 @@ where
                 }
             }
         }
-
-        self.leaves = self
-            .graph
-            .node_indices()
-            .filter(|x| {
-                matches!(
-                    self.graph.node_weight(*x).unwrap(),
-                    FeatureOrLemma::Lemma(_)
-                )
-            })
-            .collect();
     }
 }
 
@@ -664,7 +663,9 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         self.lexicon
                             .graph
                             .add_edge(node, child, LogProb::prob_of_one());
-                        if !is_lemma {
+                        if is_lemma {
+                            self.lexicon.leaves.push(child);
+                        } else {
                             stack.push(child);
                         }
                     }
@@ -679,6 +680,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         self.lexicon
                             .graph
                             .add_edge(node, child, LogProb::prob_of_one());
+                        self.lexicon.leaves.push(child);
                     }
                 }
             }

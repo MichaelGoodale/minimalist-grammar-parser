@@ -260,6 +260,32 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    pub fn delete_from_node(&mut self, rng: &mut impl Rng) {
+        if let Some(&node) = self
+            .graph
+            .node_indices()
+            .filter(|&nx| match self.graph.node_weight(nx).unwrap() {
+                FeatureOrLemma::Root => false,
+                _ => {
+                    let parent = self.parent_of(nx).unwrap();
+                    //We can only delete a branch if there's at least one sibling.
+                    self.children_of(parent).count() > 1
+                }
+            })
+            .collect::<Vec<_>>()
+            .choose(rng)
+        {
+            let parent = self.parent_of(node).unwrap();
+            let mut stack = vec![node];
+            while let Some(nx) = stack.pop() {
+                stack.extend(self.children_of(nx));
+                self.graph.remove_node(nx);
+            }
+            fix_weights_per_node(&mut self.graph, parent);
+            self.leaves.retain(|&x| self.graph.contains_node(x));
+        }
+    }
+
     pub fn delete_node(&mut self, rng: &mut impl Rng) -> Option<NodeIndex> {
         if let Some(&node) = self
             .graph
@@ -985,6 +1011,19 @@ mod test {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             validate_lexicon(&lex)?;
             lex.resample_below_node(lemmas, None, &mut main_rng);
+            validate_lexicon(&lex)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn random_delete_branch() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..1000 {
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            validate_lexicon(&lex)?;
+            lex.delete_from_node(&mut rng);
             validate_lexicon(&lex)?;
         }
         Ok(())

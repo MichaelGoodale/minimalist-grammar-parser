@@ -560,6 +560,8 @@ where
         };
         let s = history.get_mut(rule_id.0).unwrap();
         let state = &mut s.1;
+
+        //TODO: this paniced in some downstream code, see if you can find out why.
         let mut value = value.unwrap().0;
         value.expr.reduce().unwrap();
 

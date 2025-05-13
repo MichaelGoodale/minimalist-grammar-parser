@@ -771,9 +771,16 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
     }
 
     fn choose_category_for_category(&mut self, rng: &mut impl Rng) -> C {
+        if self.categories.is_empty() {
+            self.categories = vec![C::fresh(&self.licensee_features)];
+        }
         self.categories.choose(rng).cloned().unwrap()
     }
+
     fn choose_category_for_licensee(&mut self, rng: &mut impl Rng) -> C {
+        if self.licensee_features.is_empty() {
+            self.licensee_features = vec![C::fresh(&self.categories)];
+        }
         self.licensee_features.choose(rng).cloned().unwrap()
     }
 
@@ -887,10 +894,11 @@ mod test {
     fn validate_lexicon<T: Eq + Debug + Clone, C: Eq + Debug + Clone>(
         lex: &Lexicon<T, C>,
     ) -> anyhow::Result<()> {
+        let mut at_least_one_category = false;
         let mut found_leaves = AHashSet::default();
         let mut found_root = None;
-
         let mut stack = vec![(lex.root, Position::Root)];
+
         while let Some((nx, pos)) = stack.pop() {
             let children = lex.children_of(nx).collect::<Vec<_>>();
 
@@ -901,10 +909,14 @@ mod test {
             }
             for child in children {
                 let f = lex.graph.node_weight(child).unwrap();
+                if matches!(f, FeatureOrLemma::Feature(Feature::Category(_))) {
+                    at_least_one_category = true;
+                }
                 let next_pos = pos.next_pos(f)?;
                 stack.push((child, next_pos))
             }
         }
+        assert!(at_least_one_category);
 
         for node in lex.graph.node_indices() {
             let mut parent_iter = lex.graph.neighbors_directed(node, Incoming);
@@ -1020,7 +1032,7 @@ mod test {
     fn random_delete_branch() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let lemmas = &["the", "dog", "runs"];
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             validate_lexicon(&lex)?;
             lex.delete_from_node(&mut rng);
@@ -1033,7 +1045,7 @@ mod test {
     fn random_delete_feat() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let lemmas = &["the", "dog", "runs"];
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             validate_lexicon(&lex)?;
             lex.delete_node(&mut rng);
@@ -1046,7 +1058,7 @@ mod test {
     fn random_change_feat() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let lemmas = &["the", "dog", "runs"];
-        for _ in 0..1000 {
+        for _ in 0..10000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             println!("{}", lex);
             validate_lexicon(&lex)?;

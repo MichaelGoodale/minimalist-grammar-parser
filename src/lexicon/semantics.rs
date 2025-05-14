@@ -95,11 +95,15 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         &mut self.lexicon
     }
 
-    pub fn interpretation_mut(&mut self) -> &mut HashMap<NodeIndex, RootedLambdaPool<Expr>> {
+    pub fn interpretations(&self) -> &HashMap<NodeIndex, RootedLambdaPool<Expr>> {
+        &self.semantic_entries
+    }
+
+    pub fn interpretations_mut(&mut self) -> &mut HashMap<NodeIndex, RootedLambdaPool<Expr>> {
         &mut self.semantic_entries
     }
 
-    pub fn lexicon_and_interpretation_mut(
+    pub fn lexicon_and_interpretations_mut(
         &mut self,
     ) -> (
         &mut Lexicon<T, C>,

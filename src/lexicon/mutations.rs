@@ -4,6 +4,7 @@ use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::{AHashMap, AHashSet, HashMap};
+use anyhow::bail;
 use itertools::Itertools;
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
@@ -342,6 +343,29 @@ where
         }else{
             None
         }
+    }
+
+    pub fn delete_lexeme(&mut self, leaf: NodeIndex) -> anyhow::Result<()> {
+        if !self.leaves.contains(&leaf) {
+            bail!("{leaf:?} is not a leaf!");
+        }
+        if self.leaves.len() == 1 {
+            bail!("Deleting the only lexeme will make an invalid grammar");
+        }
+
+        let mut next_node = Some(leaf);
+        while let Some(node) = next_node {
+            if self.n_children(node) == 0 {
+                next_node = self.parent_of(node);
+                self.graph.remove_node(node);
+            } else {
+                fix_weights_per_node(&mut self.graph, node);
+                next_node = None;
+            }
+        }
+        self.leaves.retain(|x| x != &leaf);
+
+        Ok(())
     }
 
     pub fn delete_from_node(&mut self, rng: &mut impl Rng) {
@@ -1190,6 +1214,40 @@ mod test {
             let unified_lexemes: HashSet<_> = a.lexemes()?.into_iter().collect();
 
             assert_eq!(lexemes, unified_lexemes);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delete_lexeme() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..100 {
+            let a = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            let lexemes_and_leaves: HashSet<_> = a
+                .lexemes()?
+                .into_iter()
+                .zip(a.leaves.iter().copied())
+                .collect();
+
+            if lexemes_and_leaves.len() > 1 {
+                validate_lexicon(&a)?;
+                for (lexeme, leaf) in lexemes_and_leaves.clone() {
+                    println!("Deleting {lexeme} from ({a})");
+                    let mut a = a.clone();
+                    a.delete_lexeme(leaf)?;
+                    validate_lexicon(&a)?;
+
+                    let new_lexemes: HashSet<_> = a
+                        .lexemes()?
+                        .into_iter()
+                        .zip(a.leaves.iter().copied())
+                        .collect();
+                    let mut old_lexemes: HashSet<_> = lexemes_and_leaves.clone();
+                    old_lexemes.remove(&(lexeme, leaf));
+                    assert_eq!(new_lexemes, old_lexemes);
+                }
+            }
         }
         Ok(())
     }

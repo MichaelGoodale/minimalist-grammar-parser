@@ -264,9 +264,9 @@ pub struct NewLexeme {
     pub sibling: NodeIndex,
 }
 
-struct NodeDetails {
-    other_node: NodeIndex,
-    this_node: NodeIndex,
+pub struct NodeDetails {
+    pub other_node: NodeIndex,
+    pub this_node: NodeIndex,
 }
 
 impl<T, C> Lexicon<T, C>
@@ -274,7 +274,8 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
-    pub fn unify(&mut self, other: &Self) -> Vec<NodeIndex> {
+    ///Combines two lexicons and returns a vector of the novel leaves
+    pub fn unify(&mut self, other: &Self) -> Vec<NodeDetails> {
         let mut new_leaves = vec![];
         let mut stack = vec![NodeDetails {
             other_node: other.root,
@@ -302,12 +303,15 @@ where
                     Entry::Vacant(vacant_entry) => {
                         let this_child = self.graph.add_node(weight.clone());
                         self.graph.add_edge(this_node, this_child, *child_prob);
+                        vacant_entry.insert(this_child);
                         if matches!(weight, FeatureOrLemma::Lemma(_)) {
                             self.leaves.push(this_child);
-                            new_leaves.push(this_child);
+                            new_leaves.push(NodeDetails {
+                                other_node: other_child,
+                                this_node: this_child,
+                            });
                         }
 
-                        vacant_entry.insert(this_child);
                         this_child
                     }
                 };

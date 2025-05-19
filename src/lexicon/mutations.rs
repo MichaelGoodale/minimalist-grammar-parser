@@ -263,7 +263,7 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
-    pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) {
+    pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) -> Option<NodeIndex> {
         if let Some(&leaf) = self
             .leaves
             .iter()
@@ -275,6 +275,9 @@ where
             self.graph.add_edge(parent, node, LogProb::prob_of_one());
             fix_weights_per_node(&mut self.graph, parent);
             self.leaves.push(node);
+            Some(leaf)
+        }else{
+            None
         }
     }
 

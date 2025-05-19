@@ -1,9 +1,9 @@
-use std::{f64::consts::LN_2, fmt::Debug, hash::Hash};
+use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Hash};
 
 use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
-use ahash::{AHashMap, AHashSet};
+use ahash::{AHashMap, AHashSet, HashMap};
 use itertools::Itertools;
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
@@ -264,11 +264,64 @@ pub struct NewLexeme {
     pub sibling: NodeIndex,
 }
 
+struct NodeDetails {
+    other_node: NodeIndex,
+    this_node: NodeIndex,
+}
+
 impl<T, C> Lexicon<T, C>
 where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    pub fn unify(&mut self, other: &Self) -> Vec<NodeIndex> {
+        let mut new_leaves = vec![];
+        let mut stack = vec![NodeDetails {
+            other_node: other.root,
+            this_node: self.root,
+        }];
+
+        while let Some(NodeDetails {
+            other_node,
+            this_node,
+        }) = stack.pop()
+        {
+            let mut this_children: HashMap<FeatureOrLemma<T, C>, _> = self
+                .children_of(this_node)
+                .map(|v| (self.graph.node_weight(v).unwrap().clone(), v))
+                .collect();
+            for (other_child, child_prob) in other
+                .graph
+                .edges_directed(other_node, Outgoing)
+                .map(|x| (x.target(), x.weight()))
+            {
+                let weight = other.graph.node_weight(other_child).unwrap();
+
+                let this_child = match this_children.entry(weight.clone()) {
+                    Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+                    Entry::Vacant(vacant_entry) => {
+                        let this_child = self.graph.add_node(weight.clone());
+                        self.graph.add_edge(this_node, this_child, *child_prob);
+                        if matches!(weight, FeatureOrLemma::Lemma(_)) {
+                            self.leaves.push(this_child);
+                            new_leaves.push(this_child);
+                        }
+
+                        vacant_entry.insert(this_child);
+                        this_child
+                    }
+                };
+
+                stack.push(NodeDetails {
+                    other_node: other_child,
+                    this_node: this_child,
+                });
+            }
+        }
+        fix_weights(&mut self.graph);
+        new_leaves
+    }
+
     pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) -> Option<NewLexeme> {
         if let Some(&leaf) = self
             .leaves
@@ -375,10 +428,10 @@ where
                         for (child, w) in complement_edges {
                             self.graph.add_edge(parent, child, w);
                         }
-                        self.graph[parent].into_complement();
+                        self.graph[parent].to_complement_mut();
                     } else {
                         let mut f = self.graph[parent].clone();
-                        f.into_complement();
+                        f.to_complement_mut();
                         let alt_parent = self.graph.add_node(f);
                         let grand_parent = self.parent_of(parent).unwrap();
                         let parent_e = self
@@ -861,6 +914,7 @@ struct LexicalProbs<'a, 'b, 'c, T: Eq, C: Eq> {
 
 #[cfg(test)]
 mod test {
+    use ahash::HashSet;
     use anyhow::bail;
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -1106,6 +1160,32 @@ mod test {
             validate_lexicon(&lex)?;
             println!("{lex}");
             println!("_______________________________________________");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn random_unify() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..100 {
+            let mut a = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            let b = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+
+            let lexemes: HashSet<_> = a
+                .lexemes()?
+                .into_iter()
+                .chain(b.lexemes()?.into_iter())
+                .collect();
+
+            validate_lexicon(&a)?;
+            validate_lexicon(&b)?;
+            a.unify(&b);
+            validate_lexicon(&a)?;
+
+            let unified_lexemes: HashSet<_> = a.lexemes()?.into_iter().collect();
+
+            assert_eq!(lexemes, unified_lexemes);
         }
         Ok(())
     }

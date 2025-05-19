@@ -108,7 +108,7 @@ pub enum FeatureOrLemma<T: Eq, Category: Eq> {
 }
 
 impl<T: Eq, C: Eq + Clone> FeatureOrLemma<T, C> {
-    fn into_complement(&mut self) {
+    fn to_complement_mut(&mut self) {
         if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = self {
             *self = FeatureOrLemma::Complement(c.clone(), *d);
         }

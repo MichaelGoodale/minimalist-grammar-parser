@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
-use anyhow::Context;
 use itertools::Itertools;
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},

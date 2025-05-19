@@ -164,14 +164,8 @@ where
 }
 #[cfg(test)]
 mod test {
-    use chumsky::{Parser as ChumskyParser, extra};
     use itertools::Itertools;
     use logprob::LogProb;
-    use simple_semantics::{
-        LabelledScenarios,
-        lambda::{LambdaExpr, RootedLambdaPool},
-        lot_parser,
-    };
 
     use super::SemanticLexicon;
     use crate::{Generator, Parser, ParsingConfig};

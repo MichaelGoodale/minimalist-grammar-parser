@@ -93,17 +93,13 @@ impl SemanticHistory {
         }
     }
 
-    pub fn into_rich<T, C>(
-        self,
-        lexicon: &SemanticLexicon<T, C>,
-        rules: &RulePool,
-    ) -> anyhow::Result<Self>
+    pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<T, C>, rules: &RulePool) -> Self
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
         match self {
-            SemanticHistory::Rich(items) => Ok(SemanticHistory::Rich(items)),
+            SemanticHistory::Rich(items) => SemanticHistory::Rich(items),
             SemanticHistory::Simple(semantic_rules) => {
                 let mut items = semantic_rules.into_iter().map(|x| (x, None)).collect_vec();
 
@@ -113,9 +109,9 @@ impl SemanticHistory {
                     semantic_history: vec![],
                 };
 
-                derivation.redo_history(RuleIndex(0), &mut items)?;
+                derivation.redo_history(RuleIndex(0), &mut items);
 
-                Ok(SemanticHistory::Rich(items))
+                SemanticHistory::Rich(items)
             }
         }
     }
@@ -489,14 +485,14 @@ where
         &mut self,
         rule_id: RuleIndex,
         history: &mut [(SemanticRule, Option<SemanticState>)],
-    ) -> anyhow::Result<()> {
+    ) {
         let rule = *self.rules.get(rule_id);
         let semantic_rule = history.get(rule_id.0).unwrap().0;
         let children: Vec<_> = self.rules.children(rule_id).collect();
-        for child in children.iter() {
-            self.redo_history(*child, history)?;
-        }
 
+        for child in children.iter() {
+            self.redo_history(*child, history);
+        }
         let get_child = |i: usize| {
             (
                 history
@@ -548,7 +544,7 @@ where
                 Some(self.update_trace(rule_id, child, old_trace_id, trace_id.unwrap()))
             }
             SemanticRule::Trace => {
-                return Ok(());
+                return;
             }
             SemanticRule::Scan => {
                 let node = match rule {
@@ -563,16 +559,15 @@ where
                 ))
             }
         };
+
         let s = history.get_mut(rule_id.0).unwrap();
         let state = &mut s.1;
 
         //TODO: this paniced in some downstream code, see if you can find out why.
-        let mut value = value.context("Can't unwrap!")?.0;
+        let mut value = value.unwrap().0;
         value.expr.reduce().unwrap();
 
         *state = Some(value);
-
-        Ok(())
     }
 }
 

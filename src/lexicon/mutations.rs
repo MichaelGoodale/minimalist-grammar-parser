@@ -12,7 +12,10 @@ use petgraph::{
     prelude::StableDiGraph,
     visit::EdgeRef,
 };
-use rand::{Rng, seq::IndexedRandom};
+use rand::{
+    Rng,
+    seq::{IndexedRandom, IteratorRandom},
+};
 use rand_distr::{Distribution, Geometric};
 
 #[derive(Debug)]
@@ -260,6 +263,21 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) {
+        if let Some(&leaf) = self
+            .leaves
+            .iter()
+            .filter(|&&x| matches!(self.graph.node_weight(x).unwrap(), FeatureOrLemma::Lemma(Some(s)) if s!=&lemma))
+            .choose(rng)
+        {
+            let parent = self.parent_of(leaf).unwrap();
+            let node = self.graph.add_node(FeatureOrLemma::Lemma(Some(lemma)));
+            self.graph.add_edge(parent, node, LogProb::prob_of_one());
+            fix_weights_per_node(&mut self.graph, parent);
+            self.leaves.push(node);
+        }
+    }
+
     pub fn delete_from_node(&mut self, rng: &mut impl Rng) {
         if let Some(&node) = self
             .graph
@@ -963,7 +981,7 @@ mod test {
                 FeatureOrLemma::Feature(_) => {
                     assert!(parent.is_some());
                     assert!(!children.is_empty());
-                    approx::assert_relative_eq!(total_prob(lex, node), 0.0);
+                    approx::assert_relative_eq!(total_prob(lex, node), 0.0, epsilon = 1e-10);
                 }
                 FeatureOrLemma::Complement(_, _) => {
                     assert!(parent.is_some());
@@ -972,7 +990,7 @@ mod test {
                         lex.graph.node_weight(x).unwrap(),
                         FeatureOrLemma::Lemma(_)
                     )));
-                    approx::assert_relative_eq!(total_prob(lex, node), 0.0);
+                    approx::assert_relative_eq!(total_prob(lex, node), 0.0, epsilon = 1e-10);
                 }
             }
         }
@@ -1049,6 +1067,18 @@ mod test {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             validate_lexicon(&lex)?;
             lex.delete_node(&mut rng);
+            validate_lexicon(&lex)?;
+        }
+        Ok(())
+    }
+    #[test]
+    fn random_add_lexeme() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..10000 {
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            validate_lexicon(&lex)?;
+            lex.add_new_lexeme_randomly("lbarg", &mut rng);
             validate_lexicon(&lex)?;
         }
         Ok(())

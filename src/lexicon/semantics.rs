@@ -33,7 +33,7 @@ impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
 fn semantic_grammar_parser<'src>() -> impl Parser<
     'src,
     &'src str,
-    SemanticLexicon<&'src str, &'src str>,
+    anyhow::Result<SemanticLexicon<&'src str, &'src str>>,
     extra::Full<Rich<'src, char>, extra::SimpleState<LabelledScenarios>, ()>,
 > {
     entry_parser::<extra::Full<Rich<char>, extra::SimpleState<LabelledScenarios>, ()>>()
@@ -48,13 +48,13 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
             let lexicon = Lexicon::new(lexical_entries);
             let mut semantic_entries = HashMap::default();
             for (leaf, entry) in lexicon.leaves.iter().zip(interpretations.into_iter()) {
-                semantic_entries.insert(*leaf, entry);
+                semantic_entries.insert(*leaf, entry?);
             }
 
-            SemanticLexicon {
+            Ok(SemanticLexicon {
                 lexicon,
                 semantic_entries,
-            }
+            })
         })
         .then_ignore(end())
 }
@@ -74,7 +74,7 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
                             .collect::<Vec<_>>()
                             .join("\n"),
                     )
-                })?,
+                })??,
             state.0,
         ))
     }
@@ -178,7 +178,7 @@ mod test {
             100,
             1000,
         );
-        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e))))";
+        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, x) & PatientOf(e,y) & pe_likes(e))))";
         let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
 
         let (_, _, rules) =
@@ -188,7 +188,7 @@ mod test {
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
-            "some(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & p0(x)))",
+            "some_e(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & pe0(x)))",
             interpretation.to_string()
         );
 
@@ -206,7 +206,7 @@ mod test {
             println!("{latex}");
             assert_eq!(
                 latex,
-                "\\begin{forest}\n[{\\semder{v}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& p0(x)))))}} } ]\n\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ]\n\\end{forest}"
+                "\\begin{forest}\n[{\\semder{v}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& pe0(x))))}} }\n\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{a}$}x\\_l ({$\\lambda_{a}$}y\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& pe0(x)))))}} } ]\n\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ]\n\\end{forest}"
             );
         }
         Ok(())
@@ -220,9 +220,9 @@ mod test {
             100,
             1000,
         );
-        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, x) & PatientOf(e,y) & p_likes(e))))";
+        let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, x) & PatientOf(e,y) & pe_likes(e))))";
         let lexicon = format!(
-            "{}\n::=v c::lambda t phi (phi)\n::v= +wh c::lambda t phi (phi)\nknows::c= =d v::lambda <e,t> P (lambda e x (P(x)))\nwho::d -wh::lambda <e,t> P (P)",
+            "{}\n::=v c::lambda t phi (phi)\n::v= +wh c::lambda t phi (phi)\nknows::c= =d v::lambda <a,t> P (lambda a x (P(x)))\nwho::d -wh::lambda <a,t> P (P)",
             lexicon
         );
         let (semantic, _scenario) = SemanticLexicon::parse(&lexicon)?;
@@ -240,7 +240,7 @@ mod test {
         let interpretation = interpretation.into_pool()?;
         assert_eq!(
             interpretation.to_string(),
-            "some(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & p0(x)))",
+            "some_e(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & pe0(x)))",
         );
         #[cfg(feature = "pretty")]
         {
@@ -257,7 +257,7 @@ mod test {
             println!("{latex}");
             assert_eq!(
                 latex,
-                "\\begin{forest}\n[{\\semder{c}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t[{\\semder{\\cancel{v}}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& p0(x)))}} }\n\t\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t[{\\semlex{knows}{\\cancel{c=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l ({$\\lambda_{e}$}y\\_l ((x\\_l)(y\\_l)))}} } ]\n\t\t\t[{\\semder{\\cancel{c}}{\\semanticRule[ApplyFromStorage]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{\\semanticRule[FA]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& p0(x)))}} }\n\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +wh c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{\\semanticRule[Store]{some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& p0(x)))}} }\n\t\t\t\t\t\t[{\\semlex{who}{\\cancel{d} -wh}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (x\\_l)}} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& p0(x))))}} }\n\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& p0(x)))))}} } ]\n\t\t\t\t\t\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ] ] ] ] ]\n\t[{\\semlex{$\\epsilon$}{\\cancel{=v} c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
+                "\\begin{forest}\n[{\\semder{c}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t[{\\semder{\\cancel{v}}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& pe0(x))))}} }\n\t\t\t[{\\semlex{knows}{\\cancel{c=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x\\_l ({$\\lambda_{a}$}y\\_l ((x\\_l)(y\\_l)))}} } ]\n\t\t\t[{\\semder{\\cancel{c}}{\\semanticRule[ApplyFromStorage]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& pe0(x))))}} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& pe0(x)))}} }\n\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +wh c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{\\semanticRule[Store]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0\\_f)) \\& pe0(x)))}} }\n\t\t\t\t\t\t[{\\semlex{who}{\\cancel{d} -wh}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x\\_l (x\\_l)}} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& pe0(x))))}} }\n\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{a}$}x\\_l ({$\\lambda_{a}$}y\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& pe0(x)))))}} } ]\n\t\t\t\t\t\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ] ] ] ] ]\n\t[{\\semlex{$\\epsilon$}{\\cancel{=v} c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
             );
         }
         Ok(())
@@ -272,11 +272,11 @@ mod test {
             1000,
         );
         let lexical = [
-            "everyone::d -k -q::lambda <e,t> P (every(x, all_a, P(x)))",
-            "someone::d -k -q::lambda <e,t> P (some(x, all_a, P(x)))",
-            "likes::d= V::lambda e x (lambda e y (some(e, all_e, AgentOf(e, y)&p_likes(e)&PatientOf(e, x))))",
+            "everyone::d -k -q::lambda <a,t> P (every(x, all_a, P(x)))",
+            "someone::d -k -q::lambda <a,t> P (some(x, all_a, P(x)))",
+            "likes::d= V::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, y)&pe_likes(e)&PatientOf(e, x))))",
             "::v= +k +q t::lambda t x (x)",
-            "::V= +k d= +q v::lambda <e,t> p (p)",
+            "::V= +k d= +q v::lambda <a,t> p (p)",
         ];
 
         let lexicon = lexical.join("\n");
@@ -298,21 +298,21 @@ mod test {
         }
         assert_eq!(
             vec![
-                "someone someone likes\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "someone everyone likes\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "everyone everyone likes\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "everyone someone likes\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))"
+                "someone someone likes\nsome(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "someone everyone likes\nsome(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "everyone everyone likes\nevery(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "everyone someone likes\nevery(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))"
             ],
             v
         );
         println!("sov good");
 
         let lexical = [
-            "everyone::d -k -q::lambda <e,t> P (every(x, all_a, P(x)))",
-            "someone::d -k -q::lambda <e,t> P (some(x, all_a, P(x)))",
-            "likes::d= V -v::lambda e x (lambda e y (some(e, all_e, AgentOf(e, y)&p_likes(e)&PatientOf(e, x))))",
+            "everyone::d -k -q::lambda <a,t> P (every(x, all_a, P(x)))",
+            "someone::d -k -q::lambda <a,t> P (some(x, all_a, P(x)))",
+            "likes::d= V -v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, y)&pe_likes(e)&PatientOf(e, x))))",
             "::v= +v +k +q t::lambda t x (x)",
-            "::V= +k d= +q v::lambda <e,t> p (p)",
+            "::V= +k d= +q v::lambda <a,t> p (p)",
         ];
 
         let lexicon = lexical.join("\n");
@@ -334,10 +334,10 @@ mod test {
         }
         assert_eq!(
             vec![
-                "everyone likes someone\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "everyone likes everyone\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "someone likes everyone\nsome(x,all_a,every(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
-                "someone likes someone\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,x) & p0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some(z,all_e,((AgentOf(z,y) & p0(z)) & PatientOf(z,x)))))",
+                "everyone likes someone\nevery(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nsome(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "everyone likes everyone\nevery(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nevery(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "someone likes everyone\nsome(x,all_a,every(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nevery(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
+                "someone likes someone\nsome(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,x) & pe0(z)) & PatientOf(z,y)))))\nsome(x,all_a,some(y,all_a,some_e(z,all_e,((AgentOf(z,y) & pe0(z)) & PatientOf(z,x)))))",
             ],
             v
         );
@@ -367,7 +367,7 @@ mod test {
             println!("{latex}");
             assert_eq!(
                 latex,
-                "\\begin{forest}\n[{\\semder{t}{\\semanticRule[ApplyFromStorage]{every(x,all\\_a,some(y,all\\_a,some(z,all\\_e,((AgentOf(z,x) \\& p0(z)) \\& PatientOf(z,y)))))}} }\n\t[{$t0$},name=node0 ]\n\t[{\\semder[{\\mover{\\cancel{-q}}{0}}]{\\cancel{+q} t}{\\semanticRule[UpdateTrace]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,0\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{1}}]{\\cancel{+k} +q t}{\\semanticRule[Id]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t[{$t3$},name=node2 ]\n\t\t\t[{\\semder[{\\mover{\\cancel{-v}}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+v} +k +q t}{\\semanticRule[FA]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +v +k +q t}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t[{\\semder[{\\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{v}}{\\semanticRule[ApplyFromStorage]{some(x,all\\_a,some(y,all\\_e,((AgentOf(y,1\\_f) \\& p0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t\t[{$t2$},name=node3 ]\n\t\t\t\t\t[{\\semder[{\\mover{\\cancel{-q}}{2}, \\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+q} v}{\\semanticRule[Store]{some(x,all\\_e,((AgentOf(x,1\\_f) \\& p0(x)) \\& PatientOf(x,2\\_f)))}} }\n\t\t\t\t\t\t[{\\semder[{\\mover{-q}{2}, \\mover{-v}{3}}]{\\cancel{d=} +q v}{\\semanticRule[UpdateTrace]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,2\\_f))))}} }\n\t\t\t\t\t\t\t[{$t4$},name=node5 ]\n\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{4}, \\mover{-v}{3}}]{\\cancel{+k} d= +q v}{\\semanticRule[FA]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,4\\_f))))}} }\n\t\t\t\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{V=} +k d= +q v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{-k}{4}}]{\\cancel{V} -v}{\\semanticRule[Store]{{$\\lambda_{e}$}x\\_l (some(x,all\\_e,((AgentOf(x,x\\_l) \\& p0(x)) \\& PatientOf(x,4\\_f))))}} },name=node8\n\t\t\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} V -v}{\\semanticRule[LexicalEntry]{{$\\lambda_{e}$}x\\_l ({$\\lambda_{e}$}y\\_l (some(x,all\\_e,((AgentOf(x,y\\_l) \\& p0(x)) \\& PatientOf(x,x\\_l)))))}} } ]\n\t\t\t\t\t\t\t\t\t[{\\semlex{someone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (some(x,all\\_a,(x\\_l)(x)))}} },name=node6 ] ] ] ]\n\t\t\t\t\t\t[{\\semlex{everyone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle e,t\\right\\rangle }$}x\\_l (every(x,all\\_a,(x\\_l)(x)))}} },name=node4 ] ] ] ] ] ] ]\n\\draw[densely dotted,->] (node1) to[out=west,in=south west] (node0);\n\\draw[densely dotted,->] (node4) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node8) to[out=west,in=south west] (node2);\n\\end{forest}"
+                "\\begin{forest}\n[{\\semder{t}{\\semanticRule[ApplyFromStorage]{every(x,all\\_a,some(y,all\\_a,some\\_e(z,all\\_e,((AgentOf(z,x) \\& pe0(z)) \\& PatientOf(z,y)))))}} }\n\t[{$t0$},name=node0 ]\n\t[{\\semder[{\\mover{\\cancel{-q}}{0}}]{\\cancel{+q} t}{\\semanticRule[UpdateTrace]{some(x,all\\_a,some\\_e(y,all\\_e,((AgentOf(y,0\\_f) \\& pe0(y)) \\& PatientOf(y,x))))}} }\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{1}}]{\\cancel{+k} +q t}{\\semanticRule[Id]{some(x,all\\_a,some\\_e(y,all\\_e,((AgentOf(y,1\\_f) \\& pe0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t[{$t3$},name=node2 ]\n\t\t\t[{\\semder[{\\mover{\\cancel{-v}}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+v} +k +q t}{\\semanticRule[FA]{some(x,all\\_a,some\\_e(y,all\\_e,((AgentOf(y,1\\_f) \\& pe0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +v +k +q t}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x\\_l (x\\_l)}} } ]\n\t\t\t\t[{\\semder[{\\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{v}}{\\semanticRule[ApplyFromStorage]{some(x,all\\_a,some\\_e(y,all\\_e,((AgentOf(y,1\\_f) \\& pe0(y)) \\& PatientOf(y,x))))}} }\n\t\t\t\t\t[{$t2$},name=node3 ]\n\t\t\t\t\t[{\\semder[{\\mover{\\cancel{-q}}{2}, \\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+q} v}{\\semanticRule[Store]{some\\_e(x,all\\_e,((AgentOf(x,1\\_f) \\& pe0(x)) \\& PatientOf(x,2\\_f)))}} }\n\t\t\t\t\t\t[{\\semder[{\\mover{-q}{2}, \\mover{-v}{3}}]{\\cancel{d=} +q v}{\\semanticRule[UpdateTrace]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& pe0(x)) \\& PatientOf(x,2\\_f))))}} }\n\t\t\t\t\t\t\t[{$t4$},name=node5 ]\n\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{\\cancel{-k}}{4}, \\mover{-v}{3}}]{\\cancel{+k} d= +q v}{\\semanticRule[FA]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& pe0(x)) \\& PatientOf(x,4\\_f))))}} }\n\t\t\t\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{V=} +k d= +q v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x\\_l (x\\_l)}} } ]\n\t\t\t\t\t\t\t\t[{\\semder[{\\mover[{-q}]{-k}{4}}]{\\cancel{V} -v}{\\semanticRule[Store]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& pe0(x)) \\& PatientOf(x,4\\_f))))}} },name=node8\n\t\t\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} V -v}{\\semanticRule[LexicalEntry]{{$\\lambda_{a}$}x\\_l ({$\\lambda_{a}$}y\\_l (some\\_e(x,all\\_e,((AgentOf(x,y\\_l) \\& pe0(x)) \\& PatientOf(x,x\\_l)))))}} } ]\n\t\t\t\t\t\t\t\t\t[{\\semlex{someone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x\\_l (some(x,all\\_a,(x\\_l)(x)))}} },name=node6 ] ] ] ]\n\t\t\t\t\t\t[{\\semlex{everyone}{\\cancel{d} -k -q}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x\\_l (every(x,all\\_a,(x\\_l)(x)))}} },name=node4 ] ] ] ] ] ] ]\n\\draw[densely dotted,->] (node1) to[out=west,in=south west] (node0);\n\\draw[densely dotted,->] (node4) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node8) to[out=west,in=south west] (node2);\n\\end{forest}"
             );
         }
         Ok(())

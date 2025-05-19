@@ -166,7 +166,7 @@ impl Default for PartialRulePool {
 pub struct RulePool(Vec<Rule>);
 
 #[cfg(feature = "semantics")]
-mod semantics;
+pub mod semantics;
 
 impl RulePool {
     #[cfg(any(feature = "pretty", feature = "semantics"))]

@@ -201,7 +201,7 @@ mod test {
                 "\\begin{forest}\n[{\\rulesemder{v}{FA} }\n\t[{\\plainlex{john}{\\cancel{d}} } ]\n\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t[{\\plainlex{likes}{\\cancel{d=} =d v} } ]\n\t\t[{\\plainlex{mary}{\\cancel{d}} } ] ] ]\n\\end{forest}"
             );
 
-            history = history.into_rich(&semantic, &rules);
+            history = history.into_rich(&semantic, &rules)?;
             let latex = rules.to_semantic_latex(&semantic, &history);
             println!("{latex}");
             assert_eq!(
@@ -252,7 +252,7 @@ mod test {
                 "\\begin{forest}\n[{\\rulesemder{c}{FA} }\n\t[{\\rulesemder{\\cancel{v}}{FA} }\n\t\t[{\\plainlex{john}{\\cancel{d}} } ]\n\t\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t\t[{\\plainlex{knows}{\\cancel{c=} =d v} } ]\n\t\t\t[{\\rulesemder{\\cancel{c}}{ApplyFromStorage} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\rulesemder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{FA} }\n\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{v=} +wh c} } ]\n\t\t\t\t\t[{\\rulesemder[{\\mover{-wh}{0}}]{\\cancel{v}}{Store} }\n\t\t\t\t\t\t[{\\plainlex{who}{\\cancel{d} -wh} },name=node2 ]\n\t\t\t\t\t\t[{\\rulesemder{\\cancel{=d} v}{FA} }\n\t\t\t\t\t\t\t[{\\plainlex{likes}{\\cancel{d=} =d v} } ]\n\t\t\t\t\t\t\t[{\\plainlex{mary}{\\cancel{d}} } ] ] ] ] ] ] ]\n\t[{\\plainlex{$\\epsilon$}{\\cancel{=v} c} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
             );
 
-            history = history.into_rich(&semantic, &rules);
+            history = history.into_rich(&semantic, &rules)?;
             let latex = rules.to_semantic_latex(&semantic, &history);
             println!("{latex}");
             assert_eq!(
@@ -362,7 +362,7 @@ mod test {
                 "\\begin{forest}\n[{\\rulesemder{t}{ApplyFromStorage} }\n\t[{$t0$},name=node0 ]\n\t[{\\rulesemder[{\\mover{\\cancel{-q}}{0}}]{\\cancel{+q} t}{UpdateTrace} }\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\rulesemder[{\\mover[{-q}]{\\cancel{-k}}{1}}]{\\cancel{+k} +q t}{Id} }\n\t\t\t[{$t3$},name=node2 ]\n\t\t\t[{\\rulesemder[{\\mover{\\cancel{-v}}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+v} +k +q t}{FA} }\n\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{v=} +v +k +q t} } ]\n\t\t\t\t[{\\rulesemder[{\\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{v}}{ApplyFromStorage} }\n\t\t\t\t\t[{$t2$},name=node3 ]\n\t\t\t\t\t[{\\rulesemder[{\\mover{\\cancel{-q}}{2}, \\mover{-v}{3}, \\mover[{-q}]{-k}{1}}]{\\cancel{+q} v}{Store} }\n\t\t\t\t\t\t[{\\rulesemder[{\\mover{-q}{2}, \\mover{-v}{3}}]{\\cancel{d=} +q v}{UpdateTrace} }\n\t\t\t\t\t\t\t[{$t4$},name=node5 ]\n\t\t\t\t\t\t\t[{\\rulesemder[{\\mover[{-q}]{\\cancel{-k}}{4}, \\mover{-v}{3}}]{\\cancel{+k} d= +q v}{FA} }\n\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +k d= +q v} } ]\n\t\t\t\t\t\t\t\t[{\\rulesemder[{\\mover[{-q}]{-k}{4}}]{\\cancel{V} -v}{Store} },name=node8\n\t\t\t\t\t\t\t\t\t[{\\plainlex{likes}{\\cancel{d=} V -v} } ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{someone}{\\cancel{d} -k -q} },name=node6 ] ] ] ]\n\t\t\t\t\t\t[{\\plainlex{everyone}{\\cancel{d} -k -q} },name=node4 ] ] ] ] ] ] ]\n\\draw[densely dotted,->] (node1) to[out=west,in=south west] (node0);\n\\draw[densely dotted,->] (node4) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node8) to[out=west,in=south west] (node2);\n\\end{forest}"
             );
 
-            history = history.into_rich(&lex, &rules);
+            history = history.into_rich(&lex, &rules)?;
             let latex = rules.to_semantic_latex(&lex, &history);
             println!("{latex}");
             assert_eq!(

@@ -275,6 +275,13 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    pub fn uniform_distribution(&mut self) {
+        for e in self.graph.edge_weights_mut() {
+            *e = LogProb::prob_of_one();
+        }
+        fix_weights(&mut self.graph);
+    }
+
     ///Combines two lexicons and returns a vector of the novel leaves
     pub fn unify(&mut self, other: &Self) -> Vec<NodeDetails> {
         let mut new_leaves = vec![];
@@ -1214,6 +1221,21 @@ mod test {
             let unified_lexemes: HashSet<_> = a.lexemes()?.into_iter().collect();
 
             assert_eq!(lexemes, unified_lexemes);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn uniform_distribution() -> anyhow::Result<()> {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lemmas = &["the", "dog", "runs"];
+        for _ in 0..100 {
+            let mut a = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            let b = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+
+            a.unify(&b);
+            a.uniform_distribution();
+            validate_lexicon(&a)?;
         }
         Ok(())
     }

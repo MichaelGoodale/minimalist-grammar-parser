@@ -9,8 +9,7 @@ use itertools::Itertools;
 use simple_semantics::LabelledScenarios;
 use simple_semantics::LanguageExpression;
 use simple_semantics::lambda::RootedLambdaPool;
-use simple_semantics::language::Expr;
-use simple_semantics::lot_parser;
+use simple_semantics::language::{Expr, lot_parser};
 
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<T: Eq, Category: Eq> {
@@ -38,7 +37,11 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
 > {
     entry_parser::<extra::Full<Rich<char>, extra::SimpleState<LabelledScenarios>, ()>>()
         .then_ignore(just("::").padded())
-        .then(lot_parser().labelled("LOT expression"))
+        .then(
+            lot_parser::<extra::Full<_, extra::SimpleState<_>, ()>>()
+                .map_with(|x, e| x.to_pool(e.state()))
+                .labelled("LOT expression"),
+        )
         .separated_by(newline())
         .collect::<Vec<_>>()
         .map(|vec| {

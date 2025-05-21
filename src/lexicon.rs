@@ -283,6 +283,35 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         &self.leaves
     }
 
+    pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
+        match self.graph.node_weight(nx) {
+            Some(x) => {
+                if let FeatureOrLemma::Lemma(l) = x {
+                    Some(l)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    }
+
+    //Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for
+    //their lemma)
+    pub fn sibling_leaves(&self) -> Vec<Vec<NodeIndex>> {
+        let mut leaves = self.leaves.clone();
+        let mut result = vec![];
+        while let Some(leaf) = leaves.pop() {
+            let siblings: Vec<_> = self
+                .children_of(self.parent_of(leaf).unwrap())
+                .filter(|&a| matches!(self.graph.node_weight(a).unwrap(), FeatureOrLemma::Lemma(_)))
+                .collect();
+            leaves.retain(|x| !siblings.contains(x));
+            result.push(siblings);
+        }
+        result
+    }
+
     pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
         let mut v = vec![];
 
@@ -747,6 +776,33 @@ mod tests {
 
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use petgraph::dot::Dot;
+
+    #[test]
+    fn siblings() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(STABLER2011)?;
+        let siblings = lex.sibling_leaves();
+        let siblings = siblings
+            .into_iter()
+            .map(|x| {
+                x.into_iter()
+                    .map(|x| *lex.leaf_to_lemma(x).unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            siblings,
+            vec![
+                vec![Some("which")],
+                vec![Some("the")],
+                vec![Some("queen"), Some("beer"), Some("wine"), Some("king")],
+                vec![Some("drinks"), Some("prefers")],
+                vec![Some("says"), Some("knows")],
+                vec![None],
+                vec![None]
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn initialize_lexicon() -> anyhow::Result<()> {

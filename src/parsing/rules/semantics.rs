@@ -92,6 +92,17 @@ impl SemanticHistory {
         }
     }
 
+    pub fn constituents(&self) -> Option<impl Iterator<Item = &RootedLambdaPool<Expr>>> {
+        match self {
+            SemanticHistory::Rich(items) => Some(
+                items
+                    .iter()
+                    .filter_map(|(_, x)| x.as_ref().map(|x| &x.expr)),
+            ),
+            SemanticHistory::Simple(_) => None,
+        }
+    }
+
     pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<T, C>, rules: &RulePool) -> Self
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,

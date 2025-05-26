@@ -20,6 +20,15 @@ impl SymbolCost for &str {
     }
 }
 
+impl SymbolCost for String {
+    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+        match x {
+            Some(x) => Ok(x.len().try_into()?),
+            None => Ok(0),
+        }
+    }
+}
+
 impl SymbolCost for char {
     fn symbol_cost(x: &Option<Self>) -> Result<u16> {
         match x {

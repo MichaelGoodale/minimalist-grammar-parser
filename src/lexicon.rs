@@ -552,6 +552,49 @@ impl<'src> Lexicon<&'src str, &'src str> {
     }
 }
 
+impl<T: Eq, C: Eq> Lexicon<T, C> {
+    pub fn remap_lexicon<'lex, T2: Eq, C2: Eq>(
+        &'lex self,
+        lemma_map: impl Fn(&'lex T) -> T2,
+        category_map: impl Fn(&'lex C) -> C2,
+    ) -> Lexicon<T2, C2> {
+        let Lexicon {
+            graph,
+            root,
+            leaves,
+        } = self;
+
+        let graph = graph.map(
+            |_, x| match x {
+                FeatureOrLemma::Root => FeatureOrLemma::Root,
+                FeatureOrLemma::Lemma(Some(s)) => FeatureOrLemma::Lemma(Some(lemma_map(s))),
+                FeatureOrLemma::Lemma(None) => FeatureOrLemma::Lemma(None),
+                FeatureOrLemma::Feature(Feature::Category(c)) => {
+                    FeatureOrLemma::Feature(Feature::Category(category_map(c)))
+                }
+                FeatureOrLemma::Feature(Feature::Licensor(c)) => {
+                    FeatureOrLemma::Feature(Feature::Licensor(category_map(c)))
+                }
+                FeatureOrLemma::Feature(Feature::Licensee(c)) => {
+                    FeatureOrLemma::Feature(Feature::Licensee(category_map(c)))
+                }
+                FeatureOrLemma::Feature(Feature::Selector(c, d)) => {
+                    FeatureOrLemma::Feature(Feature::Selector(category_map(c), *d))
+                }
+                FeatureOrLemma::Complement(c, direction) => {
+                    FeatureOrLemma::Complement(category_map(c), *direction)
+                }
+            },
+            |_, e| *e,
+        );
+        Lexicon {
+            graph,
+            root: *root,
+            leaves: leaves.clone(),
+        }
+    }
+}
+
 impl<'a> Lexicon<&'a str, &'a str> {
     pub fn to_owned_values(&self) -> Lexicon<String, String> {
         let Lexicon {
@@ -968,6 +1011,14 @@ mod tests {
     fn conversion() -> anyhow::Result<()> {
         let lex = Lexicon::parse(STABLER2011)?;
         lex.to_owned_values();
+        Ok(())
+    }
+    #[test]
+    fn conversion2() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(STABLER2011)?;
+        let lex2 = lex.remap_lexicon(|x| x.to_string(), |c| c.to_string());
+        let lex3 = lex2.remap_lexicon(|x| x.as_str(), |c| c.as_str());
+        assert_eq!(lex, lex3);
         Ok(())
     }
 }

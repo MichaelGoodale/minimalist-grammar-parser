@@ -1,4 +1,5 @@
 use ahash::HashMap;
+use simple_semantics::language::UnprocessedParseTree;
 use std::fmt::Debug;
 
 use crate::ParsingConfig;
@@ -29,19 +30,18 @@ impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
     }
 }
 
-fn semantic_grammar_parser<'src>() -> impl Parser<
+fn semantic_grammar_parser<'src, 'labels>() -> impl Parser<
     'src,
     &'src str,
-    anyhow::Result<SemanticLexicon<&'src str, &'src str>>,
-    extra::Full<Rich<'src, char>, extra::SimpleState<LabelledScenarios>, ()>,
+    anyhow::Result<(
+        Lexicon<&'src str, &'src str>,
+        HashMap<NodeIndex, UnprocessedParseTree<'src>>,
+    )>,
+    extra::Err<Rich<'src, char>>,
 > {
-    entry_parser::<extra::Full<Rich<char>, extra::SimpleState<LabelledScenarios>, ()>>()
+    entry_parser()
         .then_ignore(just("::").padded())
-        .then(
-            lot_parser::<extra::Full<_, extra::SimpleState<_>, ()>>()
-                .map_with(|x, e| x.to_pool(e.state()))
-                .labelled("LOT expression"),
-        )
+        .then(lot_parser().labelled("LOT expression"))
         .separated_by(newline())
         .collect::<Vec<_>>()
         .map(|vec| {
@@ -51,35 +51,60 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
             let lexicon = Lexicon::new(lexical_entries);
             let mut semantic_entries = HashMap::default();
             for (leaf, entry) in lexicon.leaves.iter().zip(interpretations.into_iter()) {
-                semantic_entries.insert(*leaf, entry?);
+                semantic_entries.insert(*leaf, entry);
             }
 
-            Ok(SemanticLexicon {
-                lexicon,
-                semantic_entries,
-            })
+            Ok((lexicon, semantic_entries))
         })
         .then_ignore(end())
 }
 
 impl<'src> SemanticLexicon<&'src str, &'src str> {
     pub fn parse(s: &'src str) -> anyhow::Result<(Self, LabelledScenarios)> {
-        let mut state = extra::SimpleState(LabelledScenarios::default());
+        let mut labels = LabelledScenarios::default();
 
-        Ok((
-            semantic_grammar_parser()
-                .parse_with_state(s, &mut state)
-                .into_result()
-                .map_err(|x| {
-                    anyhow::Error::msg(
-                        x.into_iter()
-                            .map(|x| x.to_string())
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                    )
-                })??,
-            state.0,
-        ))
+        let (lexicon, semantic_entries) = semantic_grammar_parser()
+            .parse(s)
+            .into_result()
+            .map_err(|x| {
+                anyhow::Error::msg(
+                    x.into_iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            })??;
+
+        let semantic_lexicon = SemanticLexicon {
+            lexicon,
+            semantic_entries: semantic_entries
+                .into_iter()
+                .map(|(k, v)| v.to_pool(&mut labels).map(|x| (k, x)))
+                .collect::<Result<_>>()?,
+        };
+        Ok((semantic_lexicon, labels))
+    }
+
+    pub fn parse_with_labels(s: &'src str, labels: &mut LabelledScenarios) -> anyhow::Result<Self> {
+        let (lexicon, semantic_entries) = semantic_grammar_parser()
+            .parse(s)
+            .into_result()
+            .map_err(|x| {
+                anyhow::Error::msg(
+                    x.into_iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            })??;
+        let semantic_lexicon = SemanticLexicon {
+            lexicon,
+            semantic_entries: semantic_entries
+                .into_iter()
+                .map(|(k, v)| v.to_pool(labels).map(|x| (k, x)))
+                .collect::<Result<_>>()?,
+        };
+        Ok(semantic_lexicon)
     }
 }
 

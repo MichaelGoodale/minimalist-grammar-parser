@@ -30,12 +30,13 @@ impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
     }
 }
 
-fn semantic_grammar_parser<'src, 'labels>() -> impl Parser<
+#[allow(clippy::type_complexity)]
+fn semantic_grammar_parser<'src>() -> impl Parser<
     'src,
     &'src str,
     anyhow::Result<(
         Lexicon<&'src str, &'src str>,
-        HashMap<NodeIndex, UnprocessedParseTree<'src>>,
+        Vec<(NodeIndex, UnprocessedParseTree<'src>)>,
     )>,
     extra::Err<Rich<'src, char>>,
 > {
@@ -49,10 +50,12 @@ fn semantic_grammar_parser<'src, 'labels>() -> impl Parser<
 
             //  Assumes that the leaves iterator goes in order of lexical_entries
             let lexicon = Lexicon::new(lexical_entries);
-            let mut semantic_entries = HashMap::default();
-            for (leaf, entry) in lexicon.leaves.iter().zip(interpretations.into_iter()) {
-                semantic_entries.insert(*leaf, entry);
-            }
+            let semantic_entries = lexicon
+                .leaves
+                .iter()
+                .copied()
+                .zip(interpretations)
+                .collect();
 
             Ok((lexicon, semantic_entries))
         })
@@ -207,18 +210,15 @@ mod test {
             1000,
         );
         let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, x) & PatientOf(e,y) & pe_likes(e))))";
-        let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
 
+        //Scenarios are not reliably assigning values!
+        let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
         let (_, _, rules) =
             Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
                 .next()
                 .unwrap();
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
-        assert_eq!(
-            "some_e(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & pe0(x)))",
-            interpretation.to_string()
-        );
 
         #[cfg(feature = "pretty")]
         {
@@ -237,6 +237,10 @@ mod test {
                 "\\begin{forest}\n[{\\semder{v}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x\\_l (some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,x\\_l)) \\& pe0(x))))}} }\n\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{a}$}x\\_l ({$\\lambda_{a}$}y\\_l (some\\_e(x,all\\_e,((AgentOf(x,x\\_l) \\& PatientOf(x,y\\_l)) \\& pe0(x)))))}} } ]\n\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ]\n\\end{forest}"
             );
         }
+        assert_eq!(
+            "some_e(x,all_e,((AgentOf(x,a1) & PatientOf(x,a0)) & pe0(x)))",
+            interpretation.to_string()
+        );
         Ok(())
     }
 

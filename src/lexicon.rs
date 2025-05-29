@@ -498,7 +498,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             .map(|e| e.source())
     }
 
-    pub fn get_category(&self, mut nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
+    pub fn get_category(&self, mut nx: NodeIndex) -> Option<&Category> {
         while let Some(e) = self
             .graph
             .edges_directed(nx, petgraph::Direction::Incoming)
@@ -506,8 +506,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         {
             nx = e.source();
             let cat = &self.graph[nx];
-            if let FeatureOrLemma::Feature(Feature::Category(_)) = cat {
-                return Some(cat);
+            if let FeatureOrLemma::Feature(Feature::Category(c)) = cat {
+                return Some(c);
             }
         }
 

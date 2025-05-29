@@ -146,6 +146,14 @@ impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
     }
 
+    pub fn lemma(&self) -> &Option<T> {
+        &self.lemma
+    }
+
+    pub fn features(&self) -> &[Feature<Category>] {
+        &self.features
+    }
+
     pub fn category(&self) -> &Category {
         let mut cat = None;
         for lex in self.features.iter() {

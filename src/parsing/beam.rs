@@ -1,8 +1,11 @@
+use crate::{ParseHeap, ParsingConfig, expand, lexicon::Lexicon};
+
 use super::{BeamWrapper, RuleHolder, rules::RulePool};
+use ahash::HashSet;
 use anyhow::Result;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 pub trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
@@ -192,5 +195,198 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
         } else {
             None
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct ContinuationScan<'a, T> {
+    prefix: &'a [T],
+    position: usize,
+    final_char: Option<T>,
+}
+
+impl<T> Scanner<T> for ContinuationScan<'_, T>
+where
+    T: std::cmp::Eq + std::fmt::Debug + Clone,
+{
+    fn scan(&mut self, word: &Option<T>) -> bool {
+        match word {
+            Some(word) => {
+                if let Some(string) = self.prefix.get(self.position) {
+                    if word == string {
+                        self.position += 1;
+                        true
+                    } else {
+                        false
+                    }
+                } else if self.position == self.prefix.len() {
+                    self.final_char = Some(word.clone());
+                    self.position += 1;
+                    true
+                } else {
+                    self.position += 1;
+                    true
+                }
+            }
+            None => true,
+        }
+    }
+}
+
+impl<'a, T: Eq + Debug + Clone> ContinuationScan<'a, T> {
+    pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<Continuation<T>> {
+        if b.is_empty() {
+            match b.beam.final_char {
+                Some(x) => Some(Continuation::Word(x)),
+                None if b.beam.position == b.beam.prefix.len() => Some(Continuation::EndOfSentence),
+                None => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum Continuation<T> {
+    Word(T),
+    EndOfSentence,
+}
+
+impl<T, C> Lexicon<T, C>
+where
+    T: Eq + std::fmt::Debug + Clone + Hash,
+    C: Eq + Clone + std::fmt::Debug,
+{
+    pub fn valid_continuations(
+        &self,
+        initial_category: C,
+        prefix: &[T],
+        config: &ParsingConfig,
+    ) -> anyhow::Result<HashSet<Continuation<T>>> {
+        let cat = self.find_category(&initial_category)?;
+
+        let cont = ContinuationScan {
+            prefix,
+            position: 0,
+            final_char: None,
+        };
+
+        let mut valid_chars = HashSet::default();
+        let mut end_of_string = false;
+
+        let mut parse_heap = ParseHeap::new(BeamWrapper::new(cont, cat), config, cat);
+
+        while let Some(mut beam) = parse_heap.pop() {
+            if let Some(word) = beam.beam.final_char.as_ref() {
+                if valid_chars.contains(word) {
+                    //We don't care since there's already a successful parse with that character.
+                    continue;
+                }
+            }
+
+            if let Some(moment) = beam.pop_moment() {
+                expand(&mut parse_heap, moment, beam, self, config);
+            } else if let Some(cont) = ContinuationScan::yield_good_parse(beam) {
+                match cont {
+                    Continuation::Word(w) => {
+                        valid_chars.insert(w);
+                    }
+                    Continuation::EndOfSentence => end_of_string = true,
+                }
+            }
+        }
+        println!("{:?}", valid_chars);
+
+        //Awkward remapping necessary to allow hashing the potential words.
+        let mut valid_chars: HashSet<_> = valid_chars.into_iter().map(Continuation::Word).collect();
+        if end_of_string {
+            valid_chars.insert(Continuation::EndOfSentence);
+        }
+        Ok(valid_chars)
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::{
+        ParsingConfig,
+        grammars::{DYCK_LANGUAGE, STABLER2011},
+        lexicon::Lexicon,
+        parsing::beam::Continuation,
+    };
+
+    #[test]
+    fn continuations() -> anyhow::Result<()> {
+        let lex = Lexicon::parse(STABLER2011)?;
+
+        let strings = [
+            "the",
+            "the king",
+            "which",
+            "which king",
+            "the king knows",
+            "the king drinks the beer",
+        ]
+        .map(|x| x.split(" ").collect::<Vec<_>>());
+
+        let continuations = [
+            vec![
+                Continuation::Word("king"),
+                Continuation::Word("beer"),
+                Continuation::Word("wine"),
+                Continuation::Word("queen"),
+            ],
+            vec![
+                Continuation::Word("knows"),
+                Continuation::Word("says"),
+                Continuation::Word("drinks"),
+                Continuation::Word("prefers"),
+            ],
+            vec![
+                Continuation::Word("wine"),
+                Continuation::Word("king"),
+                Continuation::Word("beer"),
+                Continuation::Word("queen"),
+            ],
+            vec![
+                Continuation::Word("drinks"),
+                Continuation::Word("knows"),
+                Continuation::Word("the"),
+                Continuation::Word("says"),
+                Continuation::Word("prefers"),
+            ],
+            vec![Continuation::Word("which"), Continuation::Word("the")],
+            vec![Continuation::EndOfSentence],
+        ]
+        .into_iter()
+        .map(|x| x.into_iter().collect());
+
+        for (s, valid) in strings.into_iter().zip(continuations) {
+            let cont = lex.valid_continuations("C", &s, &ParsingConfig::default())?;
+            assert_eq!(cont, valid);
+        }
+        let lex = Lexicon::parse(DYCK_LANGUAGE)?;
+
+        let strings = ["(", "( )", "( ( )", "( ( ) )", "( ) ( )", "( ( ( ) )"]
+            .map(|x| x.split(" ").collect::<Vec<_>>());
+
+        let continuations = [
+            vec![Continuation::Word(")"), Continuation::Word("(")],
+            vec![Continuation::Word("("), Continuation::EndOfSentence],
+            vec![Continuation::Word(")"), Continuation::Word("(")],
+            vec![Continuation::Word("("), Continuation::EndOfSentence],
+            vec![Continuation::Word("("), Continuation::EndOfSentence],
+            vec![Continuation::Word(")"), Continuation::Word("(")],
+        ]
+        .into_iter()
+        .map(|x| x.into_iter().collect());
+
+        for (s, valid) in strings.into_iter().zip(continuations) {
+            let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
+            assert_eq!(cont, valid);
+        }
+        Ok(())
     }
 }

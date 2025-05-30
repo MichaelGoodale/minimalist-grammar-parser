@@ -62,41 +62,48 @@ where
             .labelled("licensor"),
     ));
 
-    choice((just("ε").to(None), text::ident().or_not()))
-        .labelled("lemma")
-        .then_ignore(
-            just("::")
-                .padded_by(inline_whitespace())
-                .labelled("lemma feature seperator"),
-        )
-        .then(
-            pre_category_features
-                .separated_by(inline_whitespace())
-                .allow_trailing()
-                .collect::<Vec<_>>()
-                .labelled("pre category features"),
-        )
-        .then(
-            feature_name
-                .map(Feature::Category)
-                .labelled("category feature"),
-        )
-        .then(
-            just('-')
-                .ignore_then(feature_name)
-                .map(Feature::Licensee)
-                .labelled("licensee")
-                .separated_by(inline_whitespace())
-                .allow_leading()
-                .allow_trailing()
-                .collect::<Vec<_>>()
-                .labelled("licensees"),
-        )
-        .map(|(((lemma, mut features), category), mut licensees)| {
-            features.push(category);
-            features.append(&mut licensees);
-            LexicalEntry::new(lemma, features)
-        })
+    choice((
+        just("ε").to(None),
+        (none_of(['\t', '\n', ' ', '+', '-', '=', ':', '\r'])
+            .repeated()
+            .at_least(1)
+            .to_slice())
+        .or_not(),
+    ))
+    .labelled("lemma")
+    .then_ignore(
+        just("::")
+            .padded_by(inline_whitespace())
+            .labelled("lemma feature seperator"),
+    )
+    .then(
+        pre_category_features
+            .separated_by(inline_whitespace())
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .labelled("pre category features"),
+    )
+    .then(
+        feature_name
+            .map(Feature::Category)
+            .labelled("category feature"),
+    )
+    .then(
+        just('-')
+            .ignore_then(feature_name)
+            .map(Feature::Licensee)
+            .labelled("licensee")
+            .separated_by(inline_whitespace())
+            .allow_leading()
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .labelled("licensees"),
+    )
+    .map(|(((lemma, mut features), category), mut licensees)| {
+        features.push(category);
+        features.append(&mut licensees);
+        LexicalEntry::new(lemma, features)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

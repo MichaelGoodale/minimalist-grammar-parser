@@ -32,3 +32,5 @@ a::=A +l T -l
 a::=T +r A -r
 b::=B +l T -l
 b::=T +r B -r";
+
+pub const DYCK_LANGUAGE: &str = "(::S= R= S\n)::S= R\n::S";

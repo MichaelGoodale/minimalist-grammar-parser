@@ -2,9 +2,9 @@ use anyhow::Result;
 use itertools::Itertools;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
+    ParsingConfig,
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
-    Generator, Parser, ParsingConfig,
 };
 
 fn main() {
@@ -58,7 +58,7 @@ fn parse_copy_language_together(config: &ParsingConfig) {
         (lex, strings)
     };
 
-    Parser::new_multiple(&lex, "T", &strings, config)
+    lex.parse_multiple(&strings, "T", config)
         .unwrap()
         .take(strings.len())
         .for_each(|_| ());
@@ -70,16 +70,13 @@ fn parse_long_sentence(config: &ParsingConfig) {
         .split(' ')
         .collect();
 
-    Parser::new(&g, "C", &sentence, config)
-        .unwrap()
-        .next()
-        .unwrap();
+    g.parse(&sentence, "C", config).unwrap().next().unwrap();
 }
 
 fn generate_sentence(config: &ParsingConfig) {
     let g = get_grammar();
 
-    Generator::new(&g, "C", config).unwrap().take(100).count();
+    g.generate("C", config).unwrap().take(100).count();
 }
 
 fn parse_copy_language(config: &ParsingConfig) {
@@ -105,7 +102,7 @@ fn parse_copy_language(config: &ParsingConfig) {
     }
 
     for s in strings.iter() {
-        Parser::new(&lex, "T", s, config).unwrap().next().unwrap();
+        lex.parse(s, "T", config).unwrap().next().unwrap();
     }
 }
 
@@ -116,5 +113,5 @@ fn generate_copy_language(config: &ParsingConfig) {
         .collect::<Result<Vec<_>>>()
         .unwrap();
     let lex = Lexicon::new(v);
-    Generator::new(&lex, "T", config).unwrap().take(100).count();
+    lex.generate("T", config).unwrap().take(100).count();
 }

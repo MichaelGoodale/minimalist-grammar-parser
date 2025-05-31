@@ -3,7 +3,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
-    Generator, Parser, ParsingConfig,
+    ParsingConfig,
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{Lexicon, SimpleLexicalEntry},
 };
@@ -39,16 +39,13 @@ fn parse_long_sentence() {
             .split(' ')
             .collect(),
     );
-    Parser::new(&g, "C", &sentence, &CONFIG)
-        .unwrap()
-        .next()
-        .unwrap();
+    g.parse(&sentence, "C", &CONFIG).unwrap().next().unwrap();
 }
 
 #[divan::bench]
 fn generate_sentence() {
     let g = divan::black_box(get_grammar());
-    Generator::new(&g, "C", &CONFIG).unwrap().take(100).count();
+    g.generate("C", &CONFIG).unwrap().take(100).count();
 }
 
 #[divan::bench]
@@ -78,7 +75,7 @@ fn parse_copy_language() {
     });
 
     for s in strings.iter() {
-        Parser::new(&lex, "T", s, &CONFIG).unwrap().next().unwrap();
+        lex.parse(s, "T", &CONFIG).unwrap().next().unwrap();
     }
 }
 
@@ -108,7 +105,7 @@ fn parse_copy_language_together() {
         (lex, strings)
     });
 
-    Parser::new_multiple(&lex, "T", &strings, &CONFIG)
+    lex.parse_multiple(&strings, "T", &CONFIG)
         .unwrap()
         .take(strings.len())
         .for_each(|_| ());
@@ -125,8 +122,5 @@ fn generate_copy_language() {
         Lexicon::new(v)
     });
 
-    Generator::new(&lex, "T", &CONFIG)
-        .unwrap()
-        .take(100)
-        .count();
+    lex.generate("T", &CONFIG).unwrap().take(100).count();
 }

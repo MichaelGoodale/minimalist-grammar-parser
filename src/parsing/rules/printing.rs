@@ -860,13 +860,13 @@ mod test {
     use logprob::LogProb;
 
     use super::*;
+    use crate::ParsingConfig;
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
-    use crate::{Parser, ParsingConfig};
     use petgraph::dot::Dot;
 
     #[test]
     fn to_graph() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         let config = ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -874,10 +874,10 @@ mod test {
             1000,
         );
         for sentence in vec!["which wine the queen prefers"].into_iter() {
-            let (_, _, rules) =
-                Parser::new(&lex, "C", &sentence.split(' ').collect::<Vec<_>>(), &config)?
-                    .next()
-                    .unwrap();
+            let (_, _, rules) = lex
+                .parse(&sentence.split(' ').collect::<Vec<_>>(), "C", &config)?
+                .next()
+                .unwrap();
             let (g, _, _) = rules.to_graph(&lex);
             let g = g.map(|_, n| n.to_latex(), |_, e| e);
             let dot = Dot::new(&g);
@@ -893,7 +893,7 @@ mod test {
 
     #[test]
     fn double_movement_graph() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(COPY_LANGUAGE)?;
+        let lex = Lexicon::from_string(COPY_LANGUAGE)?;
         let config = ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
@@ -901,10 +901,10 @@ mod test {
             1000,
         );
         for sentence in vec!["a b a b"].into_iter() {
-            let (_, _, rules) =
-                Parser::new(&lex, "T", &sentence.split(' ').collect::<Vec<_>>(), &config)?
-                    .next()
-                    .unwrap();
+            let (_, _, rules) = lex
+                .parse(&sentence.split(' ').collect::<Vec<_>>(), "T", &config)?
+                .next()
+                .unwrap();
             let (g, _, _) = rules.to_graph(&lex);
             let g = g.map(|_, n| n.to_latex(), |_, e| e);
             let dot = Dot::new(&g);
@@ -926,16 +926,16 @@ mod test {
             100,
             1000,
         );
-        let lex = Lexicon::parse(STABLER2011)?;
-        let rules = Parser::new(
-            &lex,
-            "C",
-            &"the queen prefers the wine".split(' ').collect::<Vec<_>>(),
-            &config,
-        )?
-        .next()
-        .unwrap()
-        .2;
+        let lex = Lexicon::from_string(STABLER2011)?;
+        let rules = lex
+            .parse(
+                &"the queen prefers the wine".split(' ').collect::<Vec<_>>(),
+                "C",
+                &config,
+            )?
+            .next()
+            .unwrap()
+            .2;
         let parse = rules.to_x_bar_graph(&lex);
         let dot = Dot::new(&parse);
         println!("{}", dot);
@@ -954,18 +954,18 @@ mod test {
             100,
             1000,
         );
-        let lex = Lexicon::parse(STABLER2011)?;
-        let rules = Parser::new(
-            &lex,
-            "C",
-            &"which queen prefers the wine"
-                .split(' ')
-                .collect::<Vec<_>>(),
-            &config,
-        )?
-        .next()
-        .unwrap()
-        .2;
+        let lex = Lexicon::from_string(STABLER2011)?;
+        let rules = lex
+            .parse(
+                &"which queen prefers the wine"
+                    .split(' ')
+                    .collect::<Vec<_>>(),
+                "C",
+                &config,
+            )?
+            .next()
+            .unwrap()
+            .2;
         let parse = rules.to_x_bar_graph(&lex);
         let dot = Dot::new(&parse);
         println!("{}", dot);
@@ -985,10 +985,8 @@ mod test {
             1000,
         );
 
-        let lex = Lexicon::parse("a::v= +k +q z\nb::v -k -q")?;
-        let (_, _s, r) = Parser::new(&lex, "z", &["b", "a"], &config)?
-            .next()
-            .unwrap();
+        let lex = Lexicon::from_string("a::v= +k +q z\nb::v -k -q")?;
+        let (_, _s, r) = lex.parse(&["b", "a"], "z", &config)?.next().unwrap();
         let g = r.to_x_bar_graph(&lex);
         println!("{}", Dot::new(&g));
         assert_eq!(

@@ -319,7 +319,7 @@ mod test {
 
     #[test]
     fn continuations() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
 
         let strings = [
             "the",
@@ -367,7 +367,7 @@ mod test {
             let cont = lex.valid_continuations("C", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
-        let lex = Lexicon::parse(DYCK_LANGUAGE)?;
+        let lex = Lexicon::from_string(DYCK_LANGUAGE)?;
 
         let strings = ["(", "( )", "( ( )", "( ( ) )", "( ) ( )", "( ( ( ) )"]
             .map(|x| x.split(" ").collect::<Vec<_>>());

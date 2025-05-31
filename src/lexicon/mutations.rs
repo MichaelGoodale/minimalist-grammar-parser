@@ -1102,18 +1102,18 @@ mod test {
 
     #[test]
     fn pruning() -> anyhow::Result<()> {
-        let mut lex = Lexicon::parse("A::c= s\nB::d\nC::c")?;
+        let mut lex = Lexicon::from_string("A::c= s\nB::d\nC::c")?;
         lex.prune(&"s");
         assert_eq!(lex.to_string(), "A::c= s\nC::c");
 
-        let mut lex = Lexicon::parse("A::z= c= s\nB::d\nC::c")?;
+        let mut lex = Lexicon::from_string("A::z= c= s\nB::d\nC::c")?;
         lex.prune(&"s");
         assert_eq!(lex.to_string(), "");
 
-        let mut lex = Lexicon::parse("A::z= c= s\nB::d\nC::d= c\nD::z")?;
+        let mut lex = Lexicon::from_string("A::z= c= s\nB::d\nC::d= c\nD::z")?;
         lex.prune(&"s");
         assert_eq!(lex.to_string(), "A::z= c= s\nB::d\nC::d= c\nD::z");
-        let mut lex = Lexicon::parse("A::z= +w s\nD::z -w")?;
+        let mut lex = Lexicon::from_string("A::z= +w s\nD::z -w")?;
         lex.prune(&"s");
         assert_eq!(lex.to_string(), "A::z= +w s\nD::z -w");
         Ok(())

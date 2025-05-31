@@ -145,7 +145,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
 
     pub fn parse_and_interpret<'a>(
         &'a self,
-        initial_category: C,
+        category: C,
         sentence: &'a [T],
         config: &'a ParsingConfig,
     ) -> anyhow::Result<
@@ -157,20 +157,19 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
             ),
         >,
     > {
-        Ok(
-            crate::Parser::new(&self.lexicon, initial_category, sentence, config)?.map(
-                move |(p, s, r)| {
-                    (
-                        p,
-                        s,
-                        r.to_interpretation(self)
-                            .filter_map(|(pool, _)| pool.into_pool().ok())
-                            .collect_vec()
-                            .into_iter(),
-                    )
-                },
-            ),
-        )
+        Ok(self
+            .lexicon
+            .parse(sentence, category, config)?
+            .map(move |(p, s, r)| {
+                (
+                    p,
+                    s,
+                    r.to_interpretation(self)
+                        .filter_map(|(pool, _)| pool.into_pool().ok())
+                        .collect_vec()
+                        .into_iter(),
+                )
+            }))
     }
 }
 
@@ -199,7 +198,7 @@ mod test {
     use logprob::LogProb;
 
     use super::SemanticLexicon;
-    use crate::{Generator, Parser, ParsingConfig};
+    use crate::{Generator, ParsingConfig};
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {
@@ -213,10 +212,11 @@ mod test {
 
         //Scenarios are not reliably assigning values!
         let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
-        let (_, _, rules) =
-            Parser::new(&semantic.lexicon, "v", &["john", "likes", "mary"], &config)?
-                .next()
-                .unwrap();
+        let (_, _, rules) = semantic
+            .lexicon
+            .parse(&["john", "likes", "mary"], "v", &config)?
+            .next()
+            .unwrap();
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
 
@@ -259,14 +259,11 @@ mod test {
         );
         let (semantic, _scenario) = SemanticLexicon::parse(&lexicon)?;
 
-        let (_, _, rules) = Parser::new(
-            &semantic.lexicon,
-            "c",
-            &["john", "knows", "who", "likes", "mary"],
-            &config,
-        )?
-        .next()
-        .unwrap();
+        let (_, _, rules) = semantic
+            .lexicon
+            .parse(&["john", "knows", "who", "likes", "mary"], "c", &config)?
+            .next()
+            .unwrap();
         dbg!(&rules);
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
         let interpretation = interpretation.into_pool()?;
@@ -376,14 +373,11 @@ mod test {
 
         #[cfg(feature = "pretty")]
         {
-            let (_, _, rules) = Parser::new(
-                &lex.lexicon,
-                "t",
-                &["everyone", "likes", "someone"],
-                &config,
-            )?
-            .next()
-            .unwrap();
+            let (_, _, rules) = lex
+                .lexicon
+                .parse(&["everyone", "likes", "someone"], "t", &config)?
+                .next()
+                .unwrap();
 
             let (_, mut history) = rules.to_interpretation(&lex).next().unwrap();
             let latex = rules.to_semantic_latex(&lex, &history);
@@ -412,12 +406,10 @@ ran::2::lambda t x_l (a1)
 John::0 -1::a1";
 
         let (lexicon, _) = SemanticLexicon::parse(grammar)?;
-        for (_, _, r) in Parser::new(
-            &lexicon.lexicon,
-            "0",
-            &["John", "ran"],
-            &ParsingConfig::default(),
-        )? {
+        for (_, _, r) in lexicon
+            .lexicon
+            .parse(&["John", "ran"], "0", &ParsingConfig::default())?
+        {
             for (pool, h) in r.to_interpretation(&lexicon) {
                 pool.into_pool()?;
                 h.into_rich(&lexicon, &r);

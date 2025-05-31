@@ -132,7 +132,7 @@ ed::=v +k t";
         for (g, n_categories, string_size, feature_size) in
             [(ga, 3, 28_f64, 14_f64), (gb, 4, 16_f64, 12_f64)]
         {
-            let lex = Lexicon::parse(g)?;
+            let lex = Lexicon::from_string(g)?;
             for alphabet_size in [26, 32, 37] {
                 let bits_per_symbol: f64 = (MG_TYPES * n_categories).into();
                 let bits_per_phoneme: f64 = alphabet_size.into();

@@ -81,6 +81,27 @@ impl ParsingConfig {
         self.max_time = Some(duration);
         self
     }
+
+    pub fn with_min_log_prob(mut self, min_log_prob: LogProb<f64>) -> Self {
+        self.min_log_prob = min_log_prob;
+        self
+    }
+
+    pub fn with_max_steps(mut self, max_steps: usize) -> Self {
+        self.max_steps = max_steps;
+        self
+    }
+
+    pub fn with_max_beams(mut self, max_beams: usize) -> Self {
+        self.max_beams = max_beams;
+        self
+    }
+
+    pub fn with_move_prob(mut self, move_prob: LogProb<f64>) -> Self {
+        self.move_prob = move_prob;
+        self.dont_move_prob = self.move_prob.opposite_prob();
+        self
+    }
 }
 
 impl Default for ParsingConfig {
@@ -148,7 +169,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    pub fn new<U>(
+    fn new<U>(
         lexicon: &'a Lexicon<T, Category>,
         initial_category: Category,
         sentences: &'a [U],
@@ -200,49 +221,6 @@ pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + st
     buffer: Vec<ParserOutput<'a, T>>,
 }
 
-impl<'a, T, Category> Parser<'a, T, Category>
-where
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
-{
-    pub fn new(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentence: &'a [T],
-        config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>> {
-        let cat = lexicon.find_category(&initial_category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, sentence)?, config, cat);
-        Ok(Parser {
-            lexicon,
-            config,
-            start_time: None,
-            buffer: vec![],
-            parse_heap,
-        })
-    }
-
-    pub fn new_multiple<U>(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentences: &'a [U],
-        config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>>
-    where
-        U: AsRef<[T]>,
-    {
-        let cat = lexicon.find_category(&initial_category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences)?, config, cat);
-        Ok(Parser {
-            lexicon,
-            buffer: vec![],
-            start_time: None,
-            config,
-            parse_heap,
-        })
-    }
-}
-
 impl<'a, T, Category> Iterator for Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
@@ -290,6 +268,69 @@ where
     }
 }
 
+impl<T, Category> Lexicon<T, Category>
+where
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+{
+    pub fn generate(
+        &self,
+        category: Category,
+        config: &ParsingConfig,
+    ) -> Result<Generator<&Self, T, Category>> {
+        Generator::new(self, category, config)
+    }
+
+    pub fn parse<'a>(
+        &'a self,
+        s: &'a [T],
+        category: Category,
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>> {
+        let cat = self.find_category(&category)?;
+        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, s)?, config, cat);
+        Ok(Parser {
+            lexicon: self,
+            config,
+            start_time: None,
+            buffer: vec![],
+            parse_heap,
+        })
+    }
+
+    pub fn parse_multiple<'a, U>(
+        &'a self,
+        sentences: &'a [U],
+        category: Category,
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>>
+    where
+        U: AsRef<[T]>,
+    {
+        let cat = self.find_category(&category)?;
+        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences)?, config, cat);
+        Ok(Parser {
+            lexicon: self,
+            buffer: vec![],
+            start_time: None,
+            config,
+            parse_heap,
+        })
+    }
+
+    pub fn fuzzy_parse<'a, U>(
+        &'a self,
+        sentences: &'a [U],
+        category: Category,
+        config: &'a ParsingConfig,
+    ) -> Result<FuzzyParser<'a, T, Category>>
+    where
+        U: AsRef<[T]>,
+    {
+        FuzzyParser::new(self, category, sentences, config)
+    }
+}
+
 #[derive(Debug)]
 pub struct Generator<L, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
 where
@@ -307,7 +348,7 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    pub fn new(
+    fn new(
         lexicon: L,
         initial_category: Category,
         config: &ParsingConfig,

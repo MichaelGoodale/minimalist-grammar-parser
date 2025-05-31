@@ -77,7 +77,7 @@ fn index_order() -> Result<()> {
 
 #[test]
 fn smc() -> anyhow::Result<()> {
-    let lex = Lexicon::parse("a::d= +w +w c\nb::d -w -w")?;
+    let lex = Lexicon::from_string("a::d= +w +w c\nb::d -w -w")?;
     Generator::new(
         &lex,
         "c",
@@ -91,7 +91,7 @@ fn smc() -> anyhow::Result<()> {
     .next()
     .unwrap();
 
-    let lex = Lexicon::parse("a::d= d= +w +w c\nb::d -w")?;
+    let lex = Lexicon::from_string("a::d= d= +w +w c\nb::d -w")?;
     assert!(
         Generator::new(
             &lex,
@@ -112,7 +112,7 @@ fn smc() -> anyhow::Result<()> {
 
 #[test]
 fn specificer_island_constraints() -> anyhow::Result<()> {
-    let lex = Lexicon::parse("a::d= +w c\nb::d -w")?;
+    let lex = Lexicon::from_string("a::d= +w c\nb::d -w")?;
     Generator::new(
         &lex,
         "c",
@@ -127,7 +127,7 @@ fn specificer_island_constraints() -> anyhow::Result<()> {
     .unwrap();
 
     //We can extract from the specifier if the -w feature is on top.
-    let lex = Lexicon::parse("a::b= =c +w c\nb::b\nc::c -w")?;
+    let lex = Lexicon::from_string("a::b= =c +w c\nb::b\nc::c -w")?;
     Generator::new(
         &lex,
         "c",
@@ -142,7 +142,7 @@ fn specificer_island_constraints() -> anyhow::Result<()> {
     .unwrap();
 
     //We can't extract from the specifier if the -w feature is a sub constiuent.
-    let lex = Lexicon::parse("a::b= =c +w c\nb::b\n::z= c\nc::z -w")?;
+    let lex = Lexicon::from_string("a::b= =c +w c\nb::b\n::z= c\nc::z -w")?;
     assert!(
         Generator::new(
             &lex,

@@ -550,7 +550,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 }
 
 impl<'src> Lexicon<&'src str, &'src str> {
-    pub fn parse(s: &'src str) -> Result<Self> {
+    pub fn from_string(s: &'src str) -> Result<Self> {
         grammar_parser()
             .padded()
             .then_ignore(end())
@@ -725,7 +725,7 @@ mod tests {
 
     #[test]
     fn categories() -> Result<()> {
-        let lex = Lexicon::parse("::V= +Z C -W")?;
+        let lex = Lexicon::from_string("::V= +Z C -W")?;
 
         assert_eq!(vec![&"C"], lex.categories().collect::<Vec<_>>());
         let mut lice = lex.licensor_types().collect::<Vec<_>>();
@@ -784,7 +784,7 @@ mod tests {
             .split('\n')
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<_>>()?;
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         for nx in &lex.leaves {
             let lexical_entry = lex.get_lexical_entry(*nx)?;
             assert!(entries.contains(&lexical_entry));
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn siblings() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         let siblings = lex.sibling_leaves();
         let siblings = siblings
             .into_iter()
@@ -866,7 +866,7 @@ mod tests {
     fn initialize_lexicon() -> anyhow::Result<()> {
         let strings: Vec<&str> = STABLER2011.split('\n').collect();
 
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         for lex in lex.lexemes()? {
             assert!(
                 strings.contains(&format!("{}", lex).as_str())
@@ -958,7 +958,7 @@ mod tests {
             ]
         );
 
-        let lex = Lexicon::parse(COPY_LANGUAGE)?;
+        let lex = Lexicon::from_string(COPY_LANGUAGE)?;
         assert_ne!(lex, lex_2);
         assert_eq!(
             "digraph {
@@ -1024,13 +1024,13 @@ mod tests {
 
     #[test]
     fn conversion() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         lex.to_owned_values();
         Ok(())
     }
     #[test]
     fn conversion2() -> anyhow::Result<()> {
-        let lex = Lexicon::parse(STABLER2011)?;
+        let lex = Lexicon::from_string(STABLER2011)?;
         let lex2 = lex.remap_lexicon(|x| x.to_string(), |c| c.to_string());
         let lex3 = lex2.remap_lexicon(|x| x.as_str(), |c| c.as_str());
         assert_eq!(lex, lex3);

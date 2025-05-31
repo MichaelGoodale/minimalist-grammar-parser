@@ -1,5 +1,5 @@
 use super::trees::{FutureTree, GornIndex, ParseMoment};
-use crate::{Direction, Generator, ParsingConfig, lexicon::Lexicon, parsing::RuleIndex};
+use crate::{Direction, ParsingConfig, lexicon::Lexicon, parsing::RuleIndex};
 use anyhow::Result;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -78,8 +78,7 @@ fn index_order() -> Result<()> {
 #[test]
 fn smc() -> anyhow::Result<()> {
     let lex = Lexicon::from_string("a::d= +w +w c\nb::d -w -w")?;
-    Generator::new(
-        &lex,
+    lex.generate(
         "c",
         &ParsingConfig::new(
             LogProb::new(-128.0)?,
@@ -93,8 +92,7 @@ fn smc() -> anyhow::Result<()> {
 
     let lex = Lexicon::from_string("a::d= d= +w +w c\nb::d -w")?;
     assert!(
-        Generator::new(
-            &lex,
+        lex.generate(
             "c",
             &ParsingConfig::new(
                 LogProb::new(-128.0)?,
@@ -113,8 +111,7 @@ fn smc() -> anyhow::Result<()> {
 #[test]
 fn specificer_island_constraints() -> anyhow::Result<()> {
     let lex = Lexicon::from_string("a::d= +w c\nb::d -w")?;
-    Generator::new(
-        &lex,
+    lex.generate(
         "c",
         &ParsingConfig::new(
             LogProb::new(-128.0)?,
@@ -128,8 +125,7 @@ fn specificer_island_constraints() -> anyhow::Result<()> {
 
     //We can extract from the specifier if the -w feature is on top.
     let lex = Lexicon::from_string("a::b= =c +w c\nb::b\nc::c -w")?;
-    Generator::new(
-        &lex,
+    lex.generate(
         "c",
         &ParsingConfig::new(
             LogProb::new(-128.0)?,
@@ -144,8 +140,7 @@ fn specificer_island_constraints() -> anyhow::Result<()> {
     //We can't extract from the specifier if the -w feature is a sub constiuent.
     let lex = Lexicon::from_string("a::b= =c +w c\nb::b\n::z= c\nc::z -w")?;
     assert!(
-        Generator::new(
-            &lex,
+        lex.generate(
             "c",
             &ParsingConfig::new(
                 LogProb::new(-128.0)?,

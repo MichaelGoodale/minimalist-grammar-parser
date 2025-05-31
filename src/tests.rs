@@ -228,7 +228,8 @@ fn generation() -> Result<()> {
     outputs.sort_by(|a, b| a.1.cmp(&b.1));
     assert_eq!(outputs, x);
 
-    let mut outputs: Vec<_> = FuzzyParser::new(&lex, "C", &strings, &CONFIG)?
+    let mut outputs: Vec<_> = lex
+        .fuzzy_parse(&strings, "C", &CONFIG)?
         .map(|(p, s, _)| (p.into_inner(), s.to_vec()))
         .collect();
     outputs.sort_by(|a, b| a.1.cmp(&b.1));
@@ -297,7 +298,8 @@ fn copy_language() -> anyhow::Result<()> {
         .collect();
 
     let ordered_strings: Vec<_> = strings.iter().collect();
-    let generated_guided: HashSet<_> = FuzzyParser::new(&lex, "T", &ordered_strings, &CONFIG)?
+    let generated_guided: HashSet<_> = lex
+        .fuzzy_parse(&ordered_strings, "T", &CONFIG)?
         .take(strings.len())
         .map(|(_, s, _)| s)
         .collect();

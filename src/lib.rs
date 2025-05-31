@@ -164,29 +164,6 @@ pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone
     config: &'a ParsingConfig,
 }
 
-impl<'a, T, Category> FuzzyParser<'a, T, Category>
-where
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
-{
-    fn new<U>(
-        lexicon: &'a Lexicon<T, Category>,
-        initial_category: Category,
-        sentences: &'a [U],
-        config: &'a ParsingConfig,
-    ) -> Result<Self>
-    where
-        U: AsRef<[T]>,
-    {
-        let cat = lexicon.find_category(&initial_category)?;
-        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences)?, config, cat);
-        Ok(FuzzyParser {
-            lexicon,
-            config,
-            parse_heap,
-        })
-    }
-}
 impl<T, Category> Iterator for FuzzyParser<'_, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
@@ -278,7 +255,14 @@ where
         category: Category,
         config: &ParsingConfig,
     ) -> Result<Generator<&Self, T, Category>> {
-        Generator::new(self, category, config)
+        let cat = self.find_category(&category)?;
+        let parse_heap = ParseHeap::new(GeneratorScan::new(cat)?, config, cat);
+        Ok(Generator {
+            lexicon: self,
+            config: *config,
+            parse_heap,
+            phantom: PhantomData,
+        })
     }
 
     pub fn parse<'a>(
@@ -327,7 +311,13 @@ where
     where
         U: AsRef<[T]>,
     {
-        FuzzyParser::new(self, category, sentences, config)
+        let cat = self.find_category(&category)?;
+        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences)?, config, cat);
+        Ok(FuzzyParser {
+            lexicon: self,
+            config,
+            parse_heap,
+        })
     }
 }
 
@@ -340,28 +330,6 @@ where
     phantom: PhantomData<Category>,
     parse_heap: ParseHeap<T, GeneratorScan<T>>,
     config: ParsingConfig,
-}
-
-impl<L, T, Category> Generator<L, T, Category>
-where
-    L: Borrow<Lexicon<T, Category>>,
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
-{
-    fn new(
-        lexicon: L,
-        initial_category: Category,
-        config: &ParsingConfig,
-    ) -> Result<Generator<L, T, Category>> {
-        let cat = lexicon.borrow().find_category(&initial_category)?;
-        let parse_heap = ParseHeap::new(GeneratorScan::new(cat)?, config, cat);
-        Ok(Generator {
-            lexicon,
-            config: *config,
-            parse_heap,
-            phantom: PhantomData,
-        })
-    }
 }
 
 impl<L, T, Category> Iterator for Generator<L, T, Category>

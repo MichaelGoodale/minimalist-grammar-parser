@@ -198,7 +198,7 @@ mod test {
     use logprob::LogProb;
 
     use super::SemanticLexicon;
-    use crate::{Generator, ParsingConfig};
+    use crate::ParsingConfig;
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {
@@ -312,7 +312,7 @@ mod test {
         let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
 
         let mut v = vec![];
-        for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
+        for (_, s, rules) in lex.lexicon.generate("t", &config)?.take(10) {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
@@ -348,7 +348,7 @@ mod test {
         let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
 
         let mut v = vec![];
-        for (_, s, rules) in Generator::new(&lex.lexicon, "t", &config)?.take(10) {
+        for (_, s, rules) in lex.lexicon.generate("t", &config)?.take(10) {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)

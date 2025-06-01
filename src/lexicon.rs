@@ -1,5 +1,4 @@
 use crate::Direction;
-use anyhow::{Context, Result, bail};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -13,7 +12,12 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
-use std::{fmt::Display, hash::Hash};
+use std::result::Result;
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Feature<Category: Eq> {
@@ -22,6 +26,56 @@ pub enum Feature<Category: Eq> {
     Licensor(Category),
     Licensee(Category),
 }
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum LicenseeOrCategory<C> {
+    Licensee(C),
+    Category(C),
+}
+
+impl<C: Debug> Display for LicenseeOrCategory<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LicenseeOrCategory::Licensee(c) => write!(f, "-{c:?}"),
+            LicenseeOrCategory::Category(c) => write!(f, "{c:?}"),
+        }
+    }
+}
+
+#[derive(Error, Clone, Copy, Debug)]
+pub enum LexiconError {
+    #[error("There is no node ({0:?})")]
+    MissingNode(NodeIndex),
+    #[error("Node ({0:?}) is not a leaf")]
+    NotALeaf(NodeIndex),
+    #[error("Following the parents of node, ({0:?}), doesn't lead to root")]
+    DoesntGoToRoot(NodeIndex),
+    #[error("Following the parents of node, ({0:?}), we pass through the root or another lemma")]
+    InvalidOrder(NodeIndex),
+}
+
+#[derive(Error, Clone, Copy, Debug)]
+pub enum ParsingError<C>
+where
+    C: Debug,
+{
+    #[error("There is nothing with feature ({0})")]
+    NoLicensorOrCategory(LicenseeOrCategory<C>),
+}
+
+impl<A: Debug> ParsingError<A> {
+    pub fn inner_into<B: From<A> + Debug>(self: ParsingError<A>) -> ParsingError<B> {
+        match self {
+            ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Licensee(c)) => {
+                ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Licensee(c.into()))
+            }
+            ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Category(c)) => {
+                ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Category(c.into()))
+            }
+        }
+    }
+}
+
 fn grammar_parser<'src>()
 -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
     entry_parser::<extra::Err<Rich<'src, char>>>()
@@ -327,7 +381,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         result
     }
 
-    pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>> {
+    pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>, LexiconError> {
         let mut v = vec![];
 
         //NOTE: Must guarantee to iterate in this order.
@@ -351,21 +405,24 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     features,
                 })
             } else {
-                bail!("Bad lexicon!");
+                return Err(LexiconError::NotALeaf(*leaf));
             }
         }
         Ok(v)
     }
 
-    pub fn get_lexical_entry(&self, nx: NodeIndex) -> anyhow::Result<LexicalEntry<T, Category>> {
-        let lemma = self.graph.node_weight(nx).context("No such node")?;
+    pub fn get_lexical_entry(
+        &self,
+        nx: NodeIndex,
+    ) -> Result<LexicalEntry<T, Category>, LexiconError> {
+        let Some(lemma) = self.graph.node_weight(nx) else {
+            return Err(LexiconError::MissingNode(nx));
+        };
         let lemma = match lemma {
             FeatureOrLemma::Lemma(lemma) => lemma,
             FeatureOrLemma::Feature(_)
             | FeatureOrLemma::Root
-            | FeatureOrLemma::Complement(_, _) => {
-                bail!("Node is not a lemma node!")
-            }
+            | FeatureOrLemma::Complement(_, _) => return Err(LexiconError::NotALeaf(nx)),
         }
         .clone();
 
@@ -385,17 +442,21 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 FeatureOrLemma::Complement(cat, d) => {
                     features.push(Feature::Selector(cat.clone(), *d))
                 }
-                FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => bail!(
-                    "We should never have a lemma or root accessed this way, the lexicon is mal-formed"
-                ),
+                FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => {
+                    return Err(LexiconError::InvalidOrder(nx));
+                }
             }
-            parent = self
-                .parent_of(parent)
-                .expect("All features must end before the root!");
-            parent_node = self
-                .graph
-                .node_weight(parent)
-                .expect("All features must end before the root!");
+
+            match self.parent_of(parent) {
+                Some(p) => {
+                    parent = p;
+                    parent_node = self
+                        .graph
+                        .node_weight(parent)
+                        .expect("parent_of returning invalid node index!")
+                }
+                None => return Err(LexiconError::DoesntGoToRoot(nx)),
+            }
         }
         Ok(LexicalEntry { features, lemma })
     }
@@ -450,24 +511,34 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn find_category(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
+    pub fn find_category(&self, category: &Category) -> Result<NodeIndex, ParsingError<Category>> {
+        match self
+            .graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
             .find(|i| match &self.graph[*i] {
                 FeatureOrLemma::Feature(Feature::Category(c)) => c == category,
                 _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+            }) {
+            Some(x) => Ok(x),
+            None => Err(ParsingError::NoLicensorOrCategory(
+                LicenseeOrCategory::Category(category.clone()),
+            )),
+        }
     }
 
-    pub fn find_licensee(&self, category: &Category) -> Result<NodeIndex> {
-        self.graph
+    pub fn find_licensee(&self, category: &Category) -> Result<NodeIndex, ParsingError<Category>> {
+        match self
+            .graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
             .find(|i| match &self.graph[*i] {
                 FeatureOrLemma::Feature(Feature::Licensee(c)) => c == category,
                 _ => false,
-            })
-            .with_context(|| format!("{category:?} is not a valid category in the lexicon!"))
+            }) {
+            Some(x) => Ok(x),
+            None => Err(ParsingError::NoLicensorOrCategory(
+                LicenseeOrCategory::Licensee(category.clone()),
+            )),
+        }
     }
 
     pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
@@ -550,20 +621,13 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 }
 
 impl<'src> Lexicon<&'src str, &'src str> {
-    pub fn from_string(s: &'src str) -> Result<Self> {
+    pub fn from_string(s: &'src str) -> Result<Self, LexiconParsingError<'src>> {
         grammar_parser()
             .padded()
             .then_ignore(end())
             .parse(s)
             .into_result()
-            .map_err(|x| {
-                anyhow::Error::msg(
-                    x.into_iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            })
+            .map_err(|x| x.into())
     }
 }
 
@@ -650,19 +714,35 @@ impl<'a> Lexicon<&'a str, &'a str> {
 
 pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
+#[derive(Error, Debug, Clone)]
+pub struct LexiconParsingError<'a>(pub Vec<Rich<'a, char>>);
+
+impl<'a> Display for LexiconParsingError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
+}
+
+impl<'a> From<Vec<Rich<'a, char>>> for LexiconParsingError<'a> {
+    fn from(value: Vec<Rich<'a, char>>) -> Self {
+        LexiconParsingError(value)
+    }
+}
+
 impl LexicalEntry<&str, &str> {
-    pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>> {
+    pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>, LexiconParsingError> {
         entry_parser::<extra::Err<Rich<char>>>()
             .parse(s)
             .into_result()
-            .map_err(|x| {
-                anyhow::Error::msg(
-                    x.into_iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            })
+            .map_err(|e| e.into())
     }
 }
 
@@ -783,7 +863,7 @@ mod tests {
         let entries: HashSet<_> = STABLER2011
             .split('\n')
             .map(SimpleLexicalEntry::parse)
-            .collect::<Result<_>>()?;
+            .collect::<Result<_, LexiconParsingError>>()?;
         let lex = Lexicon::from_string(STABLER2011)?;
         for nx in &lex.leaves {
             let lexical_entry = lex.get_lexical_entry(*nx)?;
@@ -1034,6 +1114,10 @@ mod tests {
         let lex2 = lex.remap_lexicon(|x| x.to_string(), |c| c.to_string());
         let lex3 = lex2.remap_lexicon(|x| x.as_str(), |c| c.as_str());
         assert_eq!(lex, lex3);
+
+        let x = ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Category("s"));
+        let _y: ParsingError<String> = x.inner_into();
+
         Ok(())
     }
 }

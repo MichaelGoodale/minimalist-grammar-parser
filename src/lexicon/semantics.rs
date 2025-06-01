@@ -34,10 +34,10 @@ impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
 fn semantic_grammar_parser<'src>() -> impl Parser<
     'src,
     &'src str,
-    anyhow::Result<(
+    (
         Lexicon<&'src str, &'src str>,
         Vec<(NodeIndex, UnprocessedParseTree<'src>)>,
-    )>,
+    ),
     extra::Err<Rich<'src, char>>,
 > {
     entry_parser()
@@ -57,7 +57,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
                 .zip(interpretations)
                 .collect();
 
-            Ok((lexicon, semantic_entries))
+            (lexicon, semantic_entries)
         })
         .then_ignore(end())
 }
@@ -70,20 +70,16 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
             .parse(s)
             .into_result()
             .map_err(|x| {
-                anyhow::Error::msg(
-                    x.into_iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            })??;
+                let x: LexiconParsingError<'src> = x.into();
+                anyhow::anyhow!(x.to_string())
+            })?;
 
         let semantic_lexicon = SemanticLexicon {
             lexicon,
             semantic_entries: semantic_entries
                 .into_iter()
                 .map(|(k, v)| v.to_pool(&mut labels).map(|x| (k, x)))
-                .collect::<Result<_>>()?,
+                .collect::<anyhow::Result<_>>()?,
         };
         Ok((semantic_lexicon, labels))
     }
@@ -93,19 +89,16 @@ impl<'src> SemanticLexicon<&'src str, &'src str> {
             .parse(s)
             .into_result()
             .map_err(|x| {
-                anyhow::Error::msg(
-                    x.into_iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            })??;
+                let x: LexiconParsingError<'src> = x.into();
+                anyhow::anyhow!(x.to_string())
+            })?;
+
         let semantic_lexicon = SemanticLexicon {
             lexicon,
             semantic_entries: semantic_entries
                 .into_iter()
                 .map(|(k, v)| v.to_pool(labels).map(|x| (k, x)))
-                .collect::<Result<_>>()?,
+                .collect::<anyhow::Result<_>>()?,
         };
         Ok(semantic_lexicon)
     }
@@ -143,12 +136,13 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         (&mut self.lexicon, &mut self.semantic_entries)
     }
 
-    pub fn parse_and_interpret<'a>(
+    #[allow(clippy::type_complexity)]
+    pub fn parse_and_interpret<'a, 'b: 'a>(
         &'a self,
         category: C,
-        sentence: &'a [T],
-        config: &'a ParsingConfig,
-    ) -> anyhow::Result<
+        sentence: &'b [T],
+        config: &'b ParsingConfig,
+    ) -> Result<
         impl Iterator<
             Item = (
                 LogProb<f64>,
@@ -156,6 +150,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
                 impl Iterator<Item = LanguageExpression>,
             ),
         >,
+        ParsingError<C>,
     > {
         Ok(self
             .lexicon
@@ -257,11 +252,14 @@ mod test {
             "{}\n::=v c::lambda t phi (phi)\n::v= +wh c::lambda t phi (phi)\nknows::c= =d v::lambda <a,t> P (lambda a x (P(x)))\nwho::d -wh::lambda <a,t> P (P)",
             lexicon
         );
-        let (semantic, _scenario) = SemanticLexicon::parse(&lexicon)?;
+
+        let s = lexicon.as_str();
+        let (semantic, _scenario) = SemanticLexicon::parse(s)?;
 
         let (_, _, rules) = semantic
-            .lexicon
-            .parse(&["john", "knows", "who", "likes", "mary"], "c", &config)?
+            .lexicon()
+            .parse(&["john", "knows", "who", "likes", "mary"], "c", &config)
+            .map_err(|x| x.inner_into::<String>())?
             .next()
             .unwrap();
         dbg!(&rules);
@@ -309,10 +307,15 @@ mod test {
         ];
 
         let lexicon = lexical.join("\n");
-        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
+        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon).unwrap();
 
         let mut v = vec![];
-        for (_, s, rules) in lex.lexicon.generate("t", &config)?.take(10) {
+        for (_, s, rules) in lex
+            .lexicon
+            .generate("t", &config)
+            .map_err(|e| e.inner_into::<String>())?
+            .take(10)
+        {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
@@ -348,7 +351,12 @@ mod test {
         let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
 
         let mut v = vec![];
-        for (_, s, rules) in lex.lexicon.generate("t", &config)?.take(10) {
+        for (_, s, rules) in lex
+            .lexicon
+            .generate("t", &config)
+            .map_err(|e| e.inner_into::<String>())?
+            .take(10)
+        {
             let mut s = s.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
@@ -375,7 +383,8 @@ mod test {
         {
             let (_, _, rules) = lex
                 .lexicon
-                .parse(&["everyone", "likes", "someone"], "t", &config)?
+                .parse(&["everyone", "likes", "someone"], "t", &config)
+                .map_err(|e| e.inner_into::<String>())?
                 .next()
                 .unwrap();
 

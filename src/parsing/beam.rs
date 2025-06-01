@@ -1,8 +1,10 @@
-use crate::{ParseHeap, ParsingConfig, expand, lexicon::Lexicon};
+use crate::{
+    ParseHeap, ParsingConfig, expand,
+    lexicon::{Lexicon, ParsingError},
+};
 
 use super::{BeamWrapper, RuleHolder, rules::RulePool};
 use ahash::HashSet;
-use anyhow::Result;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
@@ -44,28 +46,28 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
     pub fn new_multiple<U>(
         category_index: NodeIndex,
         sentences: &'a [U],
-    ) -> Result<BeamWrapper<T, ParseScan<'a, T>>>
+    ) -> BeamWrapper<T, ParseScan<'a, T>>
     where
         U: AsRef<[T]>,
     {
-        Ok(BeamWrapper::new(
+        BeamWrapper::new(
             ParseScan {
                 sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
             },
             category_index,
-        ))
+        )
     }
 
     pub fn new_single(
         category_index: NodeIndex,
         sentence: &'a [T],
-    ) -> Result<BeamWrapper<T, ParseScan<'a, T>>> {
-        Ok(BeamWrapper::new(
+    ) -> BeamWrapper<T, ParseScan<'a, T>> {
+        BeamWrapper::new(
             ParseScan {
                 sentence: vec![(sentence, 0)],
             },
             category_index,
-        ))
+        )
     }
 
     pub fn yield_good_parse(
@@ -95,21 +97,18 @@ pub struct FuzzyScan<'a, T> {
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
-    pub fn new<U>(
-        category_index: NodeIndex,
-        sentences: &'a [U],
-    ) -> Result<BeamWrapper<T, FuzzyScan<'a, T>>>
+    pub fn new<U>(category_index: NodeIndex, sentences: &'a [U]) -> BeamWrapper<T, FuzzyScan<'a, T>>
     where
         U: AsRef<[T]>,
     {
-        Ok(BeamWrapper::new(
+        BeamWrapper::new(
             FuzzyScan {
                 sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
                 generated_sentences: vec![],
                 //           n_sentences: (sentences.len() + 1) as f64,
             },
             category_index,
-        ))
+        )
     }
 
     pub fn yield_good_parse(
@@ -175,11 +174,8 @@ where
 }
 
 impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
-    pub fn new(category_index: NodeIndex) -> Result<BeamWrapper<T, GeneratorScan<T>>> {
-        Ok(BeamWrapper::new(
-            GeneratorScan { sentence: vec![] },
-            category_index,
-        ))
+    pub fn new(category_index: NodeIndex) -> BeamWrapper<T, GeneratorScan<T>> {
+        BeamWrapper::new(GeneratorScan { sentence: vec![] }, category_index)
     }
 
     pub fn yield_good_parse(
@@ -263,7 +259,7 @@ where
         initial_category: C,
         prefix: &[T],
         config: &ParsingConfig,
-    ) -> anyhow::Result<HashSet<Continuation<T>>> {
+    ) -> Result<HashSet<Continuation<T>>, ParsingError<C>> {
         let cat = self.find_category(&initial_category)?;
 
         let cont = ContinuationScan {

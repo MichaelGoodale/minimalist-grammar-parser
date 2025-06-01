@@ -1,10 +1,8 @@
-use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
-use lexicon::Lexicon;
+use lexicon::{Lexicon, ParsingError};
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
@@ -254,9 +252,9 @@ where
         &self,
         category: Category,
         config: &ParsingConfig,
-    ) -> Result<Generator<&Self, T, Category>> {
+    ) -> Result<Generator<T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(GeneratorScan::new(cat)?, config, cat);
+        let parse_heap = ParseHeap::new(GeneratorScan::new(cat), config, cat);
         Ok(Generator {
             lexicon: self,
             config: *config,
@@ -265,14 +263,14 @@ where
         })
     }
 
-    pub fn parse<'a>(
+    pub fn parse<'a, 'b: 'a>(
         &'a self,
-        s: &'a [T],
+        s: &'b [T],
         category: Category,
-        config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>> {
+        config: &'b ParsingConfig,
+    ) -> Result<Parser<'a, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, s)?, config, cat);
+        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, s), config, cat);
         Ok(Parser {
             lexicon: self,
             config,
@@ -282,17 +280,17 @@ where
         })
     }
 
-    pub fn parse_multiple<'a, U>(
+    pub fn parse_multiple<'a, 'b: 'a, U>(
         &'a self,
-        sentences: &'a [U],
+        sentences: &'b [U],
         category: Category,
         config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>>
+    ) -> Result<Parser<'a, T, Category>, ParsingError<Category>>
     where
         U: AsRef<[T]>,
     {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences)?, config, cat);
+        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences), config, cat);
         Ok(Parser {
             lexicon: self,
             buffer: vec![],
@@ -307,12 +305,12 @@ where
         sentences: &'a [U],
         category: Category,
         config: &'a ParsingConfig,
-    ) -> Result<FuzzyParser<'a, T, Category>>
+    ) -> Result<FuzzyParser<'a, T, Category>, ParsingError<Category>>
     where
         U: AsRef<[T]>,
     {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences)?, config, cat);
+        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences), config, cat);
         Ok(FuzzyParser {
             lexicon: self,
             config,
@@ -322,19 +320,15 @@ where
 }
 
 #[derive(Debug)]
-pub struct Generator<L, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
-where
-    L: Borrow<Lexicon<T, Category>>,
-{
-    lexicon: L,
+pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
+    lexicon: &'a Lexicon<T, Category>,
     phantom: PhantomData<Category>,
     parse_heap: ParseHeap<T, GeneratorScan<T>>,
     config: ParsingConfig,
 }
 
-impl<L, T, Category> Iterator for Generator<L, T, Category>
+impl<T, Category> Iterator for Generator<'_, T, Category>
 where
-    L: Borrow<Lexicon<T, Category>>,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
@@ -347,7 +341,7 @@ where
                     &mut self.parse_heap,
                     moment,
                     beam,
-                    self.lexicon.borrow(),
+                    self.lexicon,
                     &self.config,
                 );
             } else if let Some(x) =

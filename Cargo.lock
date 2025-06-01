@@ -354,6 +354,7 @@ dependencies = [
  "regex",
  "simple-semantics",
  "thin-vec",
+ "thiserror",
  "tinyvec",
 ]
 

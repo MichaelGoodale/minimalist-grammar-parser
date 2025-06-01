@@ -1,10 +1,11 @@
 use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Hash};
 
+use thiserror::Error;
+
 use crate::Direction;
 
 use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::{AHashMap, AHashSet, HashMap};
-use anyhow::bail;
 use itertools::Itertools;
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
@@ -259,6 +260,14 @@ fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
     }
 }
 
+#[derive(Error, Debug, Clone)]
+pub enum MutationError {
+    #[error("Node {0:?} is not a leaf so we can't delete it.")]
+    CantDeleteNonLeaf(NodeIndex),
+    #[error("Node {0:?} is the only leaf so we can't delete it.")]
+    LastLeaf(NodeIndex),
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct NewLexeme {
     pub new_lexeme: NodeIndex,
@@ -352,12 +361,12 @@ where
         }
     }
 
-    pub fn delete_lexeme(&mut self, leaf: NodeIndex) -> anyhow::Result<()> {
+    pub fn delete_lexeme(&mut self, leaf: NodeIndex) -> Result<(), MutationError> {
         if !self.leaves.contains(&leaf) {
-            bail!("{leaf:?} is not a leaf!");
+            return Err(MutationError::CantDeleteNonLeaf(leaf));
         }
         if self.leaves.len() == 1 {
-            bail!("Deleting the only lexeme will make an invalid grammar");
+            return Err(MutationError::LastLeaf(leaf));
         }
 
         let mut next_node = Some(leaf);

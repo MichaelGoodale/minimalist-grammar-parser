@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = { version = "1.0.97", optional = true }
 ahash = { version = "0.8.11", features = ["compile-time-rng"] }
-anyhow = "1.0.97"
 bitvec = "1.0.1"
 chumsky = "0.10.0"
 itertools = "0.14.0"
@@ -19,16 +19,18 @@ regex = { version = "1.11.1", optional = true }
 rand = "0.9.1"
 rand_distr = "0.5.1"
 rand_chacha = "0.9.0"
+thiserror = "2.0.12"
 
 
 [dev-dependencies]
+anyhow = "1.0.97"
 approx = "0.5.1"
 divan = "0.1.8"
 lazy_static = "1.4.0"
 rand_chacha = "0.9.0"
 
 [features]
-semantics = ["dep:simple-semantics", "dep:regex"]
+semantics = ["dep:simple-semantics", "dep:regex", "dep:anyhow"]
 pretty = []
 
 [[bench]]

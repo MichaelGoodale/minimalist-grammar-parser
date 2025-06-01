@@ -3,9 +3,8 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::marker::PhantomData;
 
-use crate::lexicon::{Feature, FeatureOrLemma, Lexicon};
+use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
 use crate::{Direction, ParseHeap, ParsingConfig};
-use anyhow::Result;
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -209,7 +208,7 @@ fn unmerge<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
     rule_prob: LogProb<f64>,
-) -> Result<()> {
+) -> Result<(), ParsingError<Category>> {
     let complement = lexicon.find_category(cat)?;
 
     //This enforces the SpICmg constraint (it could be loosened by determining how to divide the
@@ -331,7 +330,7 @@ fn unmove<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
     rule_prob: LogProb<f64>,
-) -> Result<()> {
+) -> Result<(), ParsingError<Category>> {
     let stored = lexicon.find_licensee(cat)?;
     let (stored, stored_id) =
         beam.new_future_tree(stored, moment.tree.index.clone_push(Direction::Left));

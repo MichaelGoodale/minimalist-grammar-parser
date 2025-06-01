@@ -1,4 +1,4 @@
-use crate::lexicon::Feature;
+use crate::lexicon::{Feature, LexiconParsingError};
 use anyhow::Result;
 
 use super::*;
@@ -374,7 +374,7 @@ fn simple_movement() -> Result<()> {
         lexicon
             .into_iter()
             .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?,
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
     );
     let v: Vec<_> = lexicon
         .generate("t", &CONFIG)?
@@ -404,7 +404,7 @@ fn proper_distributions() -> Result<()> {
         lexicon
             .into_iter()
             .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()?,
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
     );
     let v = vec![
         (-LN_2, vec!["a"]),

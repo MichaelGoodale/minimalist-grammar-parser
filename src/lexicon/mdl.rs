@@ -1,6 +1,5 @@
-use super::{Feature, FeatureOrLemma, Lexicon};
+use super::{Feature, FeatureOrLemma, Lexicon, LexiconError};
 use ahash::AHashSet;
-use anyhow::{Result, bail};
 use std::hash::Hash;
 
 pub trait SymbolCost: Sized {
@@ -8,41 +7,41 @@ pub trait SymbolCost: Sized {
     /// # Example
     /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``mdl_score``].
     /// The string, abcabc should have symbol_cost 6.
-    fn symbol_cost(x: &Option<Self>) -> Result<u16>;
+    fn symbol_cost(x: &Option<Self>) -> u16;
 }
 
 impl SymbolCost for &str {
-    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+    fn symbol_cost(x: &Option<Self>) -> u16 {
         match x {
-            Some(x) => Ok(x.len().try_into()?),
-            None => Ok(0),
+            Some(x) => x.len().try_into().unwrap(),
+            None => 0,
         }
     }
 }
 
 impl SymbolCost for String {
-    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+    fn symbol_cost(x: &Option<Self>) -> u16 {
         match x {
-            Some(x) => Ok(x.len().try_into()?),
-            None => Ok(0),
+            Some(x) => x.len().try_into().unwrap(),
+            None => 0,
         }
     }
 }
 
 impl SymbolCost for char {
-    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+    fn symbol_cost(x: &Option<Self>) -> u16 {
         match x {
-            Some(_) => Ok(1),
-            None => Ok(0),
+            Some(_) => 1,
+            None => 0,
         }
     }
 }
 
 impl SymbolCost for u8 {
-    fn symbol_cost(x: &Option<Self>) -> Result<u16> {
+    fn symbol_cost(x: &Option<Self>) -> u16 {
         match x {
-            Some(_) => Ok(1),
-            None => Ok(0),
+            Some(_) => 1,
+            None => 0,
         }
     }
 }
@@ -54,7 +53,11 @@ const MG_TYPES: u16 = 5;
 impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debug + Clone + Hash>
     Lexicon<T, Category>
 {
-    pub fn mdl_score_fixed_category_size(&self, n_phonemes: u16, n_categories: u16) -> Result<f64> {
+    pub fn mdl_score_fixed_category_size(
+        &self,
+        n_phonemes: u16,
+        n_categories: u16,
+    ) -> Result<f64, LexiconError> {
         self.mdl_inner(n_phonemes, Some(n_categories))
     }
 
@@ -62,17 +65,17 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
     ///
     /// # Arguments
     /// * `n_phonemes` - The size of required to encode a symbol of the phonology. e.g in English orthography, it would be 26.
-    pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64> {
+    pub fn mdl_score(&self, n_phonemes: u16) -> Result<f64, LexiconError> {
         self.mdl_inner(n_phonemes, None)
     }
 
-    fn mdl_inner(&self, n_phonemes: u16, n_categories: Option<u16>) -> Result<f64> {
+    fn mdl_inner(&self, n_phonemes: u16, n_categories: Option<u16>) -> Result<f64, LexiconError> {
         let mut category_symbols = AHashSet::new();
         let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
         for leaf in self.leaves.iter() {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
-                let n_phonemes = T::symbol_cost(lemma)?;
+                let n_phonemes = T::symbol_cost(lemma);
 
                 let mut nx = *leaf;
                 let mut n_features = 0;
@@ -93,7 +96,7 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
                 }
                 lexemes.push((n_phonemes.into(), n_features.into()));
             } else {
-                bail!("Bad lexicon!");
+                return Err(LexiconError::NotALeaf(*leaf));
             }
         }
         let n_categories: u16 =
@@ -118,7 +121,7 @@ mod test {
     use approx::assert_relative_eq;
 
     #[test]
-    fn mdl_score_test() -> Result<()> {
+    fn mdl_score_test() -> anyhow::Result<()> {
         let ga: &str = "mary::d -k
 laughs::=d +k t
 laughed::=d +k t

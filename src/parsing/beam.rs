@@ -383,6 +383,29 @@ mod test {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
+
+        let lex = Lexicon::from_string("a::S= b= S\n::S\nb::b")?;
+
+        let mut strings: Vec<_> = ["a", "a b", "a a b", "a a b b"]
+            .iter()
+            .map(|x| x.split(" ").collect::<Vec<_>>())
+            .collect();
+        strings.push(vec![]);
+
+        let continuations = [
+            vec![Continuation::Word("b"), Continuation::Word("a")],
+            vec![Continuation::EndOfSentence],
+            vec![Continuation::Word("b")],
+            vec![Continuation::EndOfSentence],
+            vec![Continuation::Word("a"), Continuation::EndOfSentence],
+        ]
+        .into_iter()
+        .map(|x| x.into_iter().collect());
+
+        for (s, valid) in strings.into_iter().zip(continuations) {
+            let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
+            assert_eq!(cont, valid);
+        }
         Ok(())
     }
 }

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use itertools::Itertools;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
@@ -28,7 +27,7 @@ fn get_grammar() -> Lexicon<&'static str, &'static str> {
     let v: Vec<_> = STABLER2011
         .split('\n')
         .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .unwrap();
     Lexicon::new(v)
 }
@@ -38,7 +37,7 @@ fn parse_copy_language_together(config: &ParsingConfig) {
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
             .map(SimpleLexicalEntry::parse)
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<Vec<_>, _>>()
             .unwrap();
         let lex = Lexicon::new(v);
 
@@ -83,7 +82,7 @@ fn parse_copy_language(config: &ParsingConfig) {
     let v: Vec<_> = COPY_LANGUAGE
         .split('\n')
         .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let lex = Lexicon::new(v);
 
@@ -110,7 +109,7 @@ fn generate_copy_language(config: &ParsingConfig) {
     let v: Vec<_> = COPY_LANGUAGE
         .split('\n')
         .map(SimpleLexicalEntry::parse)
-        .collect::<Result<Vec<_>>>()
+        .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let lex = Lexicon::new(v);
     lex.generate("T", config).unwrap().take(100).count();

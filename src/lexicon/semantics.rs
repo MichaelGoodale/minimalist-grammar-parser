@@ -1,4 +1,5 @@
 use ahash::HashMap;
+use simple_semantics::language::LambdaParseError;
 use simple_semantics::language::UnprocessedParseTree;
 use std::fmt::Debug;
 
@@ -63,42 +64,33 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
 }
 
 impl<'src> SemanticLexicon<&'src str, &'src str> {
-    pub fn parse(s: &'src str) -> anyhow::Result<(Self, LabelledScenarios)> {
+    pub fn parse(s: &'src str) -> Result<(Self, LabelledScenarios), LambdaParseError> {
         let mut labels = LabelledScenarios::default();
 
-        let (lexicon, semantic_entries) = semantic_grammar_parser()
-            .parse(s)
-            .into_result()
-            .map_err(|x| {
-                let x: LexiconParsingError<'src> = x.into();
-                anyhow::anyhow!(x.to_string())
-            })?;
+        let (lexicon, semantic_entries) = semantic_grammar_parser().parse(s).into_result()?;
 
         let semantic_lexicon = SemanticLexicon {
             lexicon,
             semantic_entries: semantic_entries
                 .into_iter()
                 .map(|(k, v)| v.to_pool(&mut labels).map(|x| (k, x)))
-                .collect::<anyhow::Result<_>>()?,
+                .collect::<Result<_, _>>()?,
         };
         Ok((semantic_lexicon, labels))
     }
 
-    pub fn parse_with_labels(s: &'src str, labels: &mut LabelledScenarios) -> anyhow::Result<Self> {
-        let (lexicon, semantic_entries) = semantic_grammar_parser()
-            .parse(s)
-            .into_result()
-            .map_err(|x| {
-                let x: LexiconParsingError<'src> = x.into();
-                anyhow::anyhow!(x.to_string())
-            })?;
+    pub fn parse_with_labels(
+        s: &'src str,
+        labels: &mut LabelledScenarios,
+    ) -> Result<Self, LambdaParseError> {
+        let (lexicon, semantic_entries) = semantic_grammar_parser().parse(s).into_result()?;
 
         let semantic_lexicon = SemanticLexicon {
             lexicon,
             semantic_entries: semantic_entries
                 .into_iter()
                 .map(|(k, v)| v.to_pool(labels).map(|x| (k, x)))
-                .collect::<anyhow::Result<_>>()?,
+                .collect::<Result<_, _>>()?,
         };
         Ok(semantic_lexicon)
     }

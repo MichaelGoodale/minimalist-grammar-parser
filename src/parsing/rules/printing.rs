@@ -8,6 +8,7 @@ use petgraph::visit::IntoEdgeReferences;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
+use thiserror::Error;
 
 use crate::lexicon::Feature;
 use crate::lexicon::FeatureOrLemma;
@@ -365,6 +366,14 @@ impl<C: Eq + std::fmt::Display> Display for Mover<C> {
     }
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PrintError {
+    #[error("The alleged lemma is not a leaf!")]
+    NotALeaf,
+    #[error("The alleged trace is not a trace!")]
+    NotATrace,
+}
+
 impl<C: Eq> Mover<C> {
     pub fn features(&self) -> &[Feature<C>] {
         &self.features
@@ -396,21 +405,17 @@ impl<T, C: Eq> MgNode<T, C> {
         }
     }
 
-    pub fn trace(&self) -> anyhow::Result<TraceId> {
+    pub fn trace(&self) -> Result<TraceId, PrintError> {
         match self {
             MgNode::Trace(t) => Ok(*t),
-            MgNode::Node { .. } | MgNode::Leaf { .. } => {
-                Err(anyhow::anyhow!("The node isn't a trace!"))
-            }
+            MgNode::Node { .. } | MgNode::Leaf { .. } => Err(PrintError::NotATrace),
         }
     }
 
-    pub fn lemma(&self) -> anyhow::Result<Option<&T>> {
+    pub fn lemma(&self) -> Result<Option<&T>, PrintError> {
         match self {
             MgNode::Leaf { lemma, .. } => Ok(lemma.as_ref()),
-            MgNode::Node { .. } | MgNode::Trace(_) => {
-                Err(anyhow::anyhow!("The node isn't a lemma!"))
-            }
+            MgNode::Node { .. } | MgNode::Trace(_) => Err(PrintError::NotALeaf),
         }
     }
 }

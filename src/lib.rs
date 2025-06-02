@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::time::{Duration, Instant};
@@ -252,7 +253,22 @@ where
         &self,
         category: Category,
         config: &ParsingConfig,
-    ) -> Result<Generator<T, Category>, ParsingError<Category>> {
+    ) -> Result<Generator<&Self, T, Category>, ParsingError<Category>> {
+        let cat = self.find_category(&category)?;
+        let parse_heap = ParseHeap::new(GeneratorScan::new(cat), config, cat);
+        Ok(Generator {
+            lexicon: self,
+            config: *config,
+            parse_heap,
+            phantom: PhantomData,
+        })
+    }
+
+    pub fn into_generate(
+        self,
+        category: Category,
+        config: &ParsingConfig,
+    ) -> Result<Generator<Self, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
         let parse_heap = ParseHeap::new(GeneratorScan::new(cat), config, cat);
         Ok(Generator {
@@ -320,15 +336,16 @@ where
 }
 
 #[derive(Debug)]
-pub struct Generator<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
-    lexicon: &'a Lexicon<T, Category>,
+pub struct Generator<L, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
+    lexicon: L,
     phantom: PhantomData<Category>,
     parse_heap: ParseHeap<T, GeneratorScan<T>>,
     config: ParsingConfig,
 }
 
-impl<T, Category> Iterator for Generator<'_, T, Category>
+impl<L, T, Category> Iterator for Generator<L, T, Category>
 where
+    L: Borrow<Lexicon<T, Category>>,
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
@@ -341,7 +358,7 @@ where
                     &mut self.parse_heap,
                     moment,
                     beam,
-                    self.lexicon,
+                    self.lexicon.borrow(),
                     &self.config,
                 );
             } else if let Some(x) =

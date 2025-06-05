@@ -33,9 +33,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "anstyle"
-version = "1.0.10"
+version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55cc3b69f167a1ef2e161439aa98aed94e6028e5f9a59be9a6ffb47aef1651f9"
+checksum = "862ed96ca487e809f1c8e5a8447f6ee2cf102f846893800b20cebdf541fc6bbd"
 
 [[package]]
 name = "anyhow"
@@ -352,6 +352,8 @@ dependencies = [
  "rand_chacha",
  "rand_distr",
  "regex",
+ "serde",
+ "serde_json",
  "simple-semantics",
  "thin-vec",
  "thiserror",
@@ -585,7 +587,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simple-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#321c5fb1e6a0c5b4a8e4861e49ccd462596b215f"
+source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#2db7132720f43ce84d284186dbcb3ea947bad144"
 dependencies = [
  "ahash",
  "chumsky",

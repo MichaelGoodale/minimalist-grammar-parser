@@ -4,6 +4,12 @@ use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::visit::IntoEdgeReferences;
+use serde::Serialize;
+use serde::ser::SerializeSeq;
+use serde::ser::SerializeStructVariant;
+
+#[cfg(feature = "semantics")]
+use simple_semantics::LabelledScenarios;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -173,7 +179,7 @@ impl RulePool {
 
         for (_trace_origin, trace_node) in movements.iter() {
             let trace_id = match g.node_weight(*trace_node).unwrap() {
-                MgNode::Trace(trace_id) => *trace_id,
+                MgNode::Trace { trace, .. } => *trace,
                 _ => panic!("trace_node must be a MgNode::Trace!"),
             };
 
@@ -195,7 +201,7 @@ impl RulePool {
                         .unwrap();
                     m.canceled = true;
                 }
-                MgNode::Trace(_) => (),
+                MgNode::Trace { .. } => (),
             };
         }
 
@@ -203,6 +209,43 @@ impl RulePool {
             g.add_edge(trace_origin, trace_node, MGEdge::Move);
         }
         (g, root, nodes_h)
+    }
+
+    #[cfg(feature = "semantics")]
+    pub fn to_semantic_json<T, C>(
+        &self,
+        semantic_lex: &SemanticLexicon<T, C>,
+        history: &SemanticHistory,
+    ) -> String
+    where
+        FeatureOrLemma<T, C>: std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+    {
+        let (g, root, node_to_rule) = self.to_graph(semantic_lex.lexicon());
+        let g = g.map(
+            |i, node| SemanticMGNode {
+                node: node.clone(),
+                semantic: {
+                    history
+                        .semantic_node(*node_to_rule.get(&i).unwrap())
+                        .unwrap()
+                },
+            },
+            |_, e| *e,
+        );
+
+        serde_json::to_string(&Tree::new_semantic(&g, root)).unwrap()
+    }
+
+    pub fn to_json<T, C>(&self, lex: &Lexicon<T, C>) -> String
+    where
+        FeatureOrLemma<T, C>: std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+    {
+        let (g, root, _) = self.to_graph(lex);
+        serde_json::to_string(&Tree::new(&g, root)).unwrap()
     }
 
     #[cfg(feature = "semantics")]
@@ -306,15 +349,7 @@ fn recursive_latex(
 ) {
     let indent = (0..depth).map(|_| '\t').collect::<String>();
     s.push_str(&format!("{}[{}", indent, g.node_weight(node).unwrap()));
-    let children = g
-        .edges_directed(node, petgraph::Direction::Outgoing)
-        .sorted_by_key(|x| x.weight())
-        .filter_map(|e| match e.weight() {
-            MGEdge::Move => None,
-            MGEdge::Merge(_) => Some(e.target()),
-        })
-        .collect_vec();
-
+    let children = get_children(g, node);
     if !children.is_empty() {
         s.push('\n');
         let n_children = children.len();
@@ -328,8 +363,195 @@ fn recursive_latex(
     s.push_str(" ]");
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Mover<C: Eq> {
+fn get_children<N>(g: &StableDiGraph<N, MGEdge>, x: NodeIndex) -> Vec<NodeIndex> {
+    g.edges_directed(x, petgraph::Direction::Outgoing)
+        .sorted_by_key(|x| x.weight())
+        .filter_map(|e| match e.weight() {
+            MGEdge::Move => None,
+            MGEdge::Merge(_) => Some(e.target()),
+        })
+        .collect()
+}
+
+enum Tree<'a, T, C: Eq + Display> {
+    Node {
+        node: MgNode<T, C>,
+
+        #[cfg(feature = "semantics")]
+        semantics: Option<SemanticNode<'a>>,
+    },
+    Children(Vec<Tree<'a, T, C>>),
+}
+
+impl<T, C: Eq> Serialize for Tree<'_, T, C>
+where
+    C: Display,
+    Mover<C>: Serialize,
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Tree::Node {
+                node,
+                #[cfg(feature = "semantics")]
+                semantics,
+                ..
+            } => {
+                match node {
+                    MgNode::Node {
+                        features,
+                        movement,
+                        trace,
+                        ..
+                    } => {
+                        #[cfg(not(feature = "semantics"))]
+                        let n = 3;
+
+                        #[cfg(feature = "semantics")]
+                        let n = if semantics.is_some() { 4 } else { 3 };
+
+                        let mut seq =
+                            serializer.serialize_struct_variant("MgNode", 0, "Node", n)?;
+
+                        seq.serialize_field("features", features)?;
+                        seq.serialize_field("movement", movement)?;
+                        seq.serialize_field("trace", trace)?;
+
+                        #[cfg(feature = "semantics")]
+                        if let Some(semantics) = semantics {
+                            seq.serialize_field("semantics", semantics)?;
+                        }
+
+                        seq.end()
+                    }
+
+                    MgNode::Leaf {
+                        lemma,
+                        features,
+                        movement,
+                        trace,
+                        ..
+                    } => {
+                        #[cfg(not(feature = "semantics"))]
+                        let n = 4;
+
+                        #[cfg(feature = "semantics")]
+                        let n = if semantics.is_some() { 5 } else { 4 };
+
+                        let mut seq =
+                            serializer.serialize_struct_variant("MgNode", 1, "Leaf", n)?;
+
+                        seq.serialize_field("features", features)?;
+                        seq.serialize_field("movement", movement)?;
+                        seq.serialize_field("lemma", lemma)?;
+                        seq.serialize_field("trace", trace)?;
+
+                        #[cfg(feature = "semantics")]
+                        if let Some(semantics) = semantics {
+                            seq.serialize_field("semantics", semantics)?;
+                        }
+
+                        seq.end()
+                    }
+
+                    MgNode::Trace { trace, new_trace } => {
+                        #[cfg(not(feature = "semantics"))]
+                        let n = 2;
+
+                        #[cfg(feature = "semantics")]
+                        let n = if semantics.is_some() { 3 } else { 2 };
+
+                        let mut seq =
+                            serializer.serialize_struct_variant("MgNode", 2, "Trace", n)?;
+
+                        seq.serialize_field("trace", trace)?;
+                        seq.serialize_field("new_trace", new_trace)?;
+
+                        #[cfg(feature = "semantics")]
+                        if let Some(semantics) = semantics {
+                            seq.serialize_field("semantics", semantics)?;
+                        }
+
+                        seq.end()
+                    }
+                }
+
+                //typst_data.serialize(serializer)?;
+            }
+
+            Tree::Children(trees) => {
+                let mut seq = serializer.serialize_seq(Some(trees.len()))?;
+                for tree in trees {
+                    seq.serialize_element(tree)?;
+                }
+                seq.end()
+            }
+        }
+    }
+}
+
+impl<T, C> Tree<'_, T, C>
+where
+    FeatureOrLemma<T, C>: std::fmt::Display,
+    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
+    MgNode<T, C>: Serialize,
+{
+    fn new(g: &StableDiGraph<MgNode<T, C>, MGEdge>, x: NodeIndex) -> Tree<T, C> {
+        let node = g.node_weight(x).unwrap();
+        let children: Vec<_> = get_children(g, x);
+
+        let node = Tree::Node {
+            node: node.clone(),
+
+            #[cfg(feature = "semantics")]
+            semantics: None,
+        };
+        if children.is_empty() {
+            node
+        } else {
+            let mut row = vec![node];
+            row.extend(children.into_iter().map(|x| Self::new(g, x)));
+            Tree::Children(row)
+        }
+    }
+
+    #[cfg(feature = "semantics")]
+    fn new_semantic<'a>(
+        g: &'a StableDiGraph<SemanticMGNode<T, C>, MGEdge>,
+        x: NodeIndex,
+    ) -> Tree<'a, T, C> {
+        let node = g.node_weight(x).unwrap();
+        let children: Vec<_> = get_children(g, x);
+
+        let node = Tree::Node {
+            node: node.node.clone(),
+            semantics: Some(node.semantic.clone()),
+        };
+        if children.is_empty() {
+            node
+        } else {
+            let mut row = vec![node];
+            row.extend(children.into_iter().map(|x| Self::new_semantic(g, x)));
+            Tree::Children(row)
+        }
+    }
+}
+
+impl Serialize for TraceId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+pub struct Mover<C: Eq + Display> {
     trace_id: TraceId,
     canceled: bool,
     features: Vec<Feature<C>>,
@@ -374,40 +596,56 @@ pub enum PrintError {
     NotATrace,
 }
 
-impl<C: Eq> Mover<C> {
+impl<C: Eq + Display> Mover<C> {
     pub fn features(&self) -> &[Feature<C>] {
         &self.features
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MgNode<T, C: Eq> {
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub enum MgNode<T, C: Eq + Display> {
     Node {
         features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
+        trace: Option<TraceId>,
+        #[serde(skip_serializing)]
         root: bool,
     },
     Leaf {
         lemma: Option<T>,
         features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
+        trace: Option<TraceId>,
+        #[serde(skip_serializing)]
         root: bool,
     },
-    Trace(TraceId),
+    Trace {
+        trace: TraceId,
+        new_trace: Option<TraceId>,
+    },
 }
 
-impl<T, C: Eq> MgNode<T, C> {
+impl<C: Eq + Display> Serialize for Feature<C> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<T, C: Eq + Display> MgNode<T, C> {
     pub fn features(&self) -> &[Feature<C>] {
         match self {
             MgNode::Node { features, .. } => features,
             MgNode::Leaf { features, .. } => features,
-            MgNode::Trace(_) => &[],
+            MgNode::Trace { .. } => &[],
         }
     }
 
     pub fn trace(&self) -> Result<TraceId, PrintError> {
         match self {
-            MgNode::Trace(t) => Ok(*t),
+            MgNode::Trace { trace, .. } => Ok(*trace),
             MgNode::Node { .. } | MgNode::Leaf { .. } => Err(PrintError::NotATrace),
         }
     }
@@ -415,16 +653,16 @@ impl<T, C: Eq> MgNode<T, C> {
     pub fn lemma(&self) -> Result<Option<&T>, PrintError> {
         match self {
             MgNode::Leaf { lemma, .. } => Ok(lemma.as_ref()),
-            MgNode::Node { .. } | MgNode::Trace(_) => Err(PrintError::NotALeaf),
+            MgNode::Node { .. } | MgNode::Trace { .. } => Err(PrintError::NotALeaf),
         }
     }
 }
 
 #[cfg(feature = "semantics")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SemanticMGNode<T, C: Eq> {
+struct SemanticMGNode<'a, T, C: Eq + Display> {
     node: MgNode<T, C>,
-    semantic: SemanticNode,
+    semantic: SemanticNode<'a>,
 }
 
 fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: bool) -> String {
@@ -455,7 +693,7 @@ fn clean_up_expr(s: String) -> String {
 }
 
 #[cfg(feature = "semantics")]
-impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNode<T, C> {
+impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNode<'_, T, C> {
     fn to_latex(&self) -> String {
         match (&self.node, &self.semantic) {
             (
@@ -463,6 +701,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     features,
                     movement,
                     root,
+                    ..
                 },
                 SemanticNode::Simple(_),
             ) => format!(
@@ -483,8 +722,9 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     features,
                     movement,
                     root,
+                    ..
                 },
-                SemanticNode::Rich(_, _),
+                SemanticNode::Rich(_, _, _),
             ) => format!(
                 "{{\\semder{}{{{}}}{{{}}} }}",
                 if !movement.is_empty() {
@@ -523,7 +763,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     root,
                     ..
                 },
-                SemanticNode::Rich(_, _),
+                SemanticNode::Rich(_, _, _),
             ) => {
                 format!(
                     "{{\\semlex{{{}}}{{{}}}{{{}}} }}",
@@ -535,7 +775,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     clean_up_expr(self.semantic.to_string())
                 )
             }
-            (MgNode::Trace(trace_id), _) => format!("{{${}$}}", trace_id),
+            (MgNode::Trace { trace, .. }, _) => format!("{{${}$}}", trace),
         }
     }
 }
@@ -547,6 +787,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C>
                 features,
                 movement,
                 root,
+                ..
             } => format!(
                 "{{\\der{}{{{}}}}}",
                 if !movement.is_empty() {
@@ -574,7 +815,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C>
                     feature_vec_to_string(features, !root),
                 )
             }
-            MgNode::Trace(trace_id) => format!("{{${}$}}", trace_id),
+            MgNode::Trace { trace, .. } => format!("{{${}$}}", trace),
         }
     }
 }
@@ -723,6 +964,13 @@ where
                 trace_id,
                 canceled: false,
             });
+
+            //Make it so that the child has evidence of its use in movement.
+            match g.node_weight_mut(complement_node).unwrap() {
+                MgNode::Node { trace, .. } => *trace = Some(trace_id),
+                MgNode::Leaf { trace, .. } => *trace = Some(trace_id),
+                MgNode::Trace { .. } => panic!("impossible to do"),
+            };
         }
         Rule::Unmove { .. } => {
             let trace_id = comp_trace_id.unwrap();
@@ -741,6 +989,14 @@ where
                 .unwrap();
             mover.features.remove(0);
             mover.trace_id = trace_id;
+
+            //Make it so that the child has evidence of its use in movement.
+            match g.node_weight_mut(complement_node).unwrap() {
+                MgNode::Trace { new_trace, .. } => *new_trace = Some(trace_id),
+                MgNode::Node { .. } | MgNode::Leaf { .. } => {
+                    panic!("impossible to do!")
+                }
+            };
         }
         _ => (),
     }
@@ -752,7 +1008,7 @@ where
                 _ => None,
             }
         }
-        MgNode::Trace(_) => panic!("a trace can't be a direct child"),
+        MgNode::Trace { .. } => panic!("a trace can't be a direct child"),
     };
     let (child_dir, complement_dir) = if let Some(dir) = complement_direction {
         (dir.flip(), *dir)
@@ -764,6 +1020,7 @@ where
         features: features.clone(),
         movement: movement.clone(),
         root: false,
+        trace: None,
     });
 
     g.add_edge(node, child_node, MGEdge::Merge(Some(child_dir)));
@@ -790,7 +1047,10 @@ where
     let rule = rules.get(index);
     let (node, features, movers, trace_id) = match rule {
         Rule::UnmoveTrace(trace_id) => {
-            let node = g.add_node(MgNode::Trace(*trace_id));
+            let node = g.add_node(MgNode::Trace {
+                trace: *trace_id,
+                new_trace: None,
+            });
             trace_h.entry(*trace_id).or_default().1 = Some(node);
             (node, vec![], vec![], Some(*trace_id))
         }
@@ -821,6 +1081,7 @@ where
                 lemma,
                 features: features.clone(),
                 movement: vec![],
+                trace: None,
             });
             features.remove(0);
             (node, features, vec![], None)
@@ -849,7 +1110,7 @@ where
                 inner_to_graph(g, lex, rules, *child, trace_h, rules_h, nodes_h);
             match g.node_weight_mut(node).unwrap() {
                 MgNode::Node { root, .. } | MgNode::Leaf { root, .. } => *root = true,
-                MgNode::Trace(_) => (),
+                MgNode::Trace { .. } => (),
             };
             (node, features, movers, trace_id)
         }

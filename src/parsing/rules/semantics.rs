@@ -1,16 +1,26 @@
 use std::fmt::Display;
 
+use thiserror::Error;
+
 use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
 use itertools::Itertools;
 use simple_semantics::{
+    LabelledScenarios,
     lambda::{RootedLambdaPool, types::LambdaType},
     language::Expr,
 };
 
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
+#[cfg(feature = "pretty")]
+use serde::{
+    Serialize,
+    ser::{SerializeMap, SerializeStruct},
+};
+
 #[derive(Debug, Clone, PartialEq, Copy, Eq)]
+#[cfg_attr(feature = "pretty", derive(Serialize))]
 pub enum SemanticRule {
     FunctionalApplication,
     Store,
@@ -43,7 +53,7 @@ impl RulePool {
     pub fn to_interpretation<'a, T, C>(
         &'a self,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory)> + 'a
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory<'static>)> + 'a
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
@@ -69,23 +79,57 @@ struct HistoryNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SemanticHistory {
-    Rich(Vec<(SemanticRule, Option<SemanticState>)>),
+pub enum SemanticHistory<'a> {
+    Rich(
+        Vec<(SemanticRule, Option<SemanticState>)>,
+        Option<&'a LabelledScenarios>,
+    ),
     Simple(Vec<SemanticRule>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SemanticNode {
-    Rich(SemanticRule, Option<SemanticState>),
+pub enum SemanticNode<'a> {
+    Rich(
+        SemanticRule,
+        Option<SemanticState>,
+        Option<&'a LabelledScenarios>,
+    ),
     Simple(SemanticRule),
 }
 
-impl SemanticHistory {
+#[cfg(feature = "pretty")]
+impl Serialize for SemanticNode<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SemanticNode::Rich(semantic_rule, semantic_state, labels) => {
+                let mut s = serializer.serialize_struct("SemanticNode", 1)?;
+                s.serialize_field("rule", semantic_rule)?;
+                s.serialize_field(
+                    "state",
+                    &semantic_state
+                        .as_ref()
+                        .map(|s| LabelledSemanticState { s, labels: *labels }),
+                )?;
+                s.end()
+            }
+            SemanticNode::Simple(semantic_rule) => {
+                let mut s = serializer.serialize_struct("SemanticNode", 1)?;
+                s.serialize_field("rule", semantic_rule)?;
+                s.end()
+            }
+        }
+    }
+}
+
+impl<'a> SemanticHistory<'a> {
     pub fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
         match self {
-            SemanticHistory::Rich(items) => items
+            SemanticHistory::Rich(items, labels) => items
                 .get(i.0)
-                .map(|(rule, interp)| SemanticNode::Rich(*rule, interp.clone())),
+                .map(|(rule, interp)| SemanticNode::Rich(*rule, interp.clone(), *labels)),
             SemanticHistory::Simple(items) => {
                 items.get(i.0).map(|rule| SemanticNode::Simple(*rule))
             }
@@ -94,7 +138,7 @@ impl SemanticHistory {
 
     pub fn constituents(&self) -> Option<impl Iterator<Item = &RootedLambdaPool<Expr>>> {
         match self {
-            SemanticHistory::Rich(items) => Some(
+            SemanticHistory::Rich(items, _labels) => Some(
                 items
                     .iter()
                     .filter_map(|(_, x)| x.as_ref().map(|x| &x.expr)),
@@ -109,7 +153,7 @@ impl SemanticHistory {
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
         match self {
-            SemanticHistory::Rich(items) => SemanticHistory::Rich(items),
+            SemanticHistory::Rich(items, labels) => SemanticHistory::Rich(items, labels),
             SemanticHistory::Simple(semantic_rules) => {
                 let mut items = semantic_rules.into_iter().map(|x| (x, None)).collect_vec();
 
@@ -121,23 +165,59 @@ impl SemanticHistory {
 
                 derivation.redo_history(RuleIndex(0), &mut items);
 
-                SemanticHistory::Rich(items)
+                SemanticHistory::Rich(items, None)
             }
+        }
+    }
+
+    pub fn with_labels<'b>(
+        self,
+        labels: &'b LabelledScenarios,
+    ) -> Result<SemanticHistory<'b>, LabellingError> {
+        match self {
+            SemanticHistory::Rich(items, _) => Ok(SemanticHistory::Rich(items, Some(labels))),
+            SemanticHistory::Simple(_) => Err(LabellingError::MustBeRich),
         }
     }
 }
 
-impl Display for SemanticNode {
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Error)]
+pub enum LabellingError {
+    #[error("You can't label a simple history! Call `self.into_rich` first!")]
+    MustBeRich,
+}
+
+impl Display for SemanticNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticNode::Rich(semantic_rule, Some(interp)) => {
+            SemanticNode::Rich(semantic_rule, Some(interp), Some(labels)) => {
+                write!(
+                    f,
+                    "\\semanticRule[{}]{{{}}}",
+                    semantic_rule,
+                    interp.to_labeled_string(labels)
+                )
+            }
+            SemanticNode::Rich(semantic_rule, Some(interp), None) => {
                 write!(f, "\\semanticRule[{}]{{{}}}", semantic_rule, interp)
             }
-            SemanticNode::Rich(semantic_rule, None) => {
+            SemanticNode::Rich(semantic_rule, None, _) => {
                 write!(f, "{{[\\textsc{{{}}}]}}", semantic_rule)
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
         }
+    }
+}
+
+impl Display for SemanticState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.expr)
+    }
+}
+
+impl SemanticState {
+    fn to_labeled_string(&self, labels: &LabelledScenarios) -> String {
+        self.expr.to_labeled_string(labels)
     }
 }
 
@@ -147,10 +227,86 @@ pub struct SemanticState {
     movers: HashMap<TraceId, (RootedLambdaPool<Expr>, LambdaType)>,
 }
 
-impl Display for SemanticState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.expr)
+#[cfg(feature = "pretty")]
+struct SerializerHelper<'a> {
+    movers: &'a HashMap<TraceId, (RootedLambdaPool<Expr>, LambdaType)>,
+    labels: Option<&'a LabelledScenarios>,
+}
+
+#[cfg(feature = "pretty")]
+struct SerializerHelperEntry<'a> {
+    x: &'a (RootedLambdaPool<Expr>, LambdaType),
+    labels: Option<&'a LabelledScenarios>,
+}
+
+#[cfg(feature = "pretty")]
+impl Serialize for SerializerHelperEntry<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let (a, b) = self.x;
+        let mut s = serializer.serialize_struct("mover", 2)?;
+        s.serialize_field(
+            "expr",
+            &self
+                .labels
+                .map(|labels| a.to_labeled_string(labels))
+                .unwrap_or_else(|| a.to_string()),
+        )?;
+        s.serialize_field("type", b.to_string().as_str())?;
+        s.end()
     }
+}
+
+#[cfg(feature = "pretty")]
+impl Serialize for SerializerHelper<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(self.movers.len()))?;
+        for (k, x) in self.movers.iter() {
+            s.serialize_key(k)?;
+            s.serialize_value(&SerializerHelperEntry {
+                x,
+                labels: self.labels,
+            })?;
+        }
+
+        s.end()
+    }
+}
+
+#[cfg(feature = "pretty")]
+impl Serialize for LabelledSemanticState<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("SemanticState", 2)?;
+        s.serialize_field(
+            "expr",
+            &self
+                .labels
+                .map(|labels| self.s.expr.to_labeled_string(labels))
+                .unwrap_or_else(|| self.s.expr.to_string()),
+        )?;
+        s.serialize_field(
+            "movement",
+            &SerializerHelper {
+                movers: &self.s.movers,
+                labels: self.labels,
+            },
+        )?;
+        s.end()
+    }
+}
+
+#[derive(Debug)]
+struct LabelledSemanticState<'a> {
+    s: &'a SemanticState,
+    labels: Option<&'a LabelledScenarios>,
 }
 
 impl SemanticState {
@@ -211,7 +367,7 @@ where
     fn interpret(
         rules: &'a RulePool,
         lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory)> + 'a {
+    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory<'static>)> + 'a {
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,

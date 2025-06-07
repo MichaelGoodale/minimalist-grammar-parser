@@ -8,9 +8,6 @@ use serde::Serialize;
 use serde::ser::SerializeSeq;
 use serde::ser::SerializeStructVariant;
 
-#[cfg(feature = "semantics")]
-use simple_semantics::LabelledScenarios;
-
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -212,10 +209,10 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
-    pub fn to_semantic_json<T, C>(
+    pub fn to_semantic_json<'src, T, C>(
         &self,
-        semantic_lex: &SemanticLexicon<T, C>,
-        history: &SemanticHistory,
+        semantic_lex: &SemanticLexicon<'src, T, C>,
+        history: &SemanticHistory<'src>,
     ) -> String
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
@@ -249,10 +246,10 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
-    pub fn to_semantic_latex<T, C>(
+    pub fn to_semantic_latex<'src, T, C>(
         &self,
-        semantic_lex: &SemanticLexicon<T, C>,
-        history: &SemanticHistory,
+        semantic_lex: &SemanticLexicon<'src, T, C>,
+        history: &SemanticHistory<'src>,
     ) -> String
     where
         FeatureOrLemma<T, C>: std::fmt::Display,
@@ -724,7 +721,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     root,
                     ..
                 },
-                SemanticNode::Rich(_, _, _),
+                SemanticNode::Rich(_, _),
             ) => format!(
                 "{{\\semder{}{{{}}}{{{}}} }}",
                 if !movement.is_empty() {
@@ -763,7 +760,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     root,
                     ..
                 },
-                SemanticNode::Rich(_, _, _),
+                SemanticNode::Rich(_, _),
             ) => {
                 format!(
                     "{{\\semlex{{{}}}{{{}}}{{{}}} }}",

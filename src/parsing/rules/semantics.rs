@@ -13,7 +13,7 @@ use simple_semantics::{
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
 #[cfg(feature = "pretty")]
-use serde::{Serialize, ser::SerializeStruct};
+use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 
 #[derive(Debug, Clone, PartialEq, Copy, Eq)]
 #[cfg_attr(feature = "pretty", derive(Serialize))]
@@ -185,6 +185,53 @@ impl Display for SemanticState<'_> {
 pub struct SemanticState<'src> {
     expr: RootedLambdaPool<'src, Expr<'src>>,
     movers: HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Movers<'a, 'src>(&'a HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Mover<'a, 'src>(&'a (RootedLambdaPool<'src, Expr<'src>>, LambdaType));
+impl Serialize for Mover<'_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("Mover", 3)?;
+        s.serialize_field("expr", self.0.0.to_string().as_str())?;
+        s.serialize_field("tokens", &self.0.0)?;
+        s.serialize_field("type", self.0.1.to_string().as_str())?;
+
+        s.end()
+    }
+}
+
+impl Serialize for Movers<'_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(self.0.len()))?;
+        for (k, v) in self.0.iter() {
+            s.serialize_entry(k, &Mover(v))?;
+        }
+        s.end()
+    }
+}
+
+#[cfg(feature = "pretty")]
+impl Serialize for SemanticState<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("SemanticState", 3)?;
+        s.serialize_field("expr", self.expr.to_string().as_str())?;
+        s.serialize_field("tokens", &self.expr)?;
+        s.serialize_field("movers", &Movers(&self.movers))?;
+
+        s.end()
+    }
 }
 
 impl<'src> SemanticState<'src> {
@@ -628,7 +675,7 @@ mod tests {
     #[test]
     fn doesnt_crash_with_bad_typed_double_movement() -> anyhow::Result<()> {
         let lexicon = SemanticLexicon::parse(
-            "mary::0 -1 -1::a0\n::=0 +1 0::lambda <e,e> x_l (a1)\nran::=0 +1 0::a1",
+            "mary::0 -1 -1::a_0\n::=0 +1 0::lambda <e,e> x (a_1)\nran::=0 +1 0::a_1",
         )?;
         for (_, _, r) in
             lexicon

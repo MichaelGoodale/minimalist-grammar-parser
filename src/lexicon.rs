@@ -168,6 +168,7 @@ pub enum FeatureOrLemma<T: Eq, Category: Eq> {
     Complement(Category, Direction),
 }
 
+#[cfg(feature = "sampling")]
 impl<T: Eq, C: Eq + Clone> FeatureOrLemma<T, C> {
     fn to_complement_mut(&mut self) {
         if let FeatureOrLemma::Feature(Feature::Selector(c, d)) = self {
@@ -792,6 +793,8 @@ mod semantics;
 pub use semantics::SemanticLexicon;
 
 pub mod mdl;
+
+#[cfg(feature = "sampling")]
 pub mod mutations;
 
 #[cfg(test)]

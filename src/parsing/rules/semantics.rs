@@ -187,11 +187,15 @@ pub struct SemanticState<'src> {
     movers: HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
 }
 
+#[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Movers<'a, 'src>(&'a HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>);
 
+#[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Mover<'a, 'src>(&'a (RootedLambdaPool<'src, Expr<'src>>, LambdaType));
+
+#[cfg(feature = "pretty")]
 impl Serialize for Mover<'_, '_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -206,6 +210,7 @@ impl Serialize for Mover<'_, '_> {
     }
 }
 
+#[cfg(feature = "pretty")]
 impl Serialize for Movers<'_, '_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

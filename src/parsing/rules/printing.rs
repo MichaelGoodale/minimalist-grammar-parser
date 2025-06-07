@@ -11,6 +11,10 @@ use serde::ser::SerializeStructVariant;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
+
+#[cfg(not(feature = "semantics"))]
+use std::marker::PhantomData;
+
 use thiserror::Error;
 
 use crate::lexicon::Feature;
@@ -376,6 +380,9 @@ enum Tree<'a, T, C: Eq + Display> {
 
         #[cfg(feature = "semantics")]
         semantics: Option<SemanticNode<'a>>,
+
+        #[cfg(not(feature = "semantics"))]
+        data: PhantomData<&'a ()>,
     },
     Children(Vec<Tree<'a, T, C>>),
 }
@@ -506,6 +513,8 @@ where
 
             #[cfg(feature = "semantics")]
             semantics: None,
+            #[cfg(not(feature = "semantics"))]
+            data: PhantomData,
         };
         if children.is_empty() {
             node

@@ -6,7 +6,6 @@ use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
 use itertools::Itertools;
 use simple_semantics::{
-    LabelledScenarios,
     lambda::{RootedLambdaPool, types::LambdaType},
     language::Expr,
 };
@@ -14,10 +13,7 @@ use simple_semantics::{
 use super::{Rule, RuleIndex, RulePool, TraceId};
 
 #[cfg(feature = "pretty")]
-use serde::{
-    Serialize,
-    ser::{SerializeMap, SerializeStruct},
-};
+use serde::{Serialize, ser::SerializeStruct};
 
 #[derive(Debug, Clone, PartialEq, Copy, Eq)]
 #[cfg_attr(feature = "pretty", derive(Serialize))]
@@ -50,10 +46,10 @@ impl std::fmt::Display for SemanticRule {
 }
 
 impl RulePool {
-    pub fn to_interpretation<'a, T, C>(
+    pub fn to_interpretation<'a, 'src, T, C>(
         &'a self,
-        lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory<'static>)> + 'a
+        lex: &'a SemanticLexicon<'src, T, C>,
+    ) -> impl Iterator<Item = (RootedLambdaPool<'src, Expr<'src>>, SemanticHistory<'static>)> + 'a
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
@@ -80,20 +76,13 @@ struct HistoryNode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticHistory<'a> {
-    Rich(
-        Vec<(SemanticRule, Option<SemanticState>)>,
-        Option<&'a LabelledScenarios>,
-    ),
+    Rich(Vec<(SemanticRule, Option<SemanticState<'a>>)>),
     Simple(Vec<SemanticRule>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SemanticNode<'a> {
-    Rich(
-        SemanticRule,
-        Option<SemanticState>,
-        Option<&'a LabelledScenarios>,
-    ),
+    Rich(SemanticRule, Option<SemanticState<'a>>),
     Simple(SemanticRule),
 }
 
@@ -104,15 +93,10 @@ impl Serialize for SemanticNode<'_> {
         S: serde::Serializer,
     {
         match self {
-            SemanticNode::Rich(semantic_rule, semantic_state, labels) => {
+            SemanticNode::Rich(semantic_rule, semantic_state) => {
                 let mut s = serializer.serialize_struct("SemanticNode", 1)?;
                 s.serialize_field("rule", semantic_rule)?;
-                s.serialize_field(
-                    "state",
-                    &semantic_state
-                        .as_ref()
-                        .map(|s| LabelledSemanticState { s, labels: *labels }),
-                )?;
+                s.serialize_field("state", semantic_state)?;
                 s.end()
             }
             SemanticNode::Simple(semantic_rule) => {
@@ -127,9 +111,9 @@ impl Serialize for SemanticNode<'_> {
 impl<'a> SemanticHistory<'a> {
     pub fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
         match self {
-            SemanticHistory::Rich(items, labels) => items
+            SemanticHistory::Rich(items) => items
                 .get(i.0)
-                .map(|(rule, interp)| SemanticNode::Rich(*rule, interp.clone(), *labels)),
+                .map(|(rule, interp)| SemanticNode::Rich(*rule, interp.clone())),
             SemanticHistory::Simple(items) => {
                 items.get(i.0).map(|rule| SemanticNode::Simple(*rule))
             }
@@ -138,7 +122,7 @@ impl<'a> SemanticHistory<'a> {
 
     pub fn constituents(&self) -> Option<impl Iterator<Item = &RootedLambdaPool<Expr>>> {
         match self {
-            SemanticHistory::Rich(items, _labels) => Some(
+            SemanticHistory::Rich(items) => Some(
                 items
                     .iter()
                     .filter_map(|(_, x)| x.as_ref().map(|x| &x.expr)),
@@ -147,13 +131,13 @@ impl<'a> SemanticHistory<'a> {
         }
     }
 
-    pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<T, C>, rules: &RulePool) -> Self
+    pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<'a, T, C>, rules: &RulePool) -> Self
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
         C: Eq + std::fmt::Debug + std::clone::Clone,
     {
         match self {
-            SemanticHistory::Rich(items, labels) => SemanticHistory::Rich(items, labels),
+            SemanticHistory::Rich(items) => SemanticHistory::Rich(items),
             SemanticHistory::Simple(semantic_rules) => {
                 let mut items = semantic_rules.into_iter().map(|x| (x, None)).collect_vec();
 
@@ -165,18 +149,8 @@ impl<'a> SemanticHistory<'a> {
 
                 derivation.redo_history(RuleIndex(0), &mut items);
 
-                SemanticHistory::Rich(items, None)
+                SemanticHistory::Rich(items)
             }
-        }
-    }
-
-    pub fn with_labels<'b>(
-        self,
-        labels: &'b LabelledScenarios,
-    ) -> Result<SemanticHistory<'b>, LabellingError> {
-        match self {
-            SemanticHistory::Rich(items, _) => Ok(SemanticHistory::Rich(items, Some(labels))),
-            SemanticHistory::Simple(_) => Err(LabellingError::MustBeRich),
         }
     }
 }
@@ -190,18 +164,10 @@ pub enum LabellingError {
 impl Display for SemanticNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticNode::Rich(semantic_rule, Some(interp), Some(labels)) => {
-                write!(
-                    f,
-                    "\\semanticRule[{}]{{{}}}",
-                    semantic_rule,
-                    interp.to_labeled_string(labels)
-                )
-            }
-            SemanticNode::Rich(semantic_rule, Some(interp), None) => {
+            SemanticNode::Rich(semantic_rule, Some(interp)) => {
                 write!(f, "\\semanticRule[{}]{{{}}}", semantic_rule, interp)
             }
-            SemanticNode::Rich(semantic_rule, None, _) => {
+            SemanticNode::Rich(semantic_rule, None) => {
                 write!(f, "{{[\\textsc{{{}}}]}}", semantic_rule)
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
@@ -209,108 +175,20 @@ impl Display for SemanticNode<'_> {
     }
 }
 
-impl Display for SemanticState {
+impl Display for SemanticState<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.expr)
     }
 }
 
-impl SemanticState {
-    fn to_labeled_string(&self, labels: &LabelledScenarios) -> String {
-        self.expr.to_labeled_string(labels)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SemanticState {
-    expr: RootedLambdaPool<Expr>,
-    movers: HashMap<TraceId, (RootedLambdaPool<Expr>, LambdaType)>,
+pub struct SemanticState<'src> {
+    expr: RootedLambdaPool<'src, Expr<'src>>,
+    movers: HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
 }
 
-#[cfg(feature = "pretty")]
-struct SerializerHelper<'a> {
-    movers: &'a HashMap<TraceId, (RootedLambdaPool<Expr>, LambdaType)>,
-    labels: Option<&'a LabelledScenarios>,
-}
-
-#[cfg(feature = "pretty")]
-struct SerializerHelperEntry<'a> {
-    x: &'a (RootedLambdaPool<Expr>, LambdaType),
-    labels: Option<&'a LabelledScenarios>,
-}
-
-#[cfg(feature = "pretty")]
-impl Serialize for SerializerHelperEntry<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let (a, b) = self.x;
-        let mut s = serializer.serialize_struct("mover", 2)?;
-        s.serialize_field(
-            "expr",
-            &self
-                .labels
-                .map(|labels| a.to_labeled_string(labels))
-                .unwrap_or_else(|| a.to_string()),
-        )?;
-        s.serialize_field("type", b.to_string().as_str())?;
-        s.end()
-    }
-}
-
-#[cfg(feature = "pretty")]
-impl Serialize for SerializerHelper<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_map(Some(self.movers.len()))?;
-        for (k, x) in self.movers.iter() {
-            s.serialize_key(k)?;
-            s.serialize_value(&SerializerHelperEntry {
-                x,
-                labels: self.labels,
-            })?;
-        }
-
-        s.end()
-    }
-}
-
-#[cfg(feature = "pretty")]
-impl Serialize for LabelledSemanticState<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("SemanticState", 2)?;
-        s.serialize_field(
-            "expr",
-            &self
-                .labels
-                .map(|labels| self.s.expr.to_labeled_string(labels))
-                .unwrap_or_else(|| self.s.expr.to_string()),
-        )?;
-        s.serialize_field(
-            "movement",
-            &SerializerHelper {
-                movers: &self.s.movers,
-                labels: self.labels,
-            },
-        )?;
-        s.end()
-    }
-}
-
-#[derive(Debug)]
-struct LabelledSemanticState<'a> {
-    s: &'a SemanticState,
-    labels: Option<&'a LabelledScenarios>,
-}
-
-impl SemanticState {
-    fn new(alpha: RootedLambdaPool<Expr>) -> Self {
+impl<'src> SemanticState<'src> {
+    fn new(alpha: RootedLambdaPool<'src, Expr<'src>>) -> Self {
         SemanticState {
             expr: alpha,
             movers: HashMap::default(),
@@ -346,8 +224,8 @@ impl SemanticState {
 }
 
 #[derive(Debug, Clone)]
-struct SemanticDerivation<'a, T: Eq, C: Eq> {
-    lexicon: &'a SemanticLexicon<T, C>,
+struct SemanticDerivation<'a, 'src, T: Eq, C: Eq> {
+    lexicon: &'a SemanticLexicon<'src, T, C>,
     rules: &'a RulePool,
     semantic_history: Vec<HistoryNode>,
 }
@@ -359,15 +237,16 @@ enum ApplyFromStorageResult<T> {
     NoTrace(T),
 }
 
-impl<'a, T, C> SemanticDerivation<'a, T, C>
+impl<'a, 'src, T, C> SemanticDerivation<'a, 'src, T, C>
 where
     T: Eq + std::fmt::Debug + std::clone::Clone,
     C: Eq + std::fmt::Debug + std::clone::Clone,
 {
     fn interpret(
         rules: &'a RulePool,
-        lex: &'a SemanticLexicon<T, C>,
-    ) -> impl Iterator<Item = (RootedLambdaPool<Expr>, SemanticHistory<'static>)> + 'a {
+        lex: &'a SemanticLexicon<'src, T, C>,
+    ) -> impl Iterator<Item = (RootedLambdaPool<'src, Expr<'src>>, SemanticHistory<'static>)> + 'a
+    {
         let mut derivation = SemanticDerivation {
             rules,
             lexicon: lex,
@@ -433,8 +312,8 @@ where
     fn identity(
         &mut self,
         rule_id: RuleIndex,
-        child: (SemanticState, HistoryId),
-    ) -> (SemanticState, HistoryId) {
+        child: (SemanticState<'src>, HistoryId),
+    ) -> (SemanticState<'src>, HistoryId) {
         let (alpha, child_a) = child;
         (
             alpha,
@@ -445,9 +324,9 @@ where
     fn functional_application(
         &mut self,
         rule_id: RuleIndex,
-        child: (SemanticState, HistoryId),
-        complement: (SemanticState, HistoryId),
-    ) -> Option<(SemanticState, HistoryId)> {
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
         let (alpha, alpha_id) = child;
         let (beta, beta_id) = complement;
         SemanticState::merge(alpha, beta).map(|x| {
@@ -466,13 +345,13 @@ where
     fn store(
         &mut self,
         rule_id: RuleIndex,
-        child: (SemanticState, HistoryId),
-        complement: (SemanticState, HistoryId),
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
         trace_id: TraceId,
-    ) -> Option<(SemanticState, HistoryId)> {
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
         let (mut alpha, alpha_id) = child;
         let (beta, beta_id) = complement;
-        if let Ok(trace_type) = alpha.expr.apply_new_free_variable(trace_id.0) {
+        if let Ok(trace_type) = alpha.expr.apply_new_free_variable(trace_id.0.into()) {
             alpha.movers.extend(beta.movers);
             alpha
                 .movers
@@ -489,10 +368,10 @@ where
     fn update_trace(
         &mut self,
         rule_id: RuleIndex,
-        child: (SemanticState, HistoryId),
+        child: (SemanticState<'src>, HistoryId),
         old_trace_id: TraceId,
         trace_id: TraceId,
-    ) -> (SemanticState, HistoryId) {
+    ) -> (SemanticState<'src>, HistoryId) {
         let (mut alpha, alpha_child) = child;
         if let Some((stored_value, stored_type)) = alpha.movers.remove(&old_trace_id) {
             alpha
@@ -501,9 +380,12 @@ where
 
             alpha
                 .expr
-                .lambda_abstract_free_variable(old_trace_id.0, stored_type, true)
+                .lambda_abstract_free_variable(old_trace_id.0.into(), stored_type, true)
                 .unwrap();
-            alpha.expr.apply_new_free_variable(trace_id.0).unwrap();
+            alpha
+                .expr
+                .apply_new_free_variable(trace_id.0.into())
+                .unwrap();
         }
         (
             alpha,
@@ -514,14 +396,14 @@ where
     fn apply_from_storage(
         &mut self,
         rule_id: RuleIndex,
-        child: (SemanticState, HistoryId),
+        child: (SemanticState<'src>, HistoryId),
         trace_id: TraceId,
-    ) -> ApplyFromStorageResult<(SemanticState, HistoryId)> {
+    ) -> ApplyFromStorageResult<(SemanticState<'src>, HistoryId)> {
         let (mut alpha, alpha_id) = child;
         if let Some((stored_value, stored_type)) = alpha.movers.remove(&trace_id) {
             alpha
                 .expr
-                .lambda_abstract_free_variable(trace_id.0, stored_type, false)
+                .lambda_abstract_free_variable(trace_id.0.into(), stored_type, false)
                 .unwrap();
             let SemanticState { expr, movers } = alpha;
             match expr.merge(stored_value).map(|expr| {
@@ -550,7 +432,7 @@ where
         }
     }
 
-    fn get_previous_rules(&mut self, rule_id: RuleIndex) -> Vec<(SemanticState, HistoryId)> {
+    fn get_previous_rules(&mut self, rule_id: RuleIndex) -> Vec<(SemanticState<'src>, HistoryId)> {
         let rule = self.rules.get(rule_id);
         match rule {
             Rule::Scan { node } => [(
@@ -650,7 +532,7 @@ where
     fn redo_history(
         &mut self,
         rule_id: RuleIndex,
-        history: &mut [(SemanticRule, Option<SemanticState>)],
+        history: &mut [(SemanticRule, Option<SemanticState<'src>>)],
     ) {
         let rule = *self.rules.get(rule_id);
         let semantic_rule = history.get(rule_id.0).unwrap().0;
@@ -745,7 +627,7 @@ mod tests {
 
     #[test]
     fn doesnt_crash_with_bad_typed_double_movement() -> anyhow::Result<()> {
-        let (lexicon, _) = SemanticLexicon::parse(
+        let lexicon = SemanticLexicon::parse(
             "mary::0 -1 -1::a0\n::=0 +1 0::lambda <e,e> x_l (a1)\nran::=0 +1 0::a1",
         )?;
         for (_, _, r) in

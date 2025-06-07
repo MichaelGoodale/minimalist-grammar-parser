@@ -8,21 +8,20 @@ use crate::ParsingConfig;
 use super::*;
 
 use itertools::Itertools;
-use simple_semantics::LabelledScenarios;
 use simple_semantics::LanguageExpression;
 use simple_semantics::lambda::RootedLambdaPool;
 use simple_semantics::language::{Expr, lot_parser};
 
 #[derive(Debug, Clone)]
-pub struct SemanticLexicon<T: Eq, Category: Eq> {
+pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
-    semantic_entries: HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+    semantic_entries: HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
 }
 
-impl<T: Eq, C: Eq> SemanticLexicon<T, C> {
+impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
     pub fn new(
         lexicon: Lexicon<T, C>,
-        semantic_entries: HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+        semantic_entries: HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
     ) -> Self {
         SemanticLexicon {
             lexicon,
@@ -63,41 +62,23 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
         .then_ignore(end())
 }
 
-impl<'src> SemanticLexicon<&'src str, &'src str> {
-    pub fn parse(s: &'src str) -> Result<(Self, LabelledScenarios), LambdaParseError> {
-        let mut labels = LabelledScenarios::default();
-
+impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
+    pub fn parse(s: &'src str) -> Result<Self, LambdaParseError> {
         let (lexicon, semantic_entries) = semantic_grammar_parser().parse(s).into_result()?;
 
         let semantic_lexicon = SemanticLexicon {
             lexicon,
             semantic_entries: semantic_entries
                 .into_iter()
-                .map(|(k, v)| v.to_pool(&mut labels).map(|x| (k, x)))
-                .collect::<Result<_, _>>()?,
-        };
-        Ok((semantic_lexicon, labels))
-    }
-
-    pub fn parse_with_labels(
-        s: &'src str,
-        labels: &mut LabelledScenarios,
-    ) -> Result<Self, LambdaParseError> {
-        let (lexicon, semantic_entries) = semantic_grammar_parser().parse(s).into_result()?;
-
-        let semantic_lexicon = SemanticLexicon {
-            lexicon,
-            semantic_entries: semantic_entries
-                .into_iter()
-                .map(|(k, v)| v.to_pool(labels).map(|x| (k, x)))
+                .map(|(k, v)| v.to_pool().map(|x| (k, x)))
                 .collect::<Result<_, _>>()?,
         };
         Ok(semantic_lexicon)
     }
 }
 
-impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
-    pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<Expr> {
+impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T, C> {
+    pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<'src, Expr<'src>> {
         self.semantic_entries
             .get(&nx)
             .expect("There is no lemma of that node index!")
@@ -111,11 +92,13 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         &mut self.lexicon
     }
 
-    pub fn interpretations(&self) -> &HashMap<NodeIndex, RootedLambdaPool<Expr>> {
+    pub fn interpretations(&self) -> &HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
         &self.semantic_entries
     }
 
-    pub fn interpretations_mut(&mut self) -> &mut HashMap<NodeIndex, RootedLambdaPool<Expr>> {
+    pub fn interpretations_mut(
+        &mut self,
+    ) -> &mut HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
         &mut self.semantic_entries
     }
 
@@ -123,7 +106,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
         &mut self,
     ) -> (
         &mut Lexicon<T, C>,
-        &mut HashMap<NodeIndex, RootedLambdaPool<Expr>>,
+        &mut HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
     ) {
         (&mut self.lexicon, &mut self.semantic_entries)
     }
@@ -139,7 +122,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
             Item = (
                 LogProb<f64>,
                 &'a [T],
-                impl Iterator<Item = LanguageExpression>,
+                impl Iterator<Item = LanguageExpression<'src>>,
             ),
         >,
         ParsingError<C>,
@@ -160,7 +143,7 @@ impl<T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<T, C> {
     }
 }
 
-impl<T, C> Display for SemanticLexicon<T, C>
+impl<T, C> Display for SemanticLexicon<'_, T, C>
 where
     T: Eq + Display + std::fmt::Debug + Clone,
     C: Eq + Display + std::fmt::Debug + Clone,
@@ -198,7 +181,7 @@ mod test {
         let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(e, x) & PatientOf(e,y) & pe_likes(e))))";
 
         //Scenarios are not reliably assigning values!
-        let (semantic, _scenario) = SemanticLexicon::parse(lexicon)?;
+        let semantic = SemanticLexicon::parse(lexicon)?;
         let (_, _, rules) = semantic
             .lexicon
             .parse(&["john", "likes", "mary"], "v", &config)?
@@ -246,7 +229,7 @@ mod test {
         );
 
         let s = lexicon.as_str();
-        let (semantic, labels) = SemanticLexicon::parse(s)?;
+        let semantic = SemanticLexicon::parse(s)?;
 
         let (_, _, rules) = semantic
             .lexicon()
@@ -279,7 +262,6 @@ mod test {
                 "\\begin{forest}\n[{\\semder{c}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t[{\\semder{\\cancel{v}}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,a0)) \\& pe0(x)))}} }\n\t\t[{\\semlex{john}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a0}} } ]\n\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x (some\\_e(y,all\\_e,((AgentOf(y,a1) \\& PatientOf(y,x)) \\& pe0(y))))}} }\n\t\t\t[{\\semlex{knows}{\\cancel{c=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x ({$\\lambda_{a}$}y ((x)(y)))}} } ]\n\t\t\t[{\\semder{\\cancel{c}}{\\semanticRule[ApplyFromStorage]{{$\\lambda_{a}$}x (some\\_e(y,all\\_e,((AgentOf(y,a1) \\& PatientOf(y,x)) \\& pe0(y))))}} }\n\t\t\t\t[{$t0$},name=node1 ]\n\t\t\t\t[{\\semder[{\\mover{\\cancel{-wh}}{0}}]{\\cancel{+wh} c}{\\semanticRule[FA]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0#a)) \\& pe0(x)))}} }\n\t\t\t\t\t[{\\semlex{$\\epsilon$}{\\cancel{v=} +wh c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x (x)}} } ]\n\t\t\t\t\t[{\\semder[{\\mover{-wh}{0}}]{\\cancel{v}}{\\semanticRule[Store]{some\\_e(x,all\\_e,((AgentOf(x,a1) \\& PatientOf(x,0#a)) \\& pe0(x)))}} }\n\t\t\t\t\t\t[{\\semlex{who}{\\cancel{d} -wh}{\\semanticRule[LexicalEntry]{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}x (x)}} },name=node2 ]\n\t\t\t\t\t\t[{\\semder{\\cancel{=d} v}{\\semanticRule[FA]{{$\\lambda_{a}$}x (some\\_e(y,all\\_e,((AgentOf(y,a1) \\& PatientOf(y,x)) \\& pe0(y))))}} }\n\t\t\t\t\t\t\t[{\\semlex{likes}{\\cancel{d=} =d v}{\\semanticRule[LexicalEntry]{{$\\lambda_{a}$}x ({$\\lambda_{a}$}y (some\\_e(z,all\\_e,((AgentOf(z,x) \\& PatientOf(z,y)) \\& pe0(z)))))}} } ]\n\t\t\t\t\t\t\t[{\\semlex{mary}{\\cancel{d}}{\\semanticRule[LexicalEntry]{a1}} } ] ] ] ] ] ] ]\n\t[{\\semlex{$\\epsilon$}{\\cancel{=v} c}{\\semanticRule[LexicalEntry]{{$\\lambda_{t}$}x (x)}} } ] ]\n\\draw[densely dotted,->] (node2) to[out=west,in=south west] (node1);\n\\end{forest}"
             );
 
-            let history = history.with_labels(&labels)?;
             let typst = rules.to_json(semantic.lexicon());
             println!("{}", typst);
             let typst = rules.to_semantic_json(&semantic, &history);
@@ -306,7 +288,7 @@ mod test {
         ];
 
         let lexicon = lexical.join("\n");
-        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon).unwrap();
+        let lex = SemanticLexicon::parse(&lexicon).unwrap();
 
         let mut v = vec![];
         for (_, s, rules) in lex
@@ -347,7 +329,7 @@ mod test {
         ];
 
         let lexicon = lexical.join("\n");
-        let (lex, _scenarios) = SemanticLexicon::parse(&lexicon)?;
+        let lex = SemanticLexicon::parse(&lexicon)?;
 
         let mut v = vec![];
         for (_, s, rules) in lex
@@ -413,7 +395,7 @@ mod test {
 ran::2::lambda t x_l (a1)
 John::0 -1::a1";
 
-        let (lexicon, _) = SemanticLexicon::parse(grammar)?;
+        let lexicon = SemanticLexicon::parse(grammar)?;
         for (_, _, r) in lexicon
             .lexicon
             .parse(&["John", "ran"], "0", &ParsingConfig::default())?

@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ahash = { version = "0.8.11", features = ["compile-time-rng"] }
+ahash = { version = "0.8.11", features = [
+  "compile-time-rng",
+  "std",
+], default-features = false }
 bitvec = "1.0.1"
 chumsky = "0.10.0"
 itertools = "0.14.0"

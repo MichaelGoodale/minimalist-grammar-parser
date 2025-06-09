@@ -590,7 +590,6 @@ source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#6d40d1d95
 dependencies = [
  "ahash",
  "chumsky",
- "rand",
  "serde",
  "serde_json",
  "thiserror",

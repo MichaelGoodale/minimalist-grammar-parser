@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
 use lexicon::{Lexicon, ParsingError};
@@ -54,6 +56,8 @@ pub struct ParsingConfig {
     dont_move_prob: LogProb<f64>,
     max_steps: usize,
     max_beams: usize,
+
+    #[cfg(not(target_arch = "wasm32"))]
     max_time: Option<Duration>,
 }
 
@@ -72,10 +76,12 @@ impl ParsingConfig {
             dont_move_prob: merge_prob,
             max_steps,
             max_beams,
+            #[cfg(not(target_arch = "wasm32"))]
             max_time: None,
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_max_time(mut self, duration: Duration) -> Self {
         self.max_time = Some(duration);
         self
@@ -192,6 +198,8 @@ where
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<T, ParseScan<'a, T>>,
+
+    #[cfg(not(target_arch = "wasm32"))]
     start_time: Option<Instant>,
     config: &'a ParsingConfig,
     buffer: Vec<ParserOutput<'a, T>>,
@@ -205,12 +213,14 @@ where
     type Item = ParserOutput<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        #[cfg(not(target_arch = "wasm32"))]
         if self.start_time.is_none() {
             self.start_time = Some(Instant::now());
         }
 
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
+                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(max_time) = self.config.max_time {
                     if max_time < self.start_time.unwrap().elapsed() {
                         return None;
@@ -290,6 +300,7 @@ where
         Ok(Parser {
             lexicon: self,
             config,
+            #[cfg(not(target_arch = "wasm32"))]
             start_time: None,
             buffer: vec![],
             parse_heap,
@@ -310,6 +321,7 @@ where
         Ok(Parser {
             lexicon: self,
             buffer: vec![],
+            #[cfg(not(target_arch = "wasm32"))]
             start_time: None,
             config,
             parse_heap,

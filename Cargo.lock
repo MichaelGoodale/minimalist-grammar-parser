@@ -10,7 +10,6 @@ checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
  "const-random",
- "getrandom 0.3.3",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -587,12 +586,11 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simple-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#c9bab823a7f7d853202a63fcdae9c02af3f5c3d5"
+source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#6d40d1d9541adcd573729f0b42e0cd047d87966b"
 dependencies = [
  "ahash",
  "chumsky",
  "rand",
- "rand_chacha",
  "serde",
  "serde_json",
  "thiserror",

@@ -33,6 +33,7 @@ lazy_static = "1.4.0"
 rand_chacha = "0.9.0"
 
 [features]
+default = ["sampling"]
 sampling = ["dep:rand", "dep:rand_distr"]
 semantics = ["dep:simple-semantics", "dep:regex"]
 pretty = []

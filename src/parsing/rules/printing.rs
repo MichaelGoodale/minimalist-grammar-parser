@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 
-#[cfg(not(feature = "semantics"))]
 use std::marker::PhantomData;
 
 use thiserror::Error;
@@ -88,6 +87,70 @@ fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
             None
         }
     })
+}
+
+#[derive(Debug, Clone)]
+pub enum PackagedRulePool<'src, 'a, T: Eq, C: Eq> {
+    Plain(RulePool, &'a Lexicon<T, C>, PhantomData<&'src ()>),
+
+    #[cfg(feature = "semantics")]
+    Semantic(
+        RulePool,
+        &'a SemanticLexicon<'src, T, C>,
+        &'a SemanticHistory<'src>,
+    ),
+}
+
+impl RulePool {
+    pub fn with_lexicon<'a, 'src, T: Eq, C: Eq>(
+        self,
+        lex: &'a Lexicon<T, C>,
+    ) -> PackagedRulePool<'src, 'a, T, C> {
+        PackagedRulePool::Plain(self, lex, PhantomData)
+    }
+
+    #[cfg(feature = "semantics")]
+    pub fn with_semantic_lexicon<'a, 'src, T: Eq, C: Eq>(
+        self,
+        lex: &'a SemanticLexicon<'src, T, C>,
+        history: &'a SemanticHistory<'src>,
+    ) -> PackagedRulePool<'src, 'a, T, C> {
+        PackagedRulePool::Semantic(self, lex, history)
+    }
+}
+
+impl<'src, 'a, T, C> Serialize for PackagedRulePool<'src, 'a, T, C>
+where
+    T: Debug + Clone + Display + Eq + Serialize,
+    C: Debug + Clone + Display + Eq + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            PackagedRulePool::Plain(rule_pool, lexicon, _) => {
+                let (g, root, _) = rule_pool.to_graph(lexicon);
+                (Tree::new(&g, root)).serialize(serializer)
+            }
+            #[cfg(feature = "semantics")]
+            PackagedRulePool::Semantic(rule_pool, semantic_lexicon, history) => {
+                let (g, root, node_to_rule) = rule_pool.to_graph(semantic_lexicon.lexicon());
+                let g = g.map(
+                    |i, node| SemanticMGNode {
+                        node: node.clone(),
+                        semantic: {
+                            history
+                                .semantic_node(*node_to_rule.get(&i).unwrap())
+                                .unwrap()
+                        },
+                    },
+                    |_, e| *e,
+                );
+                (Tree::new_semantic(&g, root)).serialize(serializer)
+            }
+        }
+    }
 }
 
 impl RulePool {
@@ -246,6 +309,7 @@ impl RulePool {
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     {
         let (g, root, _) = self.to_graph(lex);
+
         serde_json::to_string(&Tree::new(&g, root)).unwrap()
     }
 

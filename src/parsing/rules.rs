@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 mod printing;
 
 #[cfg(feature = "pretty")]
-pub use printing::{MGEdge, MgNode};
+pub use printing::{MGEdge, MgNode, PackagedRulePool};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct RuleIndex(usize);

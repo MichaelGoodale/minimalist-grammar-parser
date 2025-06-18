@@ -755,7 +755,10 @@ trait LaTeXify {
 #[cfg(feature = "semantics")]
 fn clean_up_expr(s: String) -> String {
     let re = Regex::new(r"lambda (?<t>[eat,< >]+) ").unwrap();
-    let s = s.replace("&", "\\&").replace("_", "\\_");
+    let s = s
+        .replace("&", "\\&")
+        .replace("_", "\\_")
+        .replace("#", "\\#");
     re.replace_all(s.as_str(), "{$\\lambda_{$t}$}")
         .to_string()
         .replace("<", "\\left\\langle ")

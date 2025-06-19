@@ -64,17 +64,17 @@ pub enum Rule {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct PartialIndex(usize);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleHolder {
     rule: Rule,
     index: RuleIndex,
     parent: Option<PartialIndex>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct PartialRulePool {
     n_traces: usize,
     n_nodes: usize,
@@ -97,7 +97,7 @@ impl PartialRulePool {
         self.n_nodes
     }
 
-    pub fn push_rule(&mut self, pool: &mut Vec<RuleHolder>, rule: Rule, index: RuleIndex) {
+    pub(crate) fn push_rule(&mut self, pool: &mut Vec<RuleHolder>, rule: Rule, index: RuleIndex) {
         pool.push(RuleHolder {
             rule,
             index,

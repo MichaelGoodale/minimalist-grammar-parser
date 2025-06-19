@@ -20,6 +20,7 @@ use std::{
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+//A possible feature of a
 pub enum Feature<Category: Eq> {
     Category(Category),
     Selector(Category, Direction),
@@ -28,6 +29,8 @@ pub enum Feature<Category: Eq> {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+//Returns either a licensee or category: used only in [`ParsingError`]
+#[allow(missing_docs)]
 pub enum LicenseeOrCategory<C> {
     Licensee(C),
     Category(C),
@@ -64,6 +67,15 @@ where
 }
 
 impl<A: Debug> ParsingError<A> {
+    ///Module to convert errors to their owned variants:
+    ///
+    ///```
+    /// # use minimalist_grammar_parser::ParsingError;
+    /// # use minimalist_grammar_parser::lexicon::LicenseeOrCategory;
+    /// let x: ParsingError<&str> = ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Category("s"));
+    /// let y: ParsingError<String> = x.inner_into();
+    ///
+    ///```
     pub fn inner_into<B: From<A> + Debug>(self: ParsingError<A>) -> ParsingError<B> {
         match self {
             ParsingError::NoLicensorOrCategory(LicenseeOrCategory::Licensee(c)) => {
@@ -161,7 +173,7 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FeatureOrLemma<T: Eq, Category: Eq> {
+pub(crate) enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
     Lemma(Option<T>),
     Feature(Feature<Category>),
@@ -198,24 +210,29 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///A representation of a lexical entry in a grammar.
 pub struct LexicalEntry<T: Eq, Category: Eq> {
     pub(crate) lemma: Option<T>,
     pub(crate) features: Vec<Feature<Category>>,
 }
 
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
+    ///Creates a new lexical entry
     pub fn new(lemma: Option<T>, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
     }
 
+    ///Get the lemma (possibly `None`) of a lexical entry
     pub fn lemma(&self) -> &Option<T> {
         &self.lemma
     }
 
+    ///Gets all features of a lexical entry
     pub fn features(&self) -> &[Feature<Category>] {
         &self.features
     }
 
+    ///Gets the category of a lexical entry
     pub fn category(&self) -> &Category {
         let mut cat = None;
         for lex in self.features.iter() {
@@ -287,9 +304,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
 }
 impl<T, Category> Lexicon<T, Category>
 where
-    T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone,
-    FeatureOrLemma<T, Category>: std::fmt::Display,
+    T: Eq + std::fmt::Debug + Clone + Display,
+    Category: Eq + std::fmt::Debug + Clone + Display,
 {
     pub fn graphviz(&self, debug: bool) -> String {
         let dot = Dot::new(&self.graph);
@@ -542,7 +558,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn get(&self, nx: NodeIndex) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
+    pub(crate) fn get(
+        &self,
+        nx: NodeIndex,
+    ) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
         if let Some(x) = self.graph.node_weight(nx) {
             let p = self
                 .graph

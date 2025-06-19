@@ -156,7 +156,6 @@ where
 impl RulePool {
     pub fn to_x_bar_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
@@ -209,7 +208,6 @@ impl RulePool {
         HashMap<NodeIndex, RuleIndex>,
     )
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
@@ -282,7 +280,6 @@ impl RulePool {
         history: &SemanticHistory<'src>,
     ) -> String
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     {
@@ -304,7 +301,6 @@ impl RulePool {
 
     pub fn to_json<T, C>(&self, lex: &Lexicon<T, C>) -> String
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     {
@@ -320,7 +316,6 @@ impl RulePool {
         history: &SemanticHistory<'src>,
     ) -> String
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
@@ -334,13 +329,12 @@ impl RulePool {
             },
             |_, e| *e,
         );
-        self.inner_latex(&g, root)
+        self.inner_latex::<_, T, C>(&g, root)
     }
 
     fn inner_latex<N, T, C>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
     where
         N: LaTeXify,
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
@@ -383,12 +377,11 @@ impl RulePool {
 
     pub fn to_latex<T, C>(&self, lex: &Lexicon<T, C>) -> String
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
         let (g, root, _) = self.to_graph(lex);
-        self.inner_latex(&g, root)
+        self.inner_latex::<_, T, C>(&g, root)
     }
 
     pub fn to_tree<T, C>(
@@ -396,7 +389,6 @@ impl RulePool {
         lex: &Lexicon<T, C>,
     ) -> (StableDiGraph<MgNode<T, C>, MGEdge>, NodeIndex)
     where
-        FeatureOrLemma<T, C>: std::fmt::Display,
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {

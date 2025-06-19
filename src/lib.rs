@@ -1,3 +1,17 @@
+//!This crate defines a number of structs and methods to parse and generate Minimalist Grammars
+//!(MGs) from Stabler (1997). Specifically, it implements a variety of the MG algorithm adapted
+//!from Stabler (2011) and Stabler (2013)
+//!
+//!
+//!## References
+//!
+//! - Stabler, E. (1997). Derivational minimalism. In C. Retoré (Ed.), Logical Aspects of Computational Linguistics (pp. 68–95). Springer. <https://doi.org/10.1007/BFb0052152>
+//! - Stabler, E. (2011). Top-Down Recognizers for MCFGs and MGs. In F. Keller & D. Reitter (Eds.), Proceedings of the 2nd Workshop on Cognitive Modeling and Computational Linguistics (pp. 39–48). Association for Computational Linguistics. <https://aclanthology.org/W11-0605>
+//! - Stabler, E. (2013). Two Models of Minimalist, Incremental Syntactic Analysis. Topics in Cognitive Science, 5(3), 611–633. <https://doi.org/10.1111/tops.12031>
+//!
+//!
+//#![warn(missing_docs)]
+
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -5,16 +19,20 @@ use std::marker::PhantomData;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
-use lexicon::{Lexicon, ParsingError};
+pub use lexicon::{Lexicon, ParsingError};
 
 use logprob::LogProb;
 use min_max_heap::MinMaxHeap;
 use parsing::RuleHolder;
+
 pub use parsing::RulePool;
 use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::{BeamWrapper, PartialRulePool, expand};
 use petgraph::graph::NodeIndex;
 
+///Enum to record the direction of a merge/move operation (whether the phonological value goes to
+///the right or left)
+#[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum Direction {
     #[default]
@@ -23,6 +41,7 @@ pub enum Direction {
 }
 
 impl Direction {
+    ///Swaps direction so that left is right and vice-versa
     pub fn flip(&self) -> Self {
         match self {
             Direction::Left => Direction::Right,
@@ -49,6 +68,14 @@ impl From<bool> for Direction {
     }
 }
 
+///This struct defines the configuration used when parsing a [`Lexicon`].
+///
+///It has the following options:
+/// - `min_log_prob`: The lowest probability string that the parser will consider. (Default = -256)
+/// - `move_prob`: The probability of moving rather than merging when both are available (Default = log(0.5))
+/// - `max_steps`: The maximum number of derivational steps before crashing (Default = 256)
+/// - `max_beams`: The maximum number of competing parses available in the parse heap at a single time (Default = 256)
+/// - `max_time`: The maximum amount of *time* before the parse crashes (not available on `wasm32). Disabled by default
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ParsingConfig {
     min_log_prob: LogProb<f64>,
@@ -62,6 +89,7 @@ pub struct ParsingConfig {
 }
 
 impl ParsingConfig {
+    ///Create a new [`ParsingConfig`] with the following parameters
     pub fn new(
         min_log_prob: LogProb<f64>,
         move_prob: LogProb<f64>,
@@ -81,27 +109,32 @@ impl ParsingConfig {
         }
     }
 
+    ///Set the maximum time before timing out a parse (not available on `wasm32`).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_max_time(mut self, duration: Duration) -> Self {
         self.max_time = Some(duration);
         self
     }
 
+    ///Set the minimum log probability for a parse.
     pub fn with_min_log_prob(mut self, min_log_prob: LogProb<f64>) -> Self {
         self.min_log_prob = min_log_prob;
         self
     }
 
+    ///Set the maximum number of derivational steps for a parse.
     pub fn with_max_steps(mut self, max_steps: usize) -> Self {
         self.max_steps = max_steps;
         self
     }
 
+    ///Set the maximum number of competing parses at a single time.
     pub fn with_max_beams(mut self, max_beams: usize) -> Self {
         self.max_beams = max_beams;
         self
     }
 
+    ///Set the probability of moving as opposed to merging.
     pub fn with_move_prob(mut self, move_prob: LogProb<f64>) -> Self {
         self.move_prob = move_prob;
         self.dont_move_prob = self.move_prob.opposite_prob();
@@ -114,7 +147,7 @@ impl Default for ParsingConfig {
         ParsingConfig::new(
             LogProb::new(-256.0).unwrap(),
             LogProb::from_raw_prob(0.5).unwrap(),
-            256,
+            128,
             256,
         )
     }
@@ -162,6 +195,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<T, B> {
 type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], RulePool);
 type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, RulePool);
 
+///An iterator constructed by [`Lexicon::fuzzy_parse`]
 pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
 {
     lexicon: &'a Lexicon<T, Category>,
@@ -195,6 +229,7 @@ where
     }
 }
 
+///An iterator constructed by [`Lexicon::parse`] and [`Lexicon::parse_multiple`]
 pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
     parse_heap: ParseHeap<T, ParseScan<'a, T>>,
@@ -347,7 +382,8 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+///An iterator constructed by [`Lexicon::parse`] and [`Lexicon::parse_multiple`]
 pub struct Generator<L, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: L,
     phantom: PhantomData<Category>,

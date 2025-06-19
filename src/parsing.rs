@@ -11,11 +11,12 @@ use petgraph::graph::NodeIndex;
 use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
+pub use rules::Rule;
+pub use rules::RulePool;
 pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
-pub use rules::{Rule, RulePool};
 
 #[derive(Debug, Clone)]
-pub struct BeamWrapper<T, B: Scanner<T>> {
+pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
     rules: PartialRulePool,
@@ -81,7 +82,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         id
     }
 
-    fn new(beam: B, category_index: NodeIndex) -> Self {
+    pub(super) fn new(beam: B, category_index: NodeIndex) -> Self {
         let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
         queue.push(Reverse(ParseMoment::new(
             FutureTree {

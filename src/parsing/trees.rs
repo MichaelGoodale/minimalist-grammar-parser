@@ -15,7 +15,7 @@ type IndexArray = BitArray<[usize; N_CHUNKS as usize], Lsb0>;
 pub const MAX_STEPS: usize = (usize::BITS * N_CHUNKS) as usize;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
-pub struct GornIndex {
+pub(crate) struct GornIndex {
     index: IndexArray,
     size: usize,
 }
@@ -69,7 +69,7 @@ impl GornIndex {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FutureTree {
+pub(crate) struct FutureTree {
     pub node: NodeIndex,
     pub index: GornIndex,
     pub id: RuleIndex,
@@ -92,7 +92,7 @@ impl Ord for FutureTree {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseMoment {
+pub(crate) struct ParseMoment {
     pub tree: FutureTree,
     pub movers: ThinVec<FutureTree>,
 }

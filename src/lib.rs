@@ -10,7 +10,7 @@
 //! - Stabler, E. (2013). Two Models of Minimalist, Incremental Syntactic Analysis. Topics in Cognitive Science, 5(3), 611–633. <https://doi.org/10.1111/tops.12031>
 //!
 //!
-//#![warn(missing_docs)]
+#![warn(missing_docs)]
 
 use std::borrow::Borrow;
 use std::fmt::Debug;
@@ -300,7 +300,8 @@ where
         config: &ParsingConfig,
     ) -> Result<Generator<&Self, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(GeneratorScan::new(cat), config, cat);
+        let beam = BeamWrapper::new(GeneratorScan { sentence: vec![] }, cat);
+        let parse_heap = ParseHeap::new(beam, config, cat);
         Ok(Generator {
             lexicon: self,
             config: *config,
@@ -315,7 +316,8 @@ where
         config: &ParsingConfig,
     ) -> Result<Generator<Self, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(GeneratorScan::new(cat), config, cat);
+        let beam = BeamWrapper::new(GeneratorScan { sentence: vec![] }, cat);
+        let parse_heap = ParseHeap::new(beam, config, cat);
         Ok(Generator {
             lexicon: self,
             config: *config,
@@ -331,7 +333,14 @@ where
         config: &'b ParsingConfig,
     ) -> Result<Parser<'a, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_single(cat, s), config, cat);
+
+        let beam = BeamWrapper::new(
+            ParseScan {
+                sentence: vec![(s, 0)],
+            },
+            cat,
+        );
+        let parse_heap = ParseHeap::new(beam, config, cat);
         Ok(Parser {
             lexicon: self,
             config,
@@ -352,7 +361,13 @@ where
         U: AsRef<[T]>,
     {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(ParseScan::new_multiple(cat, sentences), config, cat);
+        let beams = BeamWrapper::new(
+            ParseScan {
+                sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
+            },
+            cat,
+        );
+        let parse_heap = ParseHeap::new(beams, config, cat);
         Ok(Parser {
             lexicon: self,
             buffer: vec![],
@@ -373,7 +388,17 @@ where
         U: AsRef<[T]>,
     {
         let cat = self.find_category(&category)?;
-        let parse_heap = ParseHeap::new(FuzzyScan::new(cat, sentences), config, cat);
+
+        let beams = BeamWrapper::new(
+            FuzzyScan {
+                sentence_guides: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
+                generated_sentences: vec![],
+            },
+            cat,
+        );
+
+        let parse_heap = ParseHeap::new(beams, config, cat);
+
         Ok(FuzzyParser {
             lexicon: self,
             config,

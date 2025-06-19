@@ -75,25 +75,26 @@ pub struct RuleHolder {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct PartialRulePool {
+pub(crate) struct PartialRulePool {
     n_traces: usize,
     n_nodes: usize,
     most_recent: PartialIndex,
 }
 
 impl PartialRulePool {
-    pub fn fresh(&mut self) -> RuleIndex {
+    pub(crate) fn fresh(&mut self) -> RuleIndex {
         let id = RuleIndex(self.n_nodes); //Get fresh ID
         self.n_nodes += 1;
         id
     }
-    pub fn fresh_trace(&mut self) -> TraceId {
+
+    pub(crate) fn fresh_trace(&mut self) -> TraceId {
         let i = TraceId(self.n_traces);
         self.n_traces += 1;
         i
     }
 
-    pub fn n_steps(&self) -> usize {
+    pub(crate) fn n_steps(&self) -> usize {
         self.n_nodes
     }
 
@@ -106,7 +107,7 @@ impl PartialRulePool {
         self.most_recent = PartialIndex(pool.len() - 1);
     }
 
-    pub fn default_pool(cat: NodeIndex) -> Vec<RuleHolder> {
+    pub(crate) fn default_pool(cat: NodeIndex) -> Vec<RuleHolder> {
         let mut v = Vec::with_capacity(100_000);
         v.push(RuleHolder {
             rule: Rule::Start {
@@ -119,7 +120,7 @@ impl PartialRulePool {
         v
     }
 
-    pub fn into_rule_pool(self, big_pool: &[RuleHolder]) -> RulePool {
+    pub(crate) fn into_rule_pool(self, big_pool: &[RuleHolder]) -> RulePool {
         let mut pool = vec![None; self.n_nodes];
         let mut i = Some(self.most_recent);
 

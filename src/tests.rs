@@ -4,10 +4,12 @@ use anyhow::Result;
 use super::*;
 use crate::{
     grammars::SIMPLESTABLER2011,
-    lexicon::{LexicalEntry, Lexicon, SimpleLexicalEntry},
+    lexicon::{LexicalEntry, Lexicon},
 };
 use lazy_static::lazy_static;
 use std::{collections::HashSet, f64::consts::LN_2};
+
+type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
 
 lazy_static! {
     static ref CONFIG: ParsingConfig = ParsingConfig::new(
@@ -65,8 +67,6 @@ use crate::grammars::STABLER2011;
 #[test]
 fn moving_parse() -> anyhow::Result<()> {
     let lex = Lexicon::from_string(STABLER2011)?;
-
-    println!("{}", lex.graphviz(true));
 
     for sentence in vec![
         "the king drinks the beer",

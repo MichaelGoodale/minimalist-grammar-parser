@@ -1,3 +1,4 @@
+//! Module to define the core parsing algorithm used to generate or parse strings from MGs
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -11,7 +12,7 @@ use petgraph::graph::NodeIndex;
 use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
-pub use rules::Rule;
+use rules::Rule;
 pub use rules::RulePool;
 pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
 

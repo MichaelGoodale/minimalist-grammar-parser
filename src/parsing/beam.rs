@@ -1,3 +1,6 @@
+//!Module which defines how the different beams used by [`Lexicon::parse`] or [`Lexicon::generate`]
+//!work.
+
 use crate::{
     ParseHeap, ParsingConfig, expand,
     lexicon::{Lexicon, ParsingError},
@@ -8,12 +11,15 @@ use ahash::HashSet;
 use logprob::LogProb;
 use std::{fmt::Debug, hash::Hash};
 
-pub trait Scanner<T>: Sized {
+///A trait which allows a struct to be used as by the parsing algorithm by defining how scanning
+///works. Parsing checks the next string corresponds to a parse, whereas generation uses scan to
+///iteratively build strings.
+pub(crate) trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseScan<'a, T> {
+pub(crate) struct ParseScan<'a, T> {
     pub sentence: Vec<(&'a [T], usize)>,
 }
 
@@ -114,7 +120,7 @@ where
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct GeneratorScan<T> {
+pub(crate) struct GeneratorScan<T> {
     pub sentence: Vec<T>,
 }
 
@@ -197,9 +203,12 @@ impl<'a, T: Eq + Debug + Clone> ContinuationScan<'a, T> {
     }
 }
 
+///Enum that describes a possible token of a grammar
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Continuation<T> {
+    ///The following word is a valid token given the prefix in [`Lexicon::valid_continuations`].
     Word(T),
+    ///Has the sentence ended
     EndOfSentence,
 }
 
@@ -208,6 +217,22 @@ where
     T: Eq + std::fmt::Debug + Clone + Hash,
     C: Eq + Clone + std::fmt::Debug,
 {
+    ///Given a grammar and a prefix string, return a [`HashSet`] of the possible [`Continuation`]s (i.e. next words) that are valid
+    ///in the grammar.
+    ///Returns an [`ParsingError`] if there is no node with the category of `initial_category`.
+    ///
+    ///```
+    ///# use minimalist_grammar_parser::{ParsingConfig, Lexicon};
+    ///# use ahash::HashSet;
+    ///# use minimalist_grammar_parser::parsing::beam::Continuation;
+    ///
+    ///let lex = Lexicon::from_string("a::S= b= S\n::S\nb::b")?;
+    ///let continuations = lex.valid_continuations("S", &["a"], &ParsingConfig::default())?;
+    ///assert_eq!(continuations, HashSet::from_iter([Continuation::Word("b"), Continuation::Word("a")].into_iter()));
+    ///let continuations = lex.valid_continuations("S", &["a", "b"], &ParsingConfig::default())?;
+    ///assert_eq!(continuations, HashSet::from_iter([Continuation::EndOfSentence]));
+    ///# Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn valid_continuations(
         &self,
         initial_category: C,

@@ -3,6 +3,16 @@
 //!from Stabler (2011) and Stabler (2013)
 //!
 //!
+//!# Examples of usage
+//!```
+//!use minimalist_grammar_parser::Lexicon;
+//!use minimalist_grammar_parser::ParsingConfig;
+//!# use minimalist_grammar_parser::lexicon::LexiconParsingError;
+//!let lexicon = Lexicon::from_string("a::s= b= s\nb::b\n::s")?;
+//!let v = lexicon.generate("s", &ParsingConfig::default())?.take(4).map(|(_prob, s, _rules)| s.join("")).collect::<Vec<_>>();
+//!assert_eq!(v, vec!["", "ab", "aabb", "aaabbb"]);
+//!# Ok::<(), anyhow::Error>(())
+//!```
 //!## References
 //!
 //! - Stabler, E. (1997). Derivational minimalism. In C. Retoré (Ed.), Logical Aspects of Computational Linguistics (pp. 68–95). Springer. <https://doi.org/10.1007/BFb0052152>
@@ -294,6 +304,12 @@ where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
+    ///Generates the strings in a grammar that are findable according to the parsing config.
+    ///
+    ///
+    ///Returns an iterator, [`Parser`] which has items of type `(`[`LogProb<f64>`]`, Vec<T>,
+    ///`[`RulePool`]`)` where the middle items are the generated strings and the [`RulePool`] has
+    ///the structure of each genrerated string.
     pub fn generate(
         &self,
         category: Category,
@@ -310,6 +326,7 @@ where
         })
     }
 
+    ///Like [`Lexicon::generate`] but consumes the lexicon.
     pub fn into_generate(
         self,
         category: Category,
@@ -326,6 +343,10 @@ where
         })
     }
 
+    ///Parses a sentence under the assumption it is has the category, `category`.
+    ///
+    ///Returns an iterator, [`Parser`] which has items of type `(`[`LogProb<f64>`]`, &'a [T],
+    ///`[`RulePool`]`)`
     pub fn parse<'a, 'b: 'a>(
         &'a self,
         s: &'b [T],
@@ -351,6 +372,7 @@ where
         })
     }
 
+    ///Functions like [`Lexicon::parse`] but parsing multiple grammars at once.
     pub fn parse_multiple<'a, 'b: 'a, U>(
         &'a self,
         sentences: &'b [U],
@@ -378,6 +400,8 @@ where
         })
     }
 
+    ///Functions like [`Lexicon::parse`] or [`Lexicon::generate`] but will return parses that are
+    ///close to the provided sentences, but are not necessarily the same.
     pub fn fuzzy_parse<'a, U>(
         &'a self,
         sentences: &'a [U],

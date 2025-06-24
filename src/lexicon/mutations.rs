@@ -1,3 +1,6 @@
+//! This module defines various mutations which allow one to create random minimalist grammars or
+//! evolve them in a genetic algorithm
+
 use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Hash};
 
 use thiserror::Error;
@@ -141,6 +144,8 @@ where
         false
     }
 
+    ///Prunes a grammar of any inaccessible grammatical categories that can't be found given a
+    ///base category of `start`
     pub fn prune(&mut self, start: &C) {
         loop {
             let start = match self.find_category(start) {
@@ -184,7 +189,10 @@ where
     }
 }
 
+///A trait which can generate a novel category given a slice of pre-existing categories. For
+///integers, this is just the maximum number + 1.
 pub trait FreshCategory: Sized {
+    ///Get a new category that is not in `categories`.
     fn fresh(categories: &[Self]) -> Self;
 }
 
@@ -261,21 +269,33 @@ fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 #[derive(Error, Debug, Clone)]
+///Error that can occur if a grammar is made invalid
 pub enum MutationError {
+    ///You cannot delete the a non-leaf without stitching together its child and parent.
     #[error("Node {0:?} is not a leaf so we can't delete it.")]
     CantDeleteNonLeaf(NodeIndex),
+
+    ///A grammar cannot delete its last leaf.
     #[error("Node {0:?} is the only leaf so we can't delete it.")]
     LastLeaf(NodeIndex),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+///Used by [`Lexicon::add_new_lexeme_randomly`] to return a new lexeme along with its sibling that
+///has the same features.
 pub struct NewLexeme {
+    /// The new lexeme.
     pub new_lexeme: NodeIndex,
+    /// The sibling of that lexeme with the same features.
     pub sibling: NodeIndex,
 }
 
+///Used by [`Lexicon::unify`]
 pub struct NodeDetails {
+    ///Node from the added lexicon that are being replaced
     pub other_node: NodeIndex,
+
+    ///The new node that corresponds to the old index.
     pub this_node: NodeIndex,
 }
 
@@ -284,6 +304,7 @@ where
     T: Eq + Debug + Clone + Hash,
     C: Eq + Debug + Clone + FreshCategory + Hash,
 {
+    ///Remap the weights of all lexical items to be the uniform distribution.
     pub fn uniform_distribution(&mut self) {
         for e in self.graph.edge_weights_mut() {
             *e = LogProb::prob_of_one();
@@ -291,7 +312,8 @@ where
         fix_weights(&mut self.graph);
     }
 
-    ///Combines two lexicons and returns a vector of the novel leaves
+    ///Combines two lexicons and returns a vector of the leaves from `other` as [`NodeDetails`] consisting
+    ///of the index of the old leaves in `other` and their new index in the `self`.
     pub fn unify(&mut self, other: &Self) -> Vec<NodeDetails> {
         let mut new_leaves = vec![];
         let mut stack = vec![NodeDetails {
@@ -343,6 +365,8 @@ where
         new_leaves
     }
 
+    ///Adds a new lexeme with the same features but a different lemma as another lexeme.
+    ///Returns the node of the new lexeme as a [`NewLexeme`] with data about its copied sibling.
     pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) -> Option<NewLexeme> {
         if let Some(&leaf) = self
             .leaves
@@ -361,6 +385,8 @@ where
         }
     }
 
+    ///Deletes a lexeme from the grammar. Returns [`MutationError`] if the grammar has only
+    ///one lexeme or if the [`NodeIndex`] passed is not a leaf.
     pub fn delete_lexeme(&mut self, leaf: NodeIndex) -> Result<(), MutationError> {
         if !self.leaves.contains(&leaf) {
             return Err(MutationError::CantDeleteNonLeaf(leaf));
@@ -384,6 +410,7 @@ where
         Ok(())
     }
 
+    ///Delets a random branch of the grammar
     pub fn delete_from_node(&mut self, rng: &mut impl Rng) {
         if let Some(&node) = self
             .graph
@@ -410,6 +437,7 @@ where
         }
     }
 
+    ///Find a random node and deletes it, and then restitches its parent and children.
     pub fn delete_node(&mut self, rng: &mut impl Rng) -> Option<NodeIndex> {
         if let Some(&node) = self
             .graph
@@ -514,6 +542,7 @@ where
         }
     }
 
+    ///Samples an entirely random grammar
     pub fn random(
         base_category: &C,
         lemmas: &[T],
@@ -540,6 +569,7 @@ where
         lexicon
     }
 
+    ///Chose a random feature and change it to something else.
     pub fn change_feature(
         &mut self,
         lemmas: &[T],
@@ -560,6 +590,7 @@ where
         }
     }
 
+    ///Finds a random node and deletes its children and samples from scratch below that node.
     pub fn resample_below_node(
         &mut self,
         lemmas: &[T],
@@ -684,6 +715,7 @@ enum MoverOrSelector<C> {
 }
 
 #[derive(Debug, Clone, Copy)]
+///Defines the probabilities of all distributions used in grammar sampling
 pub struct LexicalProbConfig {
     children_width: f64,
     lemma_prob: f64,
@@ -856,6 +888,8 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         }
     }
 
+    ///Assign a random feature to node at `node` while respecting the rules of what makes a grammar
+    ///valid.
     fn set_node(&mut self, node: NodeIndex, rng: &mut impl Rng) {
         let n = self.lexicon.graph.node_weight(node).unwrap();
 

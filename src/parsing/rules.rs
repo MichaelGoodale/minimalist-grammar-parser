@@ -1,3 +1,4 @@
+//! Defines helper functions which allow one to record the structure of a parse.
 use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
 
@@ -8,17 +9,19 @@ mod printing;
 pub use printing::{MGEdge, MgNode, PackagedRulePool};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct RuleIndex(usize);
+pub(crate) struct RuleIndex(usize);
 impl RuleIndex {
     pub fn one() -> Self {
         RuleIndex(1)
     }
 }
 
+///This struct record the ID of each trace in a derivation.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct TraceId(usize);
 
 impl TraceId {
+    ///Gets the inner value of the trace as a `usize`
     pub fn index(&self) -> usize {
         self.0
     }
@@ -31,7 +34,7 @@ impl std::fmt::Display for TraceId {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Rule {
+pub(crate) enum Rule {
     Start {
         node: NodeIndex,
         child: RuleIndex,
@@ -68,7 +71,7 @@ pub enum Rule {
 struct PartialIndex(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RuleHolder {
+pub(crate) struct RuleHolder {
     rule: Rule,
     index: RuleIndex,
     parent: Option<PartialIndex>,
@@ -163,6 +166,8 @@ impl Default for PartialRulePool {
     }
 }
 
+///This struct holds the history of which rules were used to generate a parse and thus can be used
+///to plot trees or look at the syntactic structure of a parse.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RulePool(Vec<Rule>);
 

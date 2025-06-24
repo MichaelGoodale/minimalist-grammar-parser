@@ -1,3 +1,5 @@
+//! Module which defines the core functions to create or modify MG lexicons.
+
 use crate::Direction;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
@@ -20,16 +22,20 @@ use std::{
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-//A possible feature of a
+///A possible features of a lexical entry
 pub enum Feature<Category: Eq> {
+    ///The category of a lexical entry.
     Category(Category),
+    ///Possible complements or specifiers (e.g. =d or d=)
     Selector(Category, Direction),
+    ///Possible places for movers to go to (e.g. +wh)
     Licensor(Category),
+    ///Marks that a lexical entry can move (e.g. -wh)
     Licensee(Category),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-//Returns either a licensee or category: used only in [`ParsingError`]
+///Returns either a licensee or category: used only in [`ParsingError`]
 #[allow(missing_docs)]
 pub enum LicenseeOrCategory<C> {
     Licensee(C),
@@ -46,22 +52,32 @@ impl<C: Debug> Display for LicenseeOrCategory<C> {
 }
 
 #[derive(Error, Clone, Copy, Debug)]
+///Indicates that there is something wrong a lexicon
 pub enum LexiconError {
+    ///Reference a node that doesn't exist
     #[error("There is no node ({0:?})")]
     MissingNode(NodeIndex),
+
+    ///Treats a node index as a leaf when it is not one.
     #[error("Node ({0:?}) is not a leaf")]
     NotALeaf(NodeIndex),
+
+    ///Lexicon is malformed since a node isn't a descendent from the root.
     #[error("Following the parents of node, ({0:?}), doesn't lead to root")]
     DoesntGoToRoot(NodeIndex),
+
+    ///The parents of a node go beyond the root or go through a leaf.
     #[error("Following the parents of node, ({0:?}), we pass through the root or another lemma")]
     InvalidOrder(NodeIndex),
 }
 
+///Indicates a problem with parsing.
 #[derive(Error, Clone, Copy, Debug)]
 pub enum ParsingError<C>
 where
     C: Debug,
 {
+    ///We try to get a licensor or category of a feature that is not in the grammar.
     #[error("There is nothing with feature ({0})")]
     NoLicensorOrCategory(LicenseeOrCategory<C>),
 }
@@ -276,6 +292,36 @@ impl<Category: Display + Eq> Display for Feature<Category> {
     }
 }
 
+///The struct which represents a specific MG.
+///They can be created by parsing:
+///```
+///# use minimalist_grammar_parser::Lexicon;
+///let grammar: Lexicon<&str, &str> = Lexicon::from_string("John::d\nsaw::d= =d v\nMary::d")?;
+///# Ok::<(), anyhow::Error>(())
+///```
+///It is also possible to make a [`Lexicon`] which use different types for categories or lemmas, such as integers or [`String`]s.
+///These can be made with [`Lexicon::remap_lexicon`] or by passing a vector of [`LexicalEntry`]
+///using [`Lexicon::new`].
+///
+///## Lemmas
+///
+///Lemmas are representated as `Option<T>`, so empty strings are `None` rather than an empty
+///string to allow for arbitrary lemma type `T`.
+///
+///## Useful functions
+///
+/// - [`Lexicon::parse`] parse a string.
+/// - [`Lexicon::parse_multiple`] parse multiple strings simultaneously.
+/// - [`Lexicon::generate`] generate some of the strings of a grammar.
+/// - [`Lexicon::valid_continuations`] find the valid next tokens of a grammar given a prefix
+///
+///
+///## Representation
+///The struct represents a lexicon as a graph, as per Stabler (2013).
+///This means certain functions exploit this, such as [`Lexicon::n_nodes`] which doesn't reference
+///the number of features of the grammar as written out, but rather the number of nodes in the graph representation.
+///
+/// - Stabler, E. (2013). Two Models of Minimalist, Incremental Syntactic Analysis. Topics in Cognitive Science, 5(3), 611–633. <https://doi.org/10.1111/tops.12031>
 #[derive(Debug, Clone)]
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: StableDiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
@@ -307,13 +353,10 @@ where
     T: Eq + std::fmt::Debug + Clone + Display,
     Category: Eq + std::fmt::Debug + Clone + Display,
 {
-    pub fn graphviz(&self, debug: bool) -> String {
+    ///Prints a lexicon as a GraphViz dot file.
+    pub fn graphviz(&self) -> String {
         let dot = Dot::new(&self.graph);
-        if debug {
-            format!("{:?}", dot)
-        } else {
-            format!("{}", dot)
-        }
+        format!("{}", dot)
     }
 }
 
@@ -354,6 +397,7 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+    ///Checks if `nx` is a complement
     pub fn is_complement(&self, nx: NodeIndex) -> bool {
         matches!(
             self.graph.node_weight(nx).unwrap(),
@@ -361,14 +405,17 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         )
     }
 
+    ///The number of nodes in a lexicon.
     pub fn n_nodes(&self) -> usize {
         self.graph.node_count()
     }
 
+    ///Returns the leaves of a grammar
     pub fn leaves(&self) -> &[NodeIndex] {
         &self.leaves
     }
 
+    ///Gets the lemma of a leaf.
     pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
         match self.graph.node_weight(nx) {
             Some(x) => {
@@ -382,8 +429,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    //Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for
-    //their lemma)
+    ///Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for
+    ///their lemma)
     pub fn sibling_leaves(&self) -> Vec<Vec<NodeIndex>> {
         let mut leaves = self.leaves.clone();
         let mut result = vec![];
@@ -398,6 +445,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         result
     }
 
+    ///Turns a lexicon into a `Vec<LexicalEntry<T, Category>>` which can be useful for printing or
+    ///investigating individual lexical entries.
     pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>, LexiconError> {
         let mut v = vec![];
 
@@ -428,6 +477,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         Ok(v)
     }
 
+    ///Given a leaf node, return its [`LexicalEntry`]
     pub fn get_lexical_entry(
         &self,
         nx: NodeIndex,
@@ -478,6 +528,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         Ok(LexicalEntry { features, lemma })
     }
 
+    ///Get all lemmas of a grammar
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
         self.leaves.iter().filter_map(|x| match &self.graph[*x] {
             FeatureOrLemma::Lemma(x) => Some(x),
@@ -485,11 +536,14 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
+    ///Create a new grammar from a [`Vec`] of [`LexicalEntry`]
     pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
         let n_items = items.len();
         Self::new_with_weights(items, std::iter::repeat_n(1.0, n_items).collect())
     }
 
+    ///Create a new grammar from a [`Vec`] of [`LexicalEntry`] where lexical entries are weighted
+    ///in probability
     pub fn new_with_weights(items: Vec<LexicalEntry<T, Category>>, weights: Vec<f64>) -> Self {
         let mut graph = StableDiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
@@ -528,7 +582,11 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn find_category(&self, category: &Category) -> Result<NodeIndex, ParsingError<Category>> {
+    ///Get the node corresponding to a category
+    pub(crate) fn find_category(
+        &self,
+        category: &Category,
+    ) -> Result<NodeIndex, ParsingError<Category>> {
         match self
             .graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
@@ -543,7 +601,11 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn find_licensee(&self, category: &Category) -> Result<NodeIndex, ParsingError<Category>> {
+    ///Get the node corresponding to a licensee
+    pub(crate) fn find_licensee(
+        &self,
+        category: &Category,
+    ) -> Result<NodeIndex, ParsingError<Category>> {
         match self
             .graph
             .neighbors_directed(self.root, petgraph::Direction::Outgoing)
@@ -575,7 +637,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
     }
 
-    pub fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
+    ///Get the feature of a node, if it has one.
+    pub(crate) fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
         self.graph.node_weight(nx).and_then(|x| match x {
             FeatureOrLemma::Root => None,
             FeatureOrLemma::Lemma(_) => None,
@@ -589,29 +652,15 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
-    pub fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
+    ///Get the parent of a node.
+    pub(crate) fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
         self.graph
             .edges_directed(nx, petgraph::Direction::Incoming)
             .next()
             .map(|e| e.source())
     }
 
-    pub fn get_category(&self, mut nx: NodeIndex) -> Option<&Category> {
-        while let Some(e) = self
-            .graph
-            .edges_directed(nx, petgraph::Direction::Incoming)
-            .next()
-        {
-            nx = e.source();
-            let cat = &self.graph[nx];
-            if let FeatureOrLemma::Feature(Feature::Category(c)) = cat {
-                return Some(c);
-            }
-        }
-
-        None
-    }
-
+    ///Iterate over all categories of a grammar
     pub fn categories(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
             FeatureOrLemma::Feature(Feature::Category(x)) => Some(x),
@@ -619,6 +668,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
+    ///Iterate over all licensors of a grammar
     pub fn licensor_types(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
             FeatureOrLemma::Feature(Feature::Licensor(x))
@@ -627,13 +677,15 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
-    pub fn n_children(&self, nx: NodeIndex) -> usize {
+    ///The number of children of a node
+    pub(crate) fn n_children(&self, nx: NodeIndex) -> usize {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
             .count()
     }
 
-    pub fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
+    ///The children of a node
+    pub(crate) fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
         self.graph
             .edges_directed(nx, petgraph::Direction::Outgoing)
             .map(|e| e.target())
@@ -641,6 +693,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 }
 
 impl<'src> Lexicon<&'src str, &'src str> {
+    ///Parse a grammar and return a [`Lexicon<&str, &str>`]
     pub fn from_string(s: &'src str) -> Result<Self, LexiconParsingError<'src>> {
         grammar_parser()
             .padded()
@@ -652,6 +705,8 @@ impl<'src> Lexicon<&'src str, &'src str> {
 }
 
 impl<T: Eq, C: Eq> Lexicon<T, C> {
+    ///Converts a `Lexicon<T,C>` to a `Lexicon<T2, C2>` according to two functions which remap
+    ///them.
     pub fn remap_lexicon<'lex, T2: Eq, C2: Eq>(
         &'lex self,
         lemma_map: impl Fn(&'lex T) -> T2,
@@ -695,6 +750,7 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
 }
 
 impl<'a> Lexicon<&'a str, &'a str> {
+    ///Converts from `Lexicon<&str, &str>` to `Lexicon<String, String>`
     pub fn to_owned_values(&self) -> Lexicon<String, String> {
         let Lexicon {
             graph,
@@ -732,8 +788,7 @@ impl<'a> Lexicon<&'a str, &'a str> {
     }
 }
 
-pub type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
-
+///Problem parsing a grammar; returns a vector of all [`Rich`] errors from Chumsky
 #[derive(Error, Debug, Clone)]
 pub struct LexiconParsingError<'a>(pub Vec<Rich<'a, char>>);
 
@@ -758,6 +813,7 @@ impl<'a> From<Vec<Rich<'a, char>>> for LexiconParsingError<'a> {
 }
 
 impl LexicalEntry<&str, &str> {
+    ///Parses a single lexical entry and returns it as a [`LexicalEntry`].
     pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>, LexiconParsingError> {
         entry_parser::<extra::Err<Rich<char>>>()
             .parse(s)
@@ -836,6 +892,7 @@ mod tests {
         Ok(())
     }
 
+    type SimpleLexicalEntry<'a> = LexicalEntry<&'a str, &'a str>;
     #[test]
     fn parsing() {
         assert_eq!(

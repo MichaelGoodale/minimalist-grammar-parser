@@ -1,7 +1,12 @@
+//! Module which defines helper functions to calculate the MDL of MGs according to Ermolaeva, 2021
+//!
+//! - Ermolaeva, M. (2021). Learning Syntax via Decomposition [The University of Chicago]. https://doi.org/10.6082/uchicago.3015
+
 use super::{Feature, FeatureOrLemma, Lexicon, LexiconError};
 use ahash::AHashSet;
 use std::hash::Hash;
 
+///Defines the cost of a type of lemma
 pub trait SymbolCost: Sized {
     ///This is the length of a member where each sub-unit has [``n_phonemes``] possible encodings.
     /// # Example
@@ -53,6 +58,7 @@ const MG_TYPES: u16 = 5;
 impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debug + Clone + Hash>
     Lexicon<T, Category>
 {
+    /// Returns the MDL score of a lexicon assuming the number of phonemes is fixed.
     pub fn mdl_score_fixed_category_size(
         &self,
         n_phonemes: u16,

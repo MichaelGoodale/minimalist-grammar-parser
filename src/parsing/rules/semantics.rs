@@ -109,7 +109,7 @@ impl Serialize for SemanticNode<'_> {
 }
 
 impl<'a> SemanticHistory<'a> {
-    pub fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
+    pub(super) fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
         match self {
             SemanticHistory::Rich(items) => items
                 .get(i.0)

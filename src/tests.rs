@@ -53,19 +53,17 @@ fn simple_merge() -> Result<()> {
         )?
         .next()
         .unwrap();
-    assert!(
-        lexicon
-            .parse(
-                &"drinks the man the beer"
-                    .split(' ')
-                    .map(PhonContent::Normal)
-                    .collect::<Vec<_>>(),
-                "d",
-                &CONFIG
-            )?
-            .next()
-            .is_none()
-    );
+    assert!(lexicon
+        .parse(
+            &"drinks the man the beer"
+                .split(' ')
+                .map(PhonContent::Normal)
+                .collect::<Vec<_>>(),
+            "d",
+            &CONFIG
+        )?
+        .next()
+        .is_none());
     Ok(())
 }
 
@@ -155,11 +153,10 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(
-            lex.parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
-                .next()
-                .is_none()
-        );
+        assert!(lex
+            .parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
+            .next()
+            .is_none());
     }
     Ok(())
 }

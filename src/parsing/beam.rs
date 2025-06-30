@@ -4,6 +4,7 @@
 use crate::{
     ParseHeap, ParsingConfig, PhonContent, expand,
     lexicon::{Lexicon, ParsingError},
+    parsing::PossibleHeads,
 };
 
 use super::{BeamWrapper, RuleHolder, rules::RulePool};
@@ -16,6 +17,8 @@ use std::{fmt::Debug, hash::Hash};
 ///iteratively build strings.
 pub(crate) trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
+
+    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +47,10 @@ where
             None => true,
         });
         !self.sentence.is_empty()
+    }
+
+    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
+        todo!()
     }
 }
 
@@ -122,6 +129,10 @@ where
             });
         true
     }
+
+    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -139,6 +150,10 @@ where
             self.sentence.push(PhonContent::Normal(s.clone()));
         }
         true
+    }
+
+    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
+        todo!();
     }
 }
 
@@ -191,6 +206,10 @@ where
             }
             None => true,
         }
+    }
+
+    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
+        todo!()
     }
 }
 

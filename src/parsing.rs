@@ -29,39 +29,25 @@ pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PossibleHeads {
-    head: NodeIndex,
-    direction: Direction,
-    possibilities: Vec<HeadTree>,
-}
+pub(crate) struct PossibleHeads(Vec<HeadTree>);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HeadTree {
-    possible_heads: Vec<NodeIndex>,
-    possible_children: Option<HeadTreeChild>,
+    head: NodeIndex,
+    child: Option<(Box<HeadTree>, Direction)>,
 }
 
 impl HeadTree {
-    pub(crate) fn just_heads(nodes: Vec<NodeIndex>) -> Self {
+    pub(crate) fn just_heads(node: NodeIndex) -> Self {
         Self {
-            possible_heads: nodes,
-            possible_children: None,
+            head: node,
+            child: None,
         }
     }
-    pub(crate) fn merge_left(mut self, child: HeadTree) -> Self {
-        self.possible_children = Some(HeadTreeChild::LeftChild(Box::new(child)));
+    pub(crate) fn merge(mut self, child: HeadTree, dir: Direction) -> Self {
+        self.child = Some((Box::new(child), dir));
         self
     }
-    pub(crate) fn merge_right(mut self, child: HeadTree) -> Self {
-        self.possible_children = Some(HeadTreeChild::RightChild(Box::new(child)));
-        self
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum HeadTreeChild {
-    LeftChild(Box<HeadTree>),
-    RightChild(Box<HeadTree>),
 }
 
 impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialEq for BeamWrapper<T, B> {
@@ -95,6 +81,10 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
     ) {
+        if let Some(StolenHead::Stealer(pos)) = moment.stolen_head {
+            println!("{:?}", self.heads)
+        }
+
         if self.beam.scan(s) {
             self.log_prob += child_prob;
             self.rules.push_rule(
@@ -439,11 +429,7 @@ fn unmove_head<
     let (complement_movers, child_movers) = (moment.movers.clone(), thin_vec![]);
 
     let head_pos = beam.heads.len();
-    let possible_heads = PossibleHeads {
-        head: child_node,
-        direction: *dir,
-        possibilities: lexicon.possible_heads(cat)?,
-    };
+    let possible_heads = PossibleHeads(lexicon.possible_heads(child_node, 0)?);
     beam.heads.push(possible_heads);
 
     let complement_id = beam.push_moment(

@@ -431,36 +431,50 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
 {
     pub(crate) fn possible_heads(
         &self,
-        category: &Category,
+        nx: NodeIndex,
+        depth: usize,
     ) -> Result<Vec<HeadTree>, ParsingError<Category>> {
+        if depth > 10 {
+            return Ok(vec![]);
+        }
+        let Some(FeatureOrLemma::Feature(Feature::Affix(category, direction))) =
+            self.graph.node_weight(nx)
+        else {
+            panic!("Node must be an affix!")
+        };
+
         //TODO: Consider whether the heads of moved phrases can themselves be moved??
-        //TODO: Add limit on head movement combination
-        let mut affixes: HashMap<(&Category, Direction), Vec<NodeIndex>> = HashMap::default();
-        let mut lemmas = vec![];
+        //TODO: Make faster by weaving some of this logic into beams
+        let mut children = vec![];
         let x: NodeIndex = self.find_category(category)?;
 
         let mut stack = vec![x];
 
         while let Some(nx) = stack.pop() {
             match self.graph.node_weight(nx).unwrap() {
-                FeatureOrLemma::Feature(Feature::Affix(c, d)) => affixes
-                    .entry((c, *d))
-                    .or_default()
-                    .extend(self.children_of(nx)),
-                FeatureOrLemma::Lemma(_) => lemmas.push(x),
+                FeatureOrLemma::Feature(Feature::Affix(..)) => {
+                    for child in self.children_of(nx) {
+                        children.extend(self.possible_heads(child, depth + 1)?.into_iter())
+                    }
+                }
+                FeatureOrLemma::Lemma(_) => children.push(HeadTree::just_heads(nx)),
                 _ => stack.extend(self.children_of(nx)),
             }
         }
 
-        let mut heads = vec![HeadTree::just_heads(lemmas)];
-        for ((_, d), v) in affixes.into_iter() {
-            let affix_head = HeadTree::just_heads(v);
-            for head in self.possible_heads(category)? {
-                heads.push(match d {
-                    Direction::Left => affix_head.clone().merge_left(head),
-                    Direction::Right => affix_head.clone().merge_right(head),
-                });
-            }
+        let mut heads = vec![];
+        for child in self.children_of(nx).filter(|child| {
+            matches!(
+                self.graph.node_weight(*child).unwrap(),
+                FeatureOrLemma::Lemma(_)
+            )
+        }) {
+            heads.extend(
+                children
+                    .clone()
+                    .into_iter()
+                    .map(|x| HeadTree::just_heads(child).merge(x, *direction)),
+            )
         }
 
         Ok(heads)

@@ -2,7 +2,7 @@
 //!work.
 
 use crate::{
-    ParseHeap, ParsingConfig, expand,
+    ParseHeap, ParsingConfig, PhonContent, expand,
     lexicon::{Lexicon, ParsingError},
 };
 
@@ -20,7 +20,7 @@ pub(crate) trait Scanner<T>: Sized {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParseScan<'a, T> {
-    pub sentence: Vec<(&'a [T], usize)>,
+    pub sentence: Vec<(&'a [PhonContent<T>], usize)>,
 }
 
 impl<T> Scanner<T> for ParseScan<'_, T>
@@ -30,7 +30,7 @@ where
     fn scan(&mut self, s: &Option<T>) -> bool {
         self.sentence.retain_mut(|(sentence, position)| match s {
             Some(s) => {
-                if let Some(string) = sentence.get(*position) {
+                if let Some(PhonContent::Normal(string)) = sentence.get(*position) {
                     if s == string {
                         *position += 1;
                         true
@@ -51,7 +51,11 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
     pub(crate) fn yield_good_parse(
         b: BeamWrapper<T, Self>,
         rules: &[RuleHolder],
-    ) -> Option<(impl Iterator<Item = &'a [T]> + 'a, LogProb<f64>, RulePool)> {
+    ) -> Option<(
+        impl Iterator<Item = &'a [PhonContent<T>]> + 'a,
+        LogProb<f64>,
+        RulePool,
+    )> {
         if b.is_empty() {
             Some((
                 b.beam
@@ -70,15 +74,15 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FuzzyScan<'a, T> {
-    pub generated_sentences: Vec<T>,
-    pub sentence_guides: Vec<(&'a [T], usize)>,
+    pub generated_sentences: Vec<PhonContent<T>>,
+    pub sentence_guides: Vec<(&'a [PhonContent<T>], usize)>,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
     pub fn yield_good_parse(
         b: BeamWrapper<T, Self>,
         rules: &[RuleHolder],
-    ) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
+    ) -> Option<(LogProb<f64>, Vec<PhonContent<T>>, RulePool)> {
         if b.is_empty() {
             Some((
                 b.log_prob,
@@ -97,12 +101,13 @@ where
 {
     fn scan(&mut self, s: &Option<T>) -> bool {
         if let Some(s) = s {
-            self.generated_sentences.push(s.clone());
+            self.generated_sentences
+                .push(PhonContent::Normal(s.clone()));
         }
         self.sentence_guides
             .retain_mut(|(sentence, position)| match s {
                 Some(s) => {
-                    if let Some(string) = sentence.get(*position) {
+                    if let Some(PhonContent::Normal(string)) = sentence.get(*position) {
                         if s == string {
                             *position += 1;
                             true
@@ -121,7 +126,7 @@ where
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct GeneratorScan<T> {
-    pub sentence: Vec<T>,
+    pub sentence: Vec<PhonContent<T>>,
 }
 
 impl<T: Clone> Scanner<T> for GeneratorScan<T>
@@ -131,7 +136,7 @@ where
     fn scan(&mut self, s: &Option<T>) -> bool {
         if let Some(s) = s {
             //If the word was None then adding it does nothing
-            self.sentence.push(s.clone());
+            self.sentence.push(PhonContent::Normal(s.clone()));
         }
         true
     }
@@ -141,7 +146,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
     pub(crate) fn yield_good_parse(
         b: BeamWrapper<T, Self>,
         rules: &[RuleHolder],
-    ) -> Option<(LogProb<f64>, Vec<T>, RulePool)> {
+    ) -> Option<(LogProb<f64>, Vec<PhonContent<T>>, RulePool)> {
         if b.is_empty() {
             Some((
                 b.log_prob,

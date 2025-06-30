@@ -278,7 +278,7 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(t) = &self.lemma {
-            write!(f, "{}::", t)?;
+            write!(f, "{t}::")?;
         } else {
             write!(f, "ε::")?;
         }
@@ -286,7 +286,7 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
             if i > 0 {
                 write!(f, " ")?;
             }
-            write!(f, "{}", feature)?;
+            write!(f, "{feature}")?;
         }
         Ok(())
     }
@@ -370,7 +370,7 @@ where
     ///Prints a lexicon as a GraphViz dot file.
     pub fn graphviz(&self) -> String {
         let dot = Dot::new(&self.graph);
-        format!("{}", dot)
+        format!("{dot}")
     }
 }
 

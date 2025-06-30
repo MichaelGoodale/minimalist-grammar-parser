@@ -1191,8 +1191,8 @@ mod test {
     use logprob::LogProb;
 
     use super::*;
-    use crate::ParsingConfig;
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
+    use crate::{ParsingConfig, PhonContent};
     use petgraph::dot::Dot;
 
     #[test]
@@ -1206,7 +1206,14 @@ mod test {
         );
         for sentence in vec!["which wine the queen prefers"].into_iter() {
             let (_, _, rules) = lex
-                .parse(&sentence.split(' ').collect::<Vec<_>>(), "C", &config)?
+                .parse(
+                    &sentence
+                        .split(' ')
+                        .map(PhonContent::Normal)
+                        .collect::<Vec<_>>(),
+                    "C",
+                    &config,
+                )?
                 .next()
                 .unwrap();
             let (g, _, _) = rules.to_graph(&lex);
@@ -1233,7 +1240,14 @@ mod test {
         );
         for sentence in vec!["a b a b"].into_iter() {
             let (_, _, rules) = lex
-                .parse(&sentence.split(' ').collect::<Vec<_>>(), "T", &config)?
+                .parse(
+                    &sentence
+                        .split(' ')
+                        .map(PhonContent::Normal)
+                        .collect::<Vec<_>>(),
+                    "T",
+                    &config,
+                )?
                 .next()
                 .unwrap();
             let (g, _, _) = rules.to_graph(&lex);
@@ -1260,7 +1274,10 @@ mod test {
         let lex = Lexicon::from_string(STABLER2011)?;
         let rules = lex
             .parse(
-                &"the queen prefers the wine".split(' ').collect::<Vec<_>>(),
+                &"the queen prefers the wine"
+                    .split(' ')
+                    .map(PhonContent::Normal)
+                    .collect::<Vec<_>>(),
                 "C",
                 &config,
             )?
@@ -1290,6 +1307,7 @@ mod test {
             .parse(
                 &"which queen prefers the wine"
                     .split(' ')
+                    .map(PhonContent::Normal)
                     .collect::<Vec<_>>(),
                 "C",
                 &config,
@@ -1317,7 +1335,10 @@ mod test {
         );
 
         let lex = Lexicon::from_string("a::v= +k +q z\nb::v -k -q")?;
-        let (_, _s, r) = lex.parse(&["b", "a"], "z", &config)?.next().unwrap();
+        let (_, _s, r) = lex
+            .parse(&PhonContent::from(["b", "a"]), "z", &config)?
+            .next()
+            .unwrap();
         let g = r.to_x_bar_graph(&lex);
         println!("{}", Dot::new(&g));
         assert_eq!(

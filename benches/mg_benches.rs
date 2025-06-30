@@ -2,7 +2,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
-    ParsingConfig,
+    ParsingConfig, PhonContent,
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{LexicalEntry, Lexicon},
 };
@@ -33,9 +33,10 @@ lazy_static! {
 #[divan::bench]
 fn parse_long_sentence() {
     let g = divan::black_box(get_grammar());
-    let sentence: Vec<&str> = divan::black_box(
+    let sentence: Vec<_> = divan::black_box(
         "which king knows the queen knows which beer the king drinks"
             .split(' ')
+            .map(PhonContent::Normal)
             .collect(),
     );
     g.parse(&sentence, "C", &CONFIG).unwrap().next().unwrap();
@@ -57,7 +58,7 @@ fn parse_copy_language() {
             .unwrap();
         let lex = Lexicon::new(v);
 
-        let mut strings = Vec::<Vec<&str>>::new();
+        let mut strings = Vec::<Vec<_>>::new();
         strings.push(vec![]);
 
         for i in 1..=5 {
@@ -66,7 +67,7 @@ fn parse_copy_language() {
                     .multi_cartesian_product()
                     .map(|mut x| {
                         x.append(&mut x.clone());
-                        x
+                        PhonContent::new(x)
                     }),
             );
         }
@@ -88,7 +89,7 @@ fn parse_copy_language_together() {
             .unwrap();
         let lex = Lexicon::new(v);
 
-        let mut strings = Vec::<Vec<&str>>::new();
+        let mut strings = Vec::<Vec<_>>::new();
         strings.push(vec![]);
 
         for i in 1..=5 {
@@ -97,7 +98,7 @@ fn parse_copy_language_together() {
                     .multi_cartesian_product()
                     .map(|mut x| {
                         x.append(&mut x.clone());
-                        x
+                        PhonContent::new(x)
                     }),
             );
         }

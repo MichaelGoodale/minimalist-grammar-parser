@@ -9,7 +9,7 @@
 //!use minimalist_grammar_parser::ParsingConfig;
 //!# use minimalist_grammar_parser::lexicon::LexiconParsingError;
 //!let lexicon = Lexicon::from_string("a::s= b= s\nb::b\n::s")?;
-//!let v = lexicon.generate("s", &ParsingConfig::default())?.take(4).map(|(_prob, s, _rules)| s.join("")).collect::<Vec<_>>();
+//!let v = lexicon.generate("s", &ParsingConfig::default())?.take(4).map(|(_prob, s, _rules)| s.into_iter().map(|word| word.try_inner().unwrap()).collect::<Vec<_>>().join("")).collect::<Vec<_>>();
 //!assert_eq!(v, vec!["", "ab", "aabb", "aaabbb"]);
 //!# Ok::<(), anyhow::Error>(())
 //!```
@@ -23,7 +23,7 @@
 #![warn(missing_docs)]
 
 use std::borrow::Borrow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -39,6 +39,43 @@ pub use parsing::RulePool;
 use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::{BeamWrapper, PartialRulePool, expand};
 use petgraph::graph::NodeIndex;
+
+use thiserror::Error;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PhonContent<T> {
+    Normal(T),
+    Affixed(Vec<T>),
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Error)]
+pub struct FlattenError {}
+impl Display for FlattenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "This Input is not a Normal variant")
+    }
+}
+
+impl<T> PhonContent<T> {
+    pub fn try_inner(self) -> Result<T, FlattenError> {
+        match self {
+            PhonContent::Normal(x) => Ok(x),
+            PhonContent::Affixed(_) => Err(FlattenError {}),
+        }
+    }
+
+    pub fn new(x: Vec<T>) -> Vec<PhonContent<T>> {
+        x.into_iter().map(PhonContent::Normal).collect()
+    }
+
+    pub fn from<const N: usize>(x: [T; N]) -> [PhonContent<T>; N] {
+        x.map(PhonContent::Normal)
+    }
+
+    pub fn flatten(x: Vec<PhonContent<T>>) -> Result<Vec<T>, FlattenError> {
+        x.into_iter().map(|x| x.try_inner()).collect()
+    }
+}
 
 ///Enum to record the direction of a merge/move operation (whether the phonological value goes to
 ///the right or left)
@@ -202,8 +239,8 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<T, B> {
     }
 }
 
-type ParserOutput<'a, T> = (LogProb<f64>, &'a [T], RulePool);
-type GeneratorOutput<T> = (LogProb<f64>, Vec<T>, RulePool);
+type ParserOutput<'a, T> = (LogProb<f64>, &'a [PhonContent<T>], RulePool);
+type GeneratorOutput<T> = (LogProb<f64>, Vec<PhonContent<T>>, RulePool);
 
 ///An iterator constructed by [`Lexicon::fuzzy_parse`]
 pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
@@ -349,7 +386,7 @@ where
     ///`[`RulePool`]`)`
     pub fn parse<'a, 'b: 'a>(
         &'a self,
-        s: &'b [T],
+        s: &'b [PhonContent<T>],
         category: Category,
         config: &'b ParsingConfig,
     ) -> Result<Parser<'a, T, Category>, ParsingError<Category>> {
@@ -380,7 +417,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<Parser<'a, T, Category>, ParsingError<Category>>
     where
-        U: AsRef<[T]>,
+        U: AsRef<[PhonContent<T>]>,
     {
         let cat = self.find_category(&category)?;
         let beams = BeamWrapper::new(
@@ -409,7 +446,7 @@ where
         config: &'a ParsingConfig,
     ) -> Result<FuzzyParser<'a, T, Category>, ParsingError<Category>>
     where
-        U: AsRef<[T]>,
+        U: AsRef<[PhonContent<T>]>,
     {
         let cat = self.find_category(&category)?;
 

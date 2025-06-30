@@ -2,7 +2,7 @@ use ahash::HashMap;
 use simple_semantics::language::LambdaParseError;
 use std::fmt::Debug;
 
-use crate::ParsingConfig;
+use crate::{ParsingConfig, PhonContent};
 
 use super::*;
 
@@ -123,13 +123,13 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
     pub fn parse_and_interpret<'a, 'b: 'a>(
         &'a self,
         category: C,
-        sentence: &'b [T],
+        sentence: &'b [PhonContent<T>],
         config: &'b ParsingConfig,
     ) -> Result<
         impl Iterator<
             Item = (
                 LogProb<f64>,
-                &'a [T],
+                &'a [PhonContent<T>],
                 impl Iterator<Item = LanguageExpression<'src>>,
             ),
         >,
@@ -176,7 +176,7 @@ mod test {
     use logprob::LogProb;
 
     use super::SemanticLexicon;
-    use crate::ParsingConfig;
+    use crate::{ParsingConfig, PhonContent};
 
     #[test]
     fn trivial_montague() -> anyhow::Result<()> {
@@ -192,7 +192,7 @@ mod test {
         let semantic = SemanticLexicon::parse(lexicon)?;
         let (_, _, rules) = semantic
             .lexicon
-            .parse(&["john", "likes", "mary"], "v", &config)?
+            .parse(&PhonContent::from(["john", "likes", "mary"]), "v", &config)?
             .next()
             .unwrap();
         let (interpretation, mut history) = rules.to_interpretation(&semantic).next().unwrap();
@@ -241,7 +241,11 @@ mod test {
 
         let (_, _, rules) = semantic
             .lexicon()
-            .parse(&["john", "knows", "who", "likes", "mary"], "c", &config)
+            .parse(
+                &PhonContent::from(["john", "knows", "who", "likes", "mary"]),
+                "c",
+                &config,
+            )
             .map_err(|x| x.inner_into::<String>())?
             .next()
             .unwrap();
@@ -308,7 +312,7 @@ mod test {
             .map_err(|e| e.inner_into::<String>())?
             .take(10)
         {
-            let mut s = s.join(" ");
+            let mut s = PhonContent::flatten(s)?.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
                 .map(|(pool, _)| pool.into_pool().unwrap().to_string())
@@ -349,7 +353,7 @@ mod test {
             .map_err(|e| e.inner_into::<String>())?
             .take(10)
         {
-            let mut s = s.join(" ");
+            let mut s = PhonContent::flatten(s)?.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
                 .map(|(pool, _)| pool.into_pool().unwrap().to_string())
@@ -375,7 +379,11 @@ mod test {
         {
             let (_, _, rules) = lex
                 .lexicon
-                .parse(&["everyone", "likes", "someone"], "t", &config)
+                .parse(
+                    &PhonContent::from(["everyone", "likes", "someone"]),
+                    "t",
+                    &config,
+                )
                 .map_err(|e| e.inner_into::<String>())?
                 .next()
                 .unwrap();
@@ -407,10 +415,11 @@ ran::2::lambda t x (a_1)
 John::0 -1::a_1";
 
         let lexicon = SemanticLexicon::parse(grammar)?;
-        for (_, _, r) in lexicon
-            .lexicon
-            .parse(&["John", "ran"], "0", &ParsingConfig::default())?
-        {
+        for (_, _, r) in lexicon.lexicon.parse(
+            &PhonContent::from(["John", "ran"]),
+            "0",
+            &ParsingConfig::default(),
+        )? {
             for (pool, h) in r.to_interpretation(&lexicon) {
                 pool.into_pool()?;
                 h.into_rich(&lexicon, &r);

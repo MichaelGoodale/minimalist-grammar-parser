@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use logprob::LogProb;
 use minimalist_grammar_parser::{
-    ParsingConfig,
+    ParsingConfig, PhonContent,
     grammars::{COPY_LANGUAGE, STABLER2011},
     lexicon::{LexicalEntry, Lexicon},
 };
@@ -41,17 +41,20 @@ fn parse_copy_language_together(config: &ParsingConfig) {
             .unwrap();
         let lex = Lexicon::new(v);
 
-        let mut strings = Vec::<Vec<&str>>::new();
+        let mut strings = Vec::<Vec<_>>::new();
         strings.push(vec![]);
 
         for i in 1..=5 {
             strings.extend(
-                itertools::repeat_n(vec!["a", "b"].into_iter(), i)
-                    .multi_cartesian_product()
-                    .map(|mut x| {
-                        x.append(&mut x.clone());
-                        x
-                    }),
+                itertools::repeat_n(
+                    vec![PhonContent::Normal("a"), PhonContent::Normal("b")].into_iter(),
+                    i,
+                )
+                .multi_cartesian_product()
+                .map(|mut x| {
+                    x.append(&mut x.clone());
+                    x
+                }),
             );
         }
         (lex, strings)
@@ -69,7 +72,10 @@ fn parse_long_sentence(config: &ParsingConfig) {
         .split(' ')
         .collect();
 
-    g.parse(&sentence, "C", config).unwrap().next().unwrap();
+    g.parse(&PhonContent::new(sentence), "C", config)
+        .unwrap()
+        .next()
+        .unwrap();
 }
 
 fn generate_sentence(config: &ParsingConfig) {
@@ -86,17 +92,20 @@ fn parse_copy_language(config: &ParsingConfig) {
         .unwrap();
     let lex = Lexicon::new(v);
 
-    let mut strings = Vec::<Vec<&str>>::new();
+    let mut strings = Vec::<Vec<_>>::new();
     strings.push(vec![]);
 
     for i in 1..=5 {
         strings.extend(
-            itertools::repeat_n(vec!["a", "b"].into_iter(), i)
-                .multi_cartesian_product()
-                .map(|mut x| {
-                    x.append(&mut x.clone());
-                    x
-                }),
+            itertools::repeat_n(
+                vec![PhonContent::Normal("a"), PhonContent::Normal("b")].into_iter(),
+                i,
+            )
+            .multi_cartesian_product()
+            .map(|mut x| {
+                x.append(&mut x.clone());
+                x
+            }),
         );
     }
 

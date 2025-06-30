@@ -9,7 +9,7 @@ use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use thin_vec::{ThinVec, thin_vec};
+use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
 use rules::Rule;
@@ -436,7 +436,11 @@ pub(crate) fn expand<
                         );
                     }
                 }
-                _ => (),
+                (FeatureOrLemma::Feature(Feature::Affix(_, _)), _) => todo!(),
+                (FeatureOrLemma::Lemma(_), _)
+                | (FeatureOrLemma::Feature(Feature::Category(_)), _)
+                | (FeatureOrLemma::Feature(Feature::Licensee(_)), _) => (),
+                (FeatureOrLemma::Root, _) => unimplemented!("Impossible to parse the root node"),
             },
         );
 }

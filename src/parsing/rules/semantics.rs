@@ -674,19 +674,19 @@ where
 #[cfg(test)]
 mod tests {
 
-    use crate::ParsingConfig;
     use crate::lexicon::SemanticLexicon;
+    use crate::{ParsingConfig, PhonContent};
 
     #[test]
     fn doesnt_crash_with_bad_typed_double_movement() -> anyhow::Result<()> {
         let lexicon = SemanticLexicon::parse(
             "mary::0 -1 -1::a_0\n::=0 +1 0::lambda <e,e> x (a_1)\nran::=0 +1 0::a_1",
         )?;
-        for (_, _, r) in
-            lexicon
-                .lexicon()
-                .parse(&["mary", "ran"], "0", &ParsingConfig::default())?
-        {
+        for (_, _, r) in lexicon.lexicon().parse(
+            &PhonContent::from(["mary", "ran"]),
+            "0",
+            &ParsingConfig::default(),
+        )? {
             for (x, _h) in r.to_interpretation(&lexicon).take(10) {
                 println!("{x}");
             }

@@ -24,7 +24,7 @@ lazy_static! {
 fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
     let lexicon = Lexicon::new(v);
-    let s: Vec<_> = vec!["hello"];
+    let s: Vec<_> = PhonContent::new(vec!["hello"]);
     lexicon.parse(&s, "h", &CONFIG)?.next().unwrap();
     Ok(())
 }
@@ -39,12 +39,15 @@ fn simple_merge() -> Result<()> {
     ];
     let lexicon = Lexicon::new(v);
     lexicon
-        .parse(&["the", "man"], "d", &CONFIG)?
+        .parse(&PhonContent::from(["the", "man"]), "d", &CONFIG)?
         .next()
         .unwrap();
     lexicon
         .parse(
-            &"the man drinks the beer".split(' ').collect::<Vec<_>>(),
+            &"the man drinks the beer"
+                .split(' ')
+                .map(PhonContent::Normal)
+                .collect::<Vec<_>>(),
             "v",
             &CONFIG,
         )?
@@ -53,7 +56,10 @@ fn simple_merge() -> Result<()> {
     assert!(
         lexicon
             .parse(
-                &"drinks the man the beer".split(' ').collect::<Vec<_>>(),
+                &"drinks the man the beer"
+                    .split(' ')
+                    .map(PhonContent::Normal)
+                    .collect::<Vec<_>>(),
                 "d",
                 &CONFIG
             )?
@@ -79,9 +85,16 @@ fn moving_parse() -> anyhow::Result<()> {
     .into_iter()
     {
         println!("{sentence}");
-        lex.parse(&sentence.split(' ').collect::<Vec<_>>(), "C", &CONFIG)?
-            .next()
-            .unwrap();
+        lex.parse(
+            &sentence
+                .split(' ')
+                .map(PhonContent::Normal)
+                .collect::<Vec<_>>(),
+            "C",
+            &CONFIG,
+        )?
+        .next()
+        .unwrap();
     }
 
     for bad_sentence in vec![
@@ -142,7 +155,11 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(lex.parse(&bad_sentence, "C", &CONFIG)?.next().is_none());
+        assert!(
+            lex.parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
+                .next()
+                .is_none()
+        );
     }
     Ok(())
 }
@@ -168,51 +185,51 @@ fn generation() -> Result<()> {
     let mut x = vec![
         (
             -2.0794415416798357,
-            vec!["the", "king", "likes", "the", "queen"],
+            PhonContent::new(vec!["the", "king", "likes", "the", "queen"]),
         ),
         (
             -2.0794415416798357,
-            vec!["the", "king", "likes", "the", "king"],
+            PhonContent::new(vec!["the", "king", "likes", "the", "king"]),
         ),
         (
             -2.0794415416798357,
-            vec!["the", "queen", "likes", "the", "king"],
+            PhonContent::new(vec!["the", "queen", "likes", "the", "king"]),
         ),
         (
             -2.0794415416798357,
-            vec!["the", "queen", "likes", "the", "queen"],
+            PhonContent::new(vec!["the", "queen", "likes", "the", "queen"]),
         ),
         (
             -2.772588722239781,
-            vec!["which", "king", "likes", "the", "queen"],
+            PhonContent::new(vec!["which", "king", "likes", "the", "queen"]),
         ),
         (
             -2.772588722239781,
-            vec!["which", "queen", "likes", "the", "king"],
+            PhonContent::new(vec!["which", "queen", "likes", "the", "king"]),
         ),
         (
             -2.772588722239781,
-            vec!["which", "queen", "likes", "the", "queen"],
+            PhonContent::new(vec!["which", "queen", "likes", "the", "queen"]),
         ),
         (
             -2.772588722239781,
-            vec!["which", "king", "likes", "the", "king"],
+            PhonContent::new(vec!["which", "king", "likes", "the", "king"]),
         ),
         (
             -3.4657359027997265,
-            vec!["which", "queen", "the", "queen", "likes"],
+            PhonContent::new(vec!["which", "queen", "the", "queen", "likes"]),
         ),
         (
             -3.4657359027997265,
-            vec!["which", "king", "the", "queen", "likes"],
+            PhonContent::new(vec!["which", "king", "the", "queen", "likes"]),
         ),
         (
             -3.4657359027997265,
-            vec!["which", "king", "the", "king", "likes"],
+            PhonContent::new(vec!["which", "king", "the", "king", "likes"]),
         ),
         (
             -3.4657359027997265,
-            vec!["which", "queen", "the", "king", "likes"],
+            PhonContent::new(vec!["which", "queen", "the", "king", "likes"]),
         ),
     ];
 
@@ -248,8 +265,8 @@ use itertools::{self, Itertools};
 #[test]
 fn clear_copy_language() -> anyhow::Result<()> {
     let lex = Lexicon::from_string(ALT_COPY_LANGUAGE)?;
-    let mut strings = HashSet::<Vec<&str>>::new();
-    strings.insert(vec!["S", "E"]);
+    let mut strings = HashSet::<Vec<_>>::new();
+    strings.insert(PhonContent::new(vec!["S", "E"]));
 
     for i in 1..=5 {
         strings.extend(
@@ -259,7 +276,7 @@ fn clear_copy_language() -> anyhow::Result<()> {
                     x.append(&mut x.clone());
                     x.insert(0, "S");
                     x.push("E");
-                    x
+                    PhonContent::new(x)
                 }),
         );
     }
@@ -277,7 +294,7 @@ fn clear_copy_language() -> anyhow::Result<()> {
 #[test]
 fn copy_language() -> anyhow::Result<()> {
     let lex = Lexicon::from_string(COPY_LANGUAGE)?;
-    let mut strings = HashSet::<Vec<&str>>::new();
+    let mut strings = HashSet::<Vec<_>>::new();
     strings.insert(vec![]);
 
     for i in 1..=5 {
@@ -286,7 +303,7 @@ fn copy_language() -> anyhow::Result<()> {
                 .multi_cartesian_product()
                 .map(|mut x| {
                     x.append(&mut x.clone());
-                    x
+                    PhonContent::new(x)
                 }),
         );
     }
@@ -333,7 +350,13 @@ f::+g c";
         .take(50)
         .map(|(_, x, _)| x)
         .collect();
-    assert_eq!(x, vec![vec!["a"], vec!["b"]]);
+    assert_eq!(
+        x,
+        vec![
+            vec![PhonContent::Normal("a")],
+            vec![PhonContent::Normal("b")]
+        ]
+    );
     Ok(())
 }
 
@@ -385,12 +408,16 @@ fn simple_movement() -> Result<()> {
     assert_eq!(
         v,
         vec![
-            ["john", "will", "eat", "the", "cake"],
-            ["john", "will", "the", "cake", "eat"]
+            PhonContent::from(["john", "will", "eat", "the", "cake"]),
+            PhonContent::from(["john", "will", "the", "cake", "eat"])
         ]
     );
     lexicon
-        .parse(&["john", "will", "eat", "the", "cake"], "t", &CONFIG)?
+        .parse(
+            &PhonContent::from(["john", "will", "eat", "the", "cake"]),
+            "t",
+            &CONFIG,
+        )?
         .next()
         .unwrap();
     Ok(())
@@ -407,16 +434,28 @@ fn proper_distributions() -> Result<()> {
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
     );
     let v = vec![
-        (-LN_2, vec!["a"]),
-        (-1.3862943611198906, vec!["a", "a"]),
-        (-2.0794415416798357, vec!["a", "a", "a"]),
-        (-2.772588722239781, vec!["a", "a", "a", "a"]),
-        (-3.4657359027997265, vec!["a", "a", "a", "a", "a"]),
-        (-4.1588830833596715, vec!["a", "a", "a", "a", "a", "a"]),
-        (-4.852030263919617, vec!["a", "a", "a", "a", "a", "a", "a"]),
+        (-LN_2, PhonContent::new(vec!["a"])),
+        (-1.3862943611198906, PhonContent::new(vec!["a", "a"])),
+        (-2.0794415416798357, PhonContent::new(vec!["a", "a", "a"])),
+        (
+            -2.772588722239781,
+            PhonContent::new(vec!["a", "a", "a", "a"]),
+        ),
+        (
+            -3.4657359027997265,
+            PhonContent::new(vec!["a", "a", "a", "a", "a"]),
+        ),
+        (
+            -4.1588830833596715,
+            PhonContent::new(vec!["a", "a", "a", "a", "a", "a"]),
+        ),
+        (
+            -4.852030263919617,
+            PhonContent::new(vec!["a", "a", "a", "a", "a", "a", "a"]),
+        ),
         (
             -5.545177444479562,
-            vec!["a", "a", "a", "a", "a", "a", "a", "a"],
+            PhonContent::new(vec!["a", "a", "a", "a", "a", "a", "a", "a"]),
         ),
     ];
 

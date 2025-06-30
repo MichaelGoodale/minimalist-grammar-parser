@@ -84,17 +84,17 @@ where
 
     fn add_indirect_children(&mut self, node: NodeIndex) {
         match self.lex.graph.node_weight(node).unwrap() {
-            FeatureOrLemma::Feature(Feature::Selector(c, _)) | FeatureOrLemma::Complement(c, _) => {
-                match self.lex.find_category(c) {
-                    Ok(x) => {
-                        if !self.seen.contains(&x) {
-                            self.stack.push(x);
-                        }
+            FeatureOrLemma::Feature(Feature::Selector(c, _))
+            | FeatureOrLemma::Complement(c, _)
+            | FeatureOrLemma::Feature(Feature::Affix(c, _)) => match self.lex.find_category(c) {
+                Ok(x) => {
+                    if !self.seen.contains(&x) {
+                        self.stack.push(x);
                     }
-                    Err(_) if !self.lex.has_moving_category(c) => self.mark_unsatisfiable(node),
-                    Err(_) => (),
                 }
-            }
+                Err(_) if !self.lex.has_moving_category(c) => self.mark_unsatisfiable(node),
+                Err(_) => (),
+            },
             FeatureOrLemma::Feature(Feature::Licensor(c)) => {
                 match self.lex.find_licensee(c) {
                     //Does not check if the licensee can be built
@@ -824,7 +824,8 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                     }
                 }
                 FeatureOrLemma::Feature(Feature::Licensor(_))
-                | FeatureOrLemma::Feature(Feature::Selector(_, _)) => {
+                | FeatureOrLemma::Feature(Feature::Selector(_, _))
+                | FeatureOrLemma::Feature(Feature::Affix(_, _)) => {
                     let n_children = self.n_children(rng);
                     for _ in 0..n_children {
                         let feature = self.get_feature(rng);

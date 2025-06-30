@@ -28,6 +28,8 @@ pub enum Feature<Category: Eq> {
     Category(Category),
     ///Possible complements or specifiers (e.g. =d or d=)
     Selector(Category, Direction),
+    ///Head movement
+    Affix(Category, Direction),
     ///Possible places for movers to go to (e.g. +wh)
     Licensor(Category),
     ///Marks that a lexical entry can move (e.g. -wh)
@@ -283,11 +285,13 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
 impl<Category: Display + Eq> Display for Feature<Category> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Feature::Category(x) => write!(f, "{}", x),
-            Feature::Selector(x, Direction::Left) => write!(f, "={}", x),
-            Feature::Selector(x, Direction::Right) => write!(f, "{}=", x),
-            Feature::Licensor(x) => write!(f, "+{}", x),
-            Feature::Licensee(x) => write!(f, "-{}", x),
+            Feature::Category(x) => write!(f, "{x}"),
+            Feature::Selector(x, Direction::Left) => write!(f, "={x}"),
+            Feature::Selector(x, Direction::Right) => write!(f, "{x}="),
+            Feature::Affix(x, Direction::Left) => write!(f, "=>{x}"),
+            Feature::Affix(x, Direction::Right) => write!(f, "{x}<="),
+            Feature::Licensor(x) => write!(f, "+{x}"),
+            Feature::Licensee(x) => write!(f, "-{x}"),
         }
     }
 }
@@ -646,7 +650,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 Feature::Category(c)
                 | Feature::Selector(c, _)
                 | Feature::Licensor(c)
-                | Feature::Licensee(c) => Some(c),
+                | Feature::Licensee(c)
+                | Feature::Affix(c, _) => Some(c),
             },
             FeatureOrLemma::Complement(c, _) => Some(c),
         })
@@ -732,6 +737,9 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
                 FeatureOrLemma::Feature(Feature::Licensee(c)) => {
                     FeatureOrLemma::Feature(Feature::Licensee(category_map(c)))
                 }
+                FeatureOrLemma::Feature(Feature::Affix(c, d)) => {
+                    FeatureOrLemma::Feature(Feature::Affix(category_map(c), *d))
+                }
                 FeatureOrLemma::Feature(Feature::Selector(c, d)) => {
                     FeatureOrLemma::Feature(Feature::Selector(category_map(c), *d))
                 }
@@ -764,6 +772,9 @@ impl<'a> Lexicon<&'a str, &'a str> {
                 FeatureOrLemma::Lemma(s) => FeatureOrLemma::Lemma(s.map(|x| x.to_owned())),
                 FeatureOrLemma::Feature(Feature::Category(c)) => {
                     FeatureOrLemma::Feature(Feature::Category(c.to_owned()))
+                }
+                FeatureOrLemma::Feature(Feature::Affix(c, d)) => {
+                    FeatureOrLemma::Feature(Feature::Affix(c.to_owned(), d))
                 }
                 FeatureOrLemma::Feature(Feature::Licensor(c)) => {
                     FeatureOrLemma::Feature(Feature::Licensor(c.to_owned()))

@@ -52,8 +52,8 @@ impl SymbolCost for u8 {
 }
 
 ///Number of types of features, e.g. the space of possible features in [``Feature``] enum.
-///Here it is five to account for left and right attachment.
-const MG_TYPES: u16 = 5;
+///Here it is six to account for left and right attachment.
+const MG_TYPES: u16 = 6;
 
 impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debug + Clone + Hash>
     Lexicon<T, Category>
@@ -90,8 +90,11 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
                         break;
                     } else if let FeatureOrLemma::Feature(f) = &self.graph[parent] {
                         category_symbols.insert(match f {
-                            Feature::Category(c) | Feature::Licensor(c) | Feature::Licensee(c) => c,
-                            Feature::Selector(c, _d) => c,
+                            Feature::Category(c)
+                            | Feature::Licensor(c)
+                            | Feature::Licensee(c)
+                            | Feature::Affix(c, _)
+                            | Feature::Selector(c, _) => c,
                         });
                         n_features += 1;
                     } else if let FeatureOrLemma::Complement(c, _d) = &self.graph[parent] {

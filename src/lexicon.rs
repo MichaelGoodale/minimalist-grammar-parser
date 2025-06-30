@@ -1,6 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
 use crate::Direction;
+use crate::parsing::{HeadTree, PossibleHeads};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -14,6 +15,7 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
+use std::collections::HashMap;
 use std::result::Result;
 use std::{
     fmt::{Debug, Display},
@@ -26,7 +28,7 @@ use thiserror::Error;
 pub enum Feature<Category: Eq> {
     ///The category of a lexical entry.
     Category(Category),
-    ///Possible complements or specifiers (e.g. =d or d=)
+    ///Poss;ble complements or specifiers (e.g. =d or d=)
     Selector(Category, Direction),
     ///Head movement
     Affix(Category, Direction),
@@ -133,23 +135,26 @@ where
         .labelled("feature name")
         .to_slice();
 
+    let affix = choice((
+        feature_name
+            .then_ignore(just("<="))
+            .map(|x| Feature::Affix(x, Direction::Right))
+            .labelled("right affix"),
+        just("=>")
+            .ignore_then(feature_name)
+            .map(|x| Feature::Affix(x, Direction::Left))
+            .labelled("left affix"),
+    ));
+
     let pre_category_features = choice((
         feature_name
             .then_ignore(just("="))
             .map(|x| Feature::Selector(x, Direction::Right))
             .labelled("right selector"),
-        feature_name
-            .then_ignore(just("<="))
-            .map(|x| Feature::Affix(x, Direction::Right))
-            .labelled("right affix"),
         just("=")
             .ignore_then(feature_name)
             .map(|x| Feature::Selector(x, Direction::Left))
             .labelled("left selector"),
-        just("=>")
-            .ignore_then(feature_name)
-            .map(|x| Feature::Affix(x, Direction::Left))
-            .labelled("left affix"),
         just("+")
             .ignore_then(feature_name)
             .map(Feature::Licensor)
@@ -171,11 +176,22 @@ where
             .labelled("lemma feature seperator"),
     )
     .then(
-        pre_category_features
-            .separated_by(inline_whitespace())
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .labelled("pre category features"),
+        affix
+            .or_not()
+            .then_ignore(inline_whitespace().or_not())
+            .then(
+                pre_category_features
+                    .separated_by(inline_whitespace())
+                    .allow_trailing()
+                    .collect::<Vec<_>>()
+                    .labelled("pre category features"),
+            )
+            .map(|(affix, mut feats)| {
+                if let Some(affix) = affix {
+                    feats.insert(0, affix);
+                }
+                feats
+            }),
     )
     .then(
         feature_name
@@ -408,6 +424,47 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
 
     //TODO: Get rid of this annoying clone.
     graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap())
+}
+
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash>
+    Lexicon<T, Category>
+{
+    pub(crate) fn possible_heads(
+        &self,
+        category: &Category,
+    ) -> Result<Vec<HeadTree>, ParsingError<Category>> {
+        //TODO: Consider whether the heads of moved phrases can themselves be moved??
+        //TODO: Add limit on head movement combination
+        let mut affixes: HashMap<(&Category, Direction), Vec<NodeIndex>> = HashMap::default();
+        let mut lemmas = vec![];
+        let x: NodeIndex = self.find_category(category)?;
+
+        let mut stack = vec![x];
+
+        while let Some(nx) = stack.pop() {
+            match self.graph.node_weight(nx).unwrap() {
+                FeatureOrLemma::Feature(Feature::Affix(c, d)) => affixes
+                    .entry((c, *d))
+                    .or_default()
+                    .extend(self.children_of(nx)),
+                FeatureOrLemma::Lemma(_) => lemmas.push(x),
+                _ => stack.extend(self.children_of(nx)),
+            }
+        }
+
+        let mut heads = vec![HeadTree::just_heads(lemmas)];
+        for ((_, d), v) in affixes.into_iter() {
+            let affix_head = HeadTree::just_heads(v);
+            for head in self.possible_heads(category)? {
+                heads.push(match d {
+                    Direction::Left => affix_head.clone().merge_left(head),
+                    Direction::Right => affix_head.clone().merge_right(head),
+                });
+            }
+        }
+
+        Ok(heads)
+    }
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
@@ -957,12 +1014,11 @@ mod tests {
             }
         );
         assert_eq!(
-            SimpleLexicalEntry::parse("ε::d<= =>d V").unwrap(),
+            SimpleLexicalEntry::parse("ε::d<= V").unwrap(),
             SimpleLexicalEntry {
                 lemma: None,
                 features: vec![
                     Feature::Affix("d", Direction::Right),
-                    Feature::Affix("d", Direction::Left),
                     Feature::Category("V")
                 ]
             }

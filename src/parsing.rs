@@ -2,14 +2,16 @@
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
+use crate::parsing::trees::StolenHead;
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
 use rules::Rule;
@@ -20,9 +22,46 @@ pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
 pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
+    heads: Vec<PossibleHeads>,
     rules: PartialRulePool,
     pub beam: B,
     phantom: PhantomData<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct PossibleHeads {
+    head: NodeIndex,
+    direction: Direction,
+    possibilities: Vec<HeadTree>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct HeadTree {
+    possible_heads: Vec<NodeIndex>,
+    possible_children: Option<HeadTreeChild>,
+}
+
+impl HeadTree {
+    pub(crate) fn just_heads(nodes: Vec<NodeIndex>) -> Self {
+        Self {
+            possible_heads: nodes,
+            possible_children: None,
+        }
+    }
+    pub(crate) fn merge_left(mut self, child: HeadTree) -> Self {
+        self.possible_children = Some(HeadTreeChild::LeftChild(Box::new(child)));
+        self
+    }
+    pub(crate) fn merge_right(mut self, child: HeadTree) -> Self {
+        self.possible_children = Some(HeadTreeChild::RightChild(Box::new(child)));
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum HeadTreeChild {
+    LeftChild(Box<HeadTree>),
+    RightChild(Box<HeadTree>),
 }
 
 impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialEq for BeamWrapper<T, B> {
@@ -77,9 +116,14 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
         node: NodeIndex,
         index: GornIndex,
         movers: ThinVec<FutureTree>,
+        stolen_head: Option<StolenHead>,
     ) -> RuleIndex {
         let (tree, id) = self.new_future_tree(node, index);
-        self.queue.push(Reverse(ParseMoment { tree, movers }));
+        self.queue.push(Reverse(ParseMoment {
+            tree,
+            movers,
+            stolen_head,
+        }));
         id
     }
 
@@ -92,9 +136,11 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
                 id: RuleIndex::one(),
             },
             thin_vec![],
+            None,
         )));
         BeamWrapper {
             beam,
+            heads: vec![],
             queue,
             log_prob: LogProb::prob_of_one(),
             rules: PartialRulePool::default(),
@@ -166,8 +212,14 @@ fn unmerge_from_mover<
                         (thin_vec![], movers)
                     };
 
-                    let child_id = beam.push_moment(child_node, moment.tree.index, child_movers);
-                    let stored_id = beam.push_moment(stored_child_node, mover.index, stored_movers);
+                    let child_id = beam.push_moment(
+                        child_node,
+                        moment.tree.index,
+                        child_movers,
+                        moment.stolen_head,
+                    );
+                    let stored_id =
+                        beam.push_moment(stored_child_node, mover.index, stored_movers, None);
 
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
 
@@ -225,11 +277,13 @@ fn unmerge<
         complement,
         moment.tree.index.clone_push(*dir),
         complement_movers,
+        None,
     );
     let child_id = beam.push_moment(
         child_node,
         moment.tree.index.clone_push(dir.flip()),
         child_movers,
+        moment.stolen_head,
     );
 
     beam.log_prob += child_prob + rule_prob;
@@ -292,7 +346,8 @@ fn unmove_from_mover<
                         .chain(std::iter::once(stored_tree))
                         .collect();
 
-                    let child_id = beam.push_moment(child_node, moment.tree.index, movers);
+                    let child_id =
+                        beam.push_moment(child_node, moment.tree.index, movers, moment.stolen_head);
                     beam.log_prob += stored_prob + child_prob + config.move_prob;
 
                     let trace_id = beam.rules.fresh_trace();
@@ -341,6 +396,7 @@ fn unmove<
         child_node,
         moment.tree.index.clone_push(Direction::Right),
         clone_push(&moment.movers, stored),
+        None,
     );
 
     beam.log_prob += child_prob + rule_prob;
@@ -356,9 +412,70 @@ fn unmove<
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn unmove_head<
+    T: Eq + std::fmt::Debug + Clone,
+    U: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone + Hash,
+    B: Scanner<T> + Eq,
+>(
+    v: &mut ParseHeap<T, B>,
+    lexicon: &Lexicon<U, Category>,
+    moment: &ParseMoment,
+    mut beam: BeamWrapper<T, B>,
+    cat: &Category,
+    dir: &Direction,
+    child_node: NodeIndex,
+    child_prob: LogProb<f64>,
+) -> Result<(), ParsingError<Category>> {
+    //Not totally clear how to do this,
+    //looks like we need to enrich upcoming FutureTrees such that we know whether they have had
+    //their head stolen, and crucially, we need a way to check that the stolen head corresponds to
+    //the one in this affix. The best way may be to keep track of the *destination* of stolen heads
+    //
+
+    let complement = lexicon.find_category(cat)?;
+    let (complement_movers, child_movers) = (moment.movers.clone(), thin_vec![]);
+
+    let head_pos = beam.heads.len();
+    let possible_heads = PossibleHeads {
+        head: child_node,
+        direction: *dir,
+        possibilities: lexicon.possible_heads(cat)?,
+    };
+    beam.heads.push(possible_heads);
+
+    let complement_id = beam.push_moment(
+        complement,
+        moment.tree.index.clone_push(Direction::Right),
+        complement_movers,
+        Some(StolenHead::StolenHead(head_pos, *dir)),
+    );
+    let child_id = beam.push_moment(
+        child_node,
+        moment.tree.index.clone_push(Direction::Left),
+        child_movers,
+        Some(StolenHead::Stealer(head_pos)),
+    );
+
+    beam.log_prob += child_prob;
+    beam.rules.push_rule(
+        v.rules_mut(),
+        Rule::Unmerge {
+            child: child_node,
+            child_id,
+            complement_id,
+        },
+        moment.tree.id,
+    );
+    v.push(beam);
+    Ok(())
+}
+
 pub(crate) fn expand<
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone,
+    Category: Eq + std::fmt::Debug + Clone + Hash,
     B: Scanner<T> + Eq + Clone,
     L: Borrow<Lexicon<T, Category>>,
 >(
@@ -377,7 +494,7 @@ pub(crate) fn expand<
         .for_each(
             |(beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
-                    beam.scan(extender, &moment, s, child_node, p);
+                    beam.scan(extender, &moment, s, child_node, p)
                 }
                 (FeatureOrLemma::Complement(cat, dir), p)
                 | (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {
@@ -436,7 +553,9 @@ pub(crate) fn expand<
                         );
                     }
                 }
-                (FeatureOrLemma::Feature(Feature::Affix(_, _)), _) => todo!(),
+                (FeatureOrLemma::Feature(Feature::Affix(cat, dir)), p) => {
+                    let _ = unmove_head(extender, lexicon, &moment, beam, cat, dir, child_node, p);
+                }
                 (FeatureOrLemma::Lemma(_), _)
                 | (FeatureOrLemma::Feature(Feature::Category(_)), _)
                 | (FeatureOrLemma::Feature(Feature::Licensee(_)), _) => (),

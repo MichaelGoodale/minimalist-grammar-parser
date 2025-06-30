@@ -94,6 +94,7 @@ impl Ord for FutureTree {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParseMoment {
     pub tree: FutureTree,
+    pub stolen_head: Option<StolenHead>,
     pub movers: ThinVec<FutureTree>,
 }
 
@@ -108,8 +109,16 @@ impl ParseMoment {
         least
     }
 
-    pub fn new(tree: FutureTree, movers: ThinVec<FutureTree>) -> Self {
-        ParseMoment { tree, movers }
+    pub fn new(
+        tree: FutureTree,
+        movers: ThinVec<FutureTree>,
+        stolen_head: Option<StolenHead>,
+    ) -> Self {
+        ParseMoment {
+            tree,
+            movers,
+            stolen_head,
+        }
     }
     pub fn no_movers(&self) -> bool {
         self.movers.is_empty()
@@ -126,4 +135,10 @@ impl Ord for ParseMoment {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.least_index().cmp(other.least_index())
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StolenHead {
+    Stealer(usize),
+    StolenHead(usize, Direction),
 }

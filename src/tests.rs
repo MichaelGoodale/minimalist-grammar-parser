@@ -384,6 +384,7 @@ fn capped_beams() -> Result<()> {
     assert_eq!(g, vec![]);
     Ok(())
 }
+
 #[test]
 fn simple_movement() -> Result<()> {
     let lexicon = [
@@ -506,5 +507,48 @@ fn proper_distributions() -> Result<()> {
         .collect();
     assert_eq!(v, g);
     assert_eq!(v, parse);
+    Ok(())
+}
+
+#[test]
+fn simple_head_movement() -> Result<()> {
+    let lexicon = [
+        "john::d -k",
+        "is::prog= +k t",
+        "laugh::=d v",
+        "ing::=>v prog",
+    ];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+    );
+    let v: Vec<_> = lexicon
+        .generate("t", &CONFIG)?
+        .take(50)
+        .map(|(_, s, _)| s)
+        .collect();
+
+    assert_eq!(
+        v,
+        vec![
+            PhonContent::from(["john", "is ", "eat", "the", "cake"]),
+            PhonContent::from(["john", "will", "the", "cake", "eat"])
+        ]
+    );
+    lexicon
+        .parse(
+            &[
+                PhonContent::Normal("john"),
+                PhonContent::Normal("is"),
+                PhonContent::Affixed(vec!["laugh", "ing"]),
+            ],
+            "t",
+            &CONFIG,
+        )?
+        .next()
+        .unwrap();
     Ok(())
 }

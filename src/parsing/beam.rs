@@ -220,7 +220,7 @@ pub enum Continuation<T> {
 impl<T, C> Lexicon<T, C>
 where
     T: Eq + std::fmt::Debug + Clone + Hash,
-    C: Eq + Clone + std::fmt::Debug,
+    C: Eq + Clone + std::fmt::Debug + Hash,
 {
     ///Given a grammar and a prefix string, return a [`HashSet`] of the possible [`Continuation`]s (i.e. next words) that are valid
     ///in the grammar.

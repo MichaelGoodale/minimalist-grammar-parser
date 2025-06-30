@@ -27,7 +27,8 @@ fn index_order() -> Result<()> {
             node: NodeIndex::new(0),
             id: RuleIndex::one(),
             index: [Direction::Right].into(),
-        }],
+        },],
+        None,
     );
 
     assert_eq!(a.least_index(), &[Direction::Left, Direction::Right].into());

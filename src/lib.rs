@@ -24,6 +24,7 @@
 
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -253,7 +254,7 @@ pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone
 impl<T, Category> Iterator for FuzzyParser<'_, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Eq + Clone + std::fmt::Debug + Hash,
 {
     type Item = GeneratorOutput<T>;
 
@@ -290,7 +291,7 @@ pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + st
 impl<'a, T, Category> Iterator for Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Eq + Clone + std::fmt::Debug + Hash,
 {
     type Item = ParserOutput<'a, T>;
 
@@ -339,7 +340,7 @@ where
 impl<T, Category> Lexicon<T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Eq + Clone + std::fmt::Debug + Hash,
 {
     ///Generates the strings in a grammar that are findable according to the parsing config.
     ///
@@ -481,7 +482,7 @@ impl<L, T, Category> Iterator for Generator<L, T, Category>
 where
     L: Borrow<Lexicon<T, Category>>,
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug,
+    Category: Eq + Clone + std::fmt::Debug + Hash,
 {
     type Item = GeneratorOutput<T>;
 

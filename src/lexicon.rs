@@ -125,7 +125,9 @@ where
         + LabelError<'src, &'src str, &'static str>,
 {
     let feature_name = any()
-        .and_is(none_of(['\t', '\n', ' ', '+', '-', '=', ':', '\r']))
+        .and_is(none_of([
+            '\t', '\n', ' ', '+', '-', '=', '>', '<', ':', '\r',
+        ]))
         .repeated()
         .at_least(1)
         .labelled("feature name")
@@ -136,10 +138,18 @@ where
             .then_ignore(just("="))
             .map(|x| Feature::Selector(x, Direction::Right))
             .labelled("right selector"),
+        feature_name
+            .then_ignore(just("<="))
+            .map(|x| Feature::Affix(x, Direction::Right))
+            .labelled("right affix"),
         just("=")
             .ignore_then(feature_name)
             .map(|x| Feature::Selector(x, Direction::Left))
             .labelled("left selector"),
+        just("=>")
+            .ignore_then(feature_name)
+            .map(|x| Feature::Affix(x, Direction::Left))
+            .labelled("left affix"),
         just("+")
             .ignore_then(feature_name)
             .map(Feature::Licensor)
@@ -843,12 +853,12 @@ where
             FeatureOrLemma::Root => write!(f, "root"),
             FeatureOrLemma::Lemma(lemma) => {
                 if let Some(l) = lemma {
-                    write!(f, "{}", l)
+                    write!(f, "{l}")
                 } else {
                     write!(f, "ε")
                 }
             }
-            FeatureOrLemma::Feature(feature) => write!(f, "{}", feature),
+            FeatureOrLemma::Feature(feature) => write!(f, "{feature}"),
             FeatureOrLemma::Complement(c, d) => write!(f, "{}", Feature::Selector(c, *d)),
         }
     }
@@ -942,6 +952,17 @@ mod tests {
                 features: vec![
                     Feature::Selector("d", Direction::Right),
                     Feature::Selector("d", Direction::Left),
+                    Feature::Category("V")
+                ]
+            }
+        );
+        assert_eq!(
+            SimpleLexicalEntry::parse("ε::d<= =>d V").unwrap(),
+            SimpleLexicalEntry {
+                lemma: None,
+                features: vec![
+                    Feature::Affix("d", Direction::Right),
+                    Feature::Affix("d", Direction::Left),
                     Feature::Category("V")
                 ]
             }

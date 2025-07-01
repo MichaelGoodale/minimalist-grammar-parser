@@ -313,7 +313,7 @@ pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + st
 impl<'a, T, Category> Iterator for Parser<'a, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug + Hash,
+    Category: Eq + Clone + std::fmt::Debug,
 {
     type Item = ParserOutput<'a, T>;
 
@@ -362,7 +362,7 @@ where
 impl<T, Category> Lexicon<T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + Clone + std::fmt::Debug + Hash,
+    Category: Eq + Clone + std::fmt::Debug,
 {
     ///Generates the strings in a grammar that are findable according to the parsing config.
     ///

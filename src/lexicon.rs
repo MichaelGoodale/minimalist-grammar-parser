@@ -1,7 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
-use crate::parsing::HeadTree;
 use crate::Direction;
+use crate::parsing::HeadTree;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -107,8 +107,8 @@ impl<A: Debug> ParsingError<A> {
     }
 }
 
-fn grammar_parser<'src>(
-) -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
+fn grammar_parser<'src>()
+-> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
     entry_parser::<extra::Err<Rich<'src, char>>>()
         .separated_by(newline())
         .allow_leading()
@@ -425,9 +425,7 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
     graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap())
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + Hash>
-    Lexicon<T, Category>
-{
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
     pub(crate) fn possible_heads(
         &self,
         nx: NodeIndex,

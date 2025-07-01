@@ -3,7 +3,6 @@ use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
@@ -12,7 +11,7 @@ use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use thin_vec::{thin_vec, ThinVec};
+use thin_vec::{ThinVec, thin_vec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
 use rules::Rule;
@@ -519,7 +518,7 @@ fn unmove<
 fn unmove_head<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone + Hash,
+    Category: Eq + std::fmt::Debug + Clone,
     B: Scanner<T> + Eq + Clone,
 >(
     v: &mut ParseHeap<T, B>,
@@ -594,7 +593,7 @@ fn unmove_head<
 
 pub(crate) fn expand<
     T: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone + Hash,
+    Category: Eq + std::fmt::Debug + Clone,
     B: Scanner<T> + Eq + Clone,
     L: Borrow<Lexicon<T, Category>>,
 >(

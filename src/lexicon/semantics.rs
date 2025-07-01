@@ -312,7 +312,7 @@ mod test {
             .map_err(|e| e.inner_into::<String>())?
             .take(10)
         {
-            let mut s = PhonContent::flatten(s)?.join(" ");
+            let mut s = PhonContent::try_flatten(s)?.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
                 .map(|(pool, _)| pool.into_pool().unwrap().to_string())
@@ -353,7 +353,7 @@ mod test {
             .map_err(|e| e.inner_into::<String>())?
             .take(10)
         {
-            let mut s = PhonContent::flatten(s)?.join(" ");
+            let mut s = PhonContent::try_flatten(s)?.join(" ");
             for interpretation in rules
                 .to_interpretation(&lex)
                 .map(|(pool, _)| pool.into_pool().unwrap().to_string())

@@ -72,6 +72,7 @@ where
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
+    #[allow(clippy::complexity)]
     pub(crate) fn yield_good_parse(
         b: BeamWrapper<T, Self>,
         rules: &[RuleHolder],

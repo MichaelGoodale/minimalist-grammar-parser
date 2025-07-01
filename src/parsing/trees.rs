@@ -32,15 +32,6 @@ impl Ord for GornIndex {
     }
 }
 
-impl GornIndex {
-    fn iter(&self) -> GornIterator {
-        GornIterator {
-            pos: 0,
-            gorn: *self,
-        }
-    }
-}
-
 impl Iterator for GornIterator {
     type Item = Direction;
 

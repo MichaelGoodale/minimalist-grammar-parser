@@ -1,7 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
+use crate::parsing::HeadTree;
 use crate::Direction;
-use crate::parsing::{HeadTree, PossibleHeads};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -15,7 +15,6 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
-use std::collections::HashMap;
 use std::result::Result;
 use std::{
     fmt::{Debug, Display},
@@ -108,8 +107,8 @@ impl<A: Debug> ParsingError<A> {
     }
 }
 
-fn grammar_parser<'src>()
--> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
+fn grammar_parser<'src>(
+) -> impl Parser<'src, &'src str, Lexicon<&'src str, &'src str>, extra::Err<Rich<'src, char>>> {
     entry_parser::<extra::Err<Rich<'src, char>>>()
         .separated_by(newline())
         .allow_leading()

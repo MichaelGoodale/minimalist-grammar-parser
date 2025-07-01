@@ -50,14 +50,14 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
+        let heads = heads.inorder();
+        if heads.is_empty() {
+            return true;
+        }
+
         self.sentence.retain_mut(|(sentence, position)| {
             if let Some(PhonContent::Affixed(string)) = sentence.get(*position) {
-                if heads
-                    .inorder()
-                    .iter()
-                    .zip(string.iter())
-                    .all(|(a, b)| *a == b)
-                {
+                if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
                     *position += 1;
                     true
                 } else {
@@ -148,7 +148,29 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
-        todo!();
+        let heads_vec: Vec<_> = heads.inorder().into_iter().cloned().collect();
+        if !heads_vec.is_empty() {
+            self.generated_sentences
+                .push(PhonContent::Affixed(heads_vec));
+        }
+        self.sentence_guides.retain_mut(|(sentence, position)| {
+            if let Some(PhonContent::Affixed(string)) = sentence.get(*position) {
+                if heads
+                    .inorder()
+                    .iter()
+                    .zip(string.iter())
+                    .all(|(a, b)| *a == b)
+                {
+                    *position += 1;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+        true
     }
 }
 
@@ -170,9 +192,10 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
-        self.sentence.push(PhonContent::Affixed(
-            heads.inorder().into_iter().cloned().collect(),
-        ));
+        let heads_vec: Vec<_> = heads.inorder().into_iter().cloned().collect();
+        if !heads_vec.is_empty() {
+            self.sentence.push(PhonContent::Affixed(heads_vec));
+        }
         true
     }
 }
@@ -196,9 +219,9 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct ContinuationScan<'a, T> {
-    prefix: &'a [T],
+    prefix: &'a [PhonContent<T>],
     position: usize,
-    final_char: Option<T>,
+    final_char: Option<Continuation<T>>,
 }
 
 impl<T> Scanner<T> for ContinuationScan<'_, T>
@@ -208,7 +231,7 @@ where
     fn scan(&mut self, word: &Option<T>) -> bool {
         match word {
             Some(word) => {
-                if let Some(string) = self.prefix.get(self.position) {
+                if let Some(PhonContent::Normal(string)) = self.prefix.get(self.position) {
                     if word == string {
                         self.position += 1;
                         true
@@ -216,7 +239,7 @@ where
                         false
                     }
                 } else if self.position == self.prefix.len() {
-                    self.final_char = Some(word.clone());
+                    self.final_char = Some(Continuation::Word(word.clone()));
                     self.position += 1;
                     true
                 } else {
@@ -229,7 +252,28 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
-        todo!()
+        let heads = heads.inorder();
+        if heads.is_empty() {
+            return true;
+        }
+
+        if let Some(PhonContent::Affixed(string)) = self.prefix.get(self.position) {
+            if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
+                self.position += 1;
+                true
+            } else {
+                false
+            }
+        } else if self.position == self.prefix.len() {
+            self.final_char = Some(Continuation::AffixedWord(
+                heads.into_iter().cloned().collect(),
+            ));
+            self.position += 1;
+            true
+        } else {
+            self.position += 1;
+            true
+        }
     }
 }
 
@@ -237,7 +281,7 @@ impl<'a, T: Eq + Debug + Clone> ContinuationScan<'a, T> {
     pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<Continuation<T>> {
         if b.is_empty() {
             match b.beam.final_char {
-                Some(x) => Some(Continuation::Word(x)),
+                Some(x) => Some(x),
                 None if b.beam.position == b.beam.prefix.len() => Some(Continuation::EndOfSentence),
                 None => None,
             }
@@ -248,10 +292,12 @@ impl<'a, T: Eq + Debug + Clone> ContinuationScan<'a, T> {
 }
 
 ///Enum that describes a possible token of a grammar
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Continuation<T> {
     ///The following word is a valid token given the prefix in [`Lexicon::valid_continuations`].
     Word(T),
+    ///The following affxied word is a valid token given the prefix in [`Lexicon::valid_continuations`].
+    AffixedWord(Vec<T>),
     ///Has the sentence ended
     EndOfSentence,
 }
@@ -266,21 +312,21 @@ where
     ///Returns an [`ParsingError`] if there is no node with the category of `initial_category`.
     ///
     ///```
-    ///# use minimalist_grammar_parser::{ParsingConfig, Lexicon};
+    ///# use minimalist_grammar_parser::{ParsingConfig, Lexicon, PhonContent};
     ///# use ahash::HashSet;
     ///# use minimalist_grammar_parser::parsing::beam::Continuation;
     ///
     ///let lex = Lexicon::from_string("a::S= b= S\n::S\nb::b")?;
-    ///let continuations = lex.valid_continuations("S", &["a"], &ParsingConfig::default())?;
+    ///let continuations = lex.valid_continuations("S", &PhonContent::from(["a"]), &ParsingConfig::default())?;
     ///assert_eq!(continuations, HashSet::from_iter([Continuation::Word("b"), Continuation::Word("a")].into_iter()));
-    ///let continuations = lex.valid_continuations("S", &["a", "b"], &ParsingConfig::default())?;
+    ///let continuations = lex.valid_continuations("S", &PhonContent::from(["a", "b"]), &ParsingConfig::default())?;
     ///assert_eq!(continuations, HashSet::from_iter([Continuation::EndOfSentence]));
     ///# Ok::<(), anyhow::Error>(())
     /// ```
     pub fn valid_continuations(
         &self,
         initial_category: C,
-        prefix: &[T],
+        prefix: &[PhonContent<T>],
         config: &ParsingConfig,
     ) -> Result<HashSet<Continuation<T>>, ParsingError<C>> {
         let cat = self.find_category(&initial_category)?;
@@ -291,8 +337,7 @@ where
             final_char: None,
         };
 
-        let mut valid_chars = HashSet::default();
-        let mut end_of_string = false;
+        let mut valid_chars: HashSet<Continuation<T>> = HashSet::default();
 
         let mut parse_heap = ParseHeap::new(BeamWrapper::new(cont, cat), config, cat);
 
@@ -307,20 +352,8 @@ where
             if let Some(moment) = beam.pop_moment() {
                 expand(&mut parse_heap, moment, beam, self, config);
             } else if let Some(cont) = ContinuationScan::yield_good_parse(beam) {
-                match cont {
-                    Continuation::Word(w) => {
-                        valid_chars.insert(w);
-                    }
-                    Continuation::EndOfSentence => end_of_string = true,
-                }
+                valid_chars.insert(cont);
             }
-        }
-        println!("{:?}", valid_chars);
-
-        //Awkward remapping necessary to allow hashing the potential words.
-        let mut valid_chars: HashSet<_> = valid_chars.into_iter().map(Continuation::Word).collect();
-        if end_of_string {
-            valid_chars.insert(Continuation::EndOfSentence);
         }
         Ok(valid_chars)
     }
@@ -330,7 +363,7 @@ where
 mod test {
 
     use crate::{
-        ParsingConfig,
+        ParsingConfig, PhonContent,
         grammars::{DYCK_LANGUAGE, STABLER2011},
         lexicon::Lexicon,
         parsing::beam::Continuation,
@@ -382,7 +415,11 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings.into_iter().zip(continuations) {
+        for (s, valid) in strings
+            .into_iter()
+            .map(|s| PhonContent::new(s))
+            .zip(continuations)
+        {
             let cont = lex.valid_continuations("C", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
@@ -402,7 +439,11 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings.into_iter().zip(continuations) {
+        for (s, valid) in strings
+            .into_iter()
+            .map(|s| PhonContent::new(s))
+            .zip(continuations)
+        {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
@@ -425,7 +466,11 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings.into_iter().zip(continuations) {
+        for (s, valid) in strings
+            .into_iter()
+            .map(|s| PhonContent::new(s))
+            .zip(continuations)
+        {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }

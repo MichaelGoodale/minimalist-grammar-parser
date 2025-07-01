@@ -6,13 +6,13 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use crate::lexicon::{self, Feature, FeatureOrLemma, Lexicon, ParsingError};
+use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
 use crate::parsing::trees::StolenHead;
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
-use thin_vec::{ThinVec, thin_vec};
+use thin_vec::{thin_vec, ThinVec};
 use trees::{FutureTree, GornIndex, ParseMoment};
 
 use rules::Rule;

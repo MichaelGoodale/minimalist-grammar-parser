@@ -43,13 +43,17 @@ use petgraph::graph::NodeIndex;
 
 use thiserror::Error;
 
+///The basic input type of the library used by generation and parsing a like
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PhonContent<T> {
+    ///Normal words
     Normal(T),
+    ///Words that are built out of combining heads with head movement
     Affixed(Vec<T>),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Error)]
+///Error caused by flattening a sentence that has affixes in it.
 pub struct FlattenError {}
 impl Display for FlattenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,6 +62,7 @@ impl Display for FlattenError {
 }
 
 impl<T> PhonContent<T> {
+    ///Try to flatten the output assuming that it is [`PhonContent::Normal`]
     pub fn try_inner(self) -> Result<T, FlattenError> {
         match self {
             PhonContent::Normal(x) => Ok(x),
@@ -65,19 +70,24 @@ impl<T> PhonContent<T> {
         }
     }
 
+    ///Create new input assuming there are no affixes.
     pub fn new(x: Vec<T>) -> Vec<PhonContent<T>> {
         x.into_iter().map(PhonContent::Normal).collect()
     }
 
+    ///Create new input assuming there are no affixes
     pub fn from<const N: usize>(x: [T; N]) -> [PhonContent<T>; N] {
         x.map(PhonContent::Normal)
     }
 
+    ///Try to flatten the output assuming that all members of the vector are
+    ///[`PhonContent::Normal`]
     pub fn try_flatten(x: Vec<PhonContent<T>>) -> Result<Vec<T>, FlattenError> {
         x.into_iter().map(|x| x.try_inner()).collect()
     }
 }
 impl PhonContent<&str> {
+    ///Try to flatten the output and join all affixes without spaces
     pub fn flatten(x: Vec<PhonContent<&str>>) -> Vec<String> {
         let mut v = vec![];
         for content in x.into_iter() {

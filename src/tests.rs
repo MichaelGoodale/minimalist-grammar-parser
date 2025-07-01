@@ -570,3 +570,23 @@ fn simple_head_movement() -> Result<()> {
         .unwrap();
     Ok(())
 }
+
+#[test]
+fn empty_head_movement() -> Result<()> {
+    let lexicon = ["john::v= d", "::b<= v", "::b"];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+    );
+    let v: Vec<Vec<PhonContent<&str>>> = lexicon
+        .generate("d", &CONFIG)?
+        .take(50)
+        .map(|(_, s, _)| s)
+        .collect();
+
+    assert_eq!(v, vec![vec![PhonContent::Normal("john")]]);
+    Ok(())
+}

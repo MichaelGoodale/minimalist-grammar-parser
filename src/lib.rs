@@ -73,8 +73,20 @@ impl<T> PhonContent<T> {
         x.map(PhonContent::Normal)
     }
 
-    pub fn flatten(x: Vec<PhonContent<T>>) -> Result<Vec<T>, FlattenError> {
+    pub fn try_flatten(x: Vec<PhonContent<T>>) -> Result<Vec<T>, FlattenError> {
         x.into_iter().map(|x| x.try_inner()).collect()
+    }
+}
+impl PhonContent<&str> {
+    pub fn flatten(x: Vec<PhonContent<&str>>) -> Vec<String> {
+        let mut v = vec![];
+        for content in x.into_iter() {
+            match content {
+                PhonContent::Normal(val) => v.push(val.to_string()),
+                PhonContent::Affixed(items) => v.push(items.join("")),
+            }
+        }
+        v
     }
 }
 
@@ -209,7 +221,7 @@ struct ParseHeap<T, B: Scanner<T>> {
     rule_arena: Vec<RuleHolder>,
 }
 
-impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> ParseHeap<T, B> {
+impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap.pop_max()
     }

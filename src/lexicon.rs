@@ -453,9 +453,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
         while let Some(nx) = stack.pop() {
             match self.graph.node_weight(nx).unwrap() {
                 FeatureOrLemma::Feature(Feature::Affix(..)) => {
-                    for child in self.children_of(nx) {
-                        children.extend(self.possible_heads(child, depth + 1)?.into_iter())
-                    }
+                    children.extend(self.possible_heads(nx, depth + 1)?.into_iter())
                 }
                 FeatureOrLemma::Lemma(_) => children.push(HeadTree::just_heads(nx)),
                 _ => stack.extend(self.children_of(nx)),
@@ -476,8 +474,23 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone + H
                     .map(|x| HeadTree::just_heads(child).merge(x, *direction)),
             )
         }
-
         Ok(heads)
+    }
+}
+
+impl<T: Eq, Category: Eq> Lexicon<T, Category> {
+    ///Gets the lemma of a leaf.
+    pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
+        match self.graph.node_weight(nx) {
+            Some(x) => {
+                if let FeatureOrLemma::Lemma(l) = x {
+                    Some(l)
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
     }
 }
 
@@ -498,20 +511,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     ///Returns the leaves of a grammar
     pub fn leaves(&self) -> &[NodeIndex] {
         &self.leaves
-    }
-
-    ///Gets the lemma of a leaf.
-    pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
-        match self.graph.node_weight(nx) {
-            Some(x) => {
-                if let FeatureOrLemma::Lemma(l) = x {
-                    Some(l)
-                } else {
-                    None
-                }
-            }
-            None => None,
-        }
     }
 
     ///Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for

@@ -32,6 +32,44 @@ impl Ord for GornIndex {
     }
 }
 
+impl GornIndex {
+    fn iter(&self) -> GornIterator {
+        GornIterator {
+            pos: 0,
+            gorn: *self,
+        }
+    }
+}
+
+impl Iterator for GornIterator {
+    type Item = Direction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos < self.gorn.size {
+            let d = self.gorn.index[self.pos];
+            self.pos += 1;
+            Some(d.into())
+        } else {
+            None
+        }
+    }
+}
+
+pub(crate) struct GornIterator {
+    pos: usize,
+    gorn: GornIndex,
+}
+
+impl IntoIterator for GornIndex {
+    type Item = Direction;
+
+    type IntoIter = GornIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        GornIterator { pos: 0, gorn: self }
+    }
+}
+
 impl<T> From<T> for GornIndex
 where
     T: Borrow<[Direction]>,
@@ -62,6 +100,16 @@ impl GornIndex {
     #[inline]
     pub fn clone_push(&self, d: Direction) -> Self {
         let mut v = *self;
+        v.index.set(v.size, d.into());
+        v.size += 1;
+        v
+    }
+
+    pub fn new(d: Direction) -> Self {
+        let mut v = GornIndex {
+            size: 0,
+            index: IndexArray::default(),
+        };
         v.index.set(v.size, d.into());
         v.size += 1;
         v
@@ -140,5 +188,11 @@ impl Ord for ParseMoment {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StolenHead {
     Stealer(usize),
-    StolenHead(usize, Direction),
+    StolenHead(usize, GornIndex),
+}
+
+impl StolenHead {
+    pub(crate) fn new_stolen(pos: usize, direction: Direction) -> Self {
+        StolenHead::StolenHead(pos, GornIndex::new(direction))
+    }
 }

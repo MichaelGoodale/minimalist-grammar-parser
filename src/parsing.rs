@@ -2,10 +2,11 @@
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
+use crate::lexicon::{self, Feature, FeatureOrLemma, Lexicon, ParsingError};
 use crate::parsing::trees::StolenHead;
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
@@ -28,13 +29,52 @@ pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     phantom: PhantomData<T>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PossibleHeads(Vec<HeadTree>);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub(crate) enum PossibleHeads {
+    Possibles(Vec<HeadTree>),
+    FoundTree(HeadTree),
+    #[default]
+    PlaceHolder,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HeadTree {
     head: NodeIndex,
     child: Option<(Box<HeadTree>, Direction)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct FilledHeadTree<'a, T> {
+    head: Option<&'a T>,
+    child: Option<(Box<FilledHeadTree<'a, T>>, Direction)>,
+}
+
+impl<'a, T> FilledHeadTree<'a, T> {
+    pub fn inorder(&self) -> Vec<&'a T> {
+        let mut order = vec![];
+        self.inorder_inner(&mut order);
+        order
+    }
+    fn inorder_inner(&self, v: &mut Vec<&'a T>) {
+        if let Some((child, d)) = &self.child {
+            match d {
+                Direction::Left => {
+                    child.inorder_inner(v);
+                    if let Some(x) = self.head {
+                        v.push(x);
+                    }
+                }
+                Direction::Right => {
+                    if let Some(x) = self.head {
+                        v.push(x);
+                    }
+                    child.inorder_inner(v);
+                }
+            }
+        } else if let Some(x) = self.head {
+            v.push(x);
+        }
+    }
 }
 
 impl HeadTree {
@@ -44,6 +84,38 @@ impl HeadTree {
             child: None,
         }
     }
+
+    fn to_filled_head<'a, T: Eq, C: Eq>(&self, lex: &'a Lexicon<T, C>) -> FilledHeadTree<'a, T> {
+        let child = self
+            .child
+            .as_ref()
+            .map(|(child, dir)| (Box::new(child.to_filled_head(lex)), *dir));
+
+        FilledHeadTree {
+            head: lex
+                .leaf_to_lemma(self.head)
+                .expect("Head nodes must be lemmas!")
+                .as_ref(),
+            child,
+        }
+    }
+
+    pub fn find_node(&self, index: GornIndex) -> Option<NodeIndex> {
+        let mut pos = self;
+        let mut node = self.head;
+        for d in index {
+            if let Some((child, child_d)) = &pos.child
+                && *child_d == d
+            {
+                node = child.head;
+                pos = child;
+            } else {
+                return None;
+            }
+        }
+        Some(node)
+    }
+
     pub(crate) fn merge(mut self, child: HeadTree, dir: Direction) -> Self {
         self.child = Some((Box::new(child), dir));
         self
@@ -72,20 +144,60 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> BeamWrapper<T, B> {
-    fn scan(
+impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T, B> {
+    fn check_node(&self, index: GornIndex, node: NodeIndex, pos: usize) -> bool {
+        let PossibleHeads::FoundTree(headtree) = &self.heads[pos] else {
+            panic!()
+        };
+
+        if let Some(found_node) = headtree.find_node(index) {
+            found_node == node
+        } else {
+            false
+        }
+    }
+
+    fn scan<Category: Eq + std::fmt::Debug + Clone>(
         mut self,
         v: &mut ParseHeap<T, B>,
         moment: &ParseMoment,
         s: &Option<T>,
         child_node: NodeIndex,
         child_prob: LogProb<f64>,
+        lexicon: &Lexicon<T, Category>,
     ) {
-        if let Some(StolenHead::Stealer(pos)) = moment.stolen_head {
-            println!("{:?}", self.heads)
-        }
+        let scanned = match moment.stolen_head {
+            Some(StolenHead::Stealer(pos)) => {
+                let trees = std::mem::take(&mut self.heads[pos]);
 
-        if self.beam.scan(s) {
+                let PossibleHeads::Possibles(possible_trees) = trees else {
+                    panic!()
+                };
+
+                for (filled_head_tree, id_tree) in possible_trees
+                    .into_iter()
+                    .filter(|x| x.head == child_node)
+                    .map(|x| (x.to_filled_head(lexicon), x))
+                {
+                    let mut new_beam = self.clone();
+                    if new_beam.beam.multiscan(&filled_head_tree) {
+                        new_beam.heads[pos] = PossibleHeads::FoundTree(id_tree);
+                        new_beam.log_prob += child_prob;
+                        new_beam.rules.push_rule(
+                            v.rules_mut(),
+                            Rule::Scan { node: child_node },
+                            moment.tree.id,
+                        );
+                        v.push(new_beam);
+                    }
+                }
+                false
+            }
+            Some(StolenHead::StolenHead(pos, index)) => self.check_node(index, child_node, pos),
+            None => self.beam.scan(s),
+        };
+
+        if scanned {
             self.log_prob += child_prob;
             self.rules.push_rule(
                 v.rules_mut(),
@@ -241,7 +353,7 @@ fn unmerge<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Scanner<T> + Eq,
+    B: Scanner<T> + Eq + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -367,7 +479,7 @@ fn unmove<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone,
-    B: Scanner<T> + Eq,
+    B: Scanner<T> + Eq + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -386,7 +498,7 @@ fn unmove<
         child_node,
         moment.tree.index.clone_push(Direction::Right),
         clone_push(&moment.movers, stored),
-        None,
+        moment.stolen_head,
     );
 
     beam.log_prob += child_prob + rule_prob;
@@ -408,7 +520,7 @@ fn unmove_head<
     T: Eq + std::fmt::Debug + Clone,
     U: Eq + std::fmt::Debug + Clone,
     Category: Eq + std::fmt::Debug + Clone + Hash,
-    B: Scanner<T> + Eq,
+    B: Scanner<T> + Eq + Clone,
 >(
     v: &mut ParseHeap<T, B>,
     lexicon: &Lexicon<U, Category>,
@@ -419,30 +531,51 @@ fn unmove_head<
     child_node: NodeIndex,
     child_prob: LogProb<f64>,
 ) -> Result<(), ParsingError<Category>> {
-    //Not totally clear how to do this,
-    //looks like we need to enrich upcoming FutureTrees such that we know whether they have had
-    //their head stolen, and crucially, we need a way to check that the stolen head corresponds to
-    //the one in this affix. The best way may be to keep track of the *destination* of stolen heads
-    //
-
     let complement = lexicon.find_category(cat)?;
     let (complement_movers, child_movers) = (moment.movers.clone(), thin_vec![]);
 
-    let head_pos = beam.heads.len();
-    let possible_heads = PossibleHeads(lexicon.possible_heads(child_node, 0)?);
-    beam.heads.push(possible_heads);
+    let (stealer, stolen) = match moment.stolen_head {
+        Some(StolenHead::Stealer(_)) => panic!(
+            "Only possible if there are multiple head movements to one lemma which is not yet supported"
+        ),
+        Some(StolenHead::StolenHead(pos, index)) => {
+            let PossibleHeads::FoundTree(heads) = &beam.heads[pos] else {
+                return Ok(());
+            };
+            let Some(node) = heads.find_node(index) else {
+                return Ok(());
+            };
+            if child_node != lexicon.parent_of(node).unwrap() {
+                return Ok(());
+            }
+            (
+                StolenHead::StolenHead(pos, index),
+                StolenHead::StolenHead(pos, index.clone_push(*dir)),
+            )
+        }
+        None => {
+            let head_pos = beam.heads.len();
+            let possible_heads = PossibleHeads::Possibles(lexicon.possible_heads(child_node, 0)?);
+            beam.heads.push(possible_heads);
+            (
+                StolenHead::Stealer(head_pos),
+                StolenHead::new_stolen(head_pos, *dir),
+            )
+        }
+    };
 
     let complement_id = beam.push_moment(
         complement,
         moment.tree.index.clone_push(Direction::Right),
         complement_movers,
-        Some(StolenHead::StolenHead(head_pos, *dir)),
+        Some(stolen),
     );
+
     let child_id = beam.push_moment(
         child_node,
         moment.tree.index.clone_push(Direction::Left),
         child_movers,
-        Some(StolenHead::Stealer(head_pos)),
+        Some(stealer),
     );
 
     beam.log_prob += child_prob;
@@ -480,7 +613,7 @@ pub(crate) fn expand<
         .for_each(
             |(beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
-                    beam.scan(extender, &moment, s, child_node, p)
+                    beam.scan(extender, &moment, s, child_node, p, lexicon)
                 }
                 (FeatureOrLemma::Complement(cat, dir), p)
                 | (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), p) => {

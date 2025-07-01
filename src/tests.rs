@@ -53,17 +53,19 @@ fn simple_merge() -> Result<()> {
         )?
         .next()
         .unwrap();
-    assert!(lexicon
-        .parse(
-            &"drinks the man the beer"
-                .split(' ')
-                .map(PhonContent::Normal)
-                .collect::<Vec<_>>(),
-            "d",
-            &CONFIG
-        )?
-        .next()
-        .is_none());
+    assert!(
+        lexicon
+            .parse(
+                &"drinks the man the beer"
+                    .split(' ')
+                    .map(PhonContent::Normal)
+                    .collect::<Vec<_>>(),
+                "d",
+                &CONFIG
+            )?
+            .next()
+            .is_none()
+    );
     Ok(())
 }
 
@@ -153,10 +155,11 @@ fn moving_parse() -> anyhow::Result<()> {
         });
         let lex = Lexicon::new(v);
 
-        assert!(lex
-            .parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
-            .next()
-            .is_none());
+        assert!(
+            lex.parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
+                .next()
+                .is_none()
+        );
     }
     Ok(())
 }
@@ -511,9 +514,17 @@ fn proper_distributions() -> Result<()> {
 fn simple_head_movement() -> Result<()> {
     let lexicon = [
         "john::d -k",
+        "mary::d -acc",
+        "s::=>V +k t",
+        "ed::=>V +k t",
+        "will::V= +k t",
+        "can::V= +k t",
+        "may::V= +k t",
         "is::prog= +k t",
-        "laugh::=d v",
-        "ing::=>v prog",
+        "ing::=>V prog",
+        "::=>v =d V",
+        "laugh::v",
+        "avoid::=d +acc v",
     ];
 
     let lexicon = Lexicon::new(
@@ -522,17 +533,27 @@ fn simple_head_movement() -> Result<()> {
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
     );
-    let v: Vec<_> = lexicon
+    let v: Vec<String> = lexicon
         .generate("t", &CONFIG)?
         .take(50)
-        .map(|(_, s, _)| s)
+        .map(|(_, s, _)| PhonContent::flatten(s).join(" "))
         .collect();
 
     assert_eq!(
         v,
         vec![
-            PhonContent::from(["john", "is ", "eat", "the", "cake"]),
-            PhonContent::from(["john", "will", "the", "cake", "eat"])
+            "john will laugh",
+            "john can laugh",
+            "john may laugh",
+            "john laughed",
+            "john laughs",
+            "john will avoid mary",
+            "john can avoid mary",
+            "john may avoid mary",
+            "john is laughing",
+            "john avoided mary",
+            "john avoids mary",
+            "john is avoiding mary"
         ]
     );
     lexicon

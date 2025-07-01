@@ -4,7 +4,7 @@
 use crate::{
     ParseHeap, ParsingConfig, PhonContent, expand,
     lexicon::{Lexicon, ParsingError},
-    parsing::PossibleHeads,
+    parsing::FilledHeadTree,
 };
 
 use super::{BeamWrapper, RuleHolder, rules::RulePool};
@@ -18,7 +18,7 @@ use std::{fmt::Debug, hash::Hash};
 pub(crate) trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
 
-    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool;
+    fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub(crate) struct ParseScan<'a, T> {
     pub sentence: Vec<(&'a [PhonContent<T>], usize)>,
 }
 
-impl<T> Scanner<T> for ParseScan<'_, T>
+impl<'a, T> Scanner<T> for ParseScan<'a, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
@@ -49,8 +49,25 @@ where
         !self.sentence.is_empty()
     }
 
-    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
-        todo!()
+    fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
+        self.sentence.retain_mut(|(sentence, position)| {
+            if let Some(PhonContent::Affixed(string)) = sentence.get(*position) {
+                if heads
+                    .inorder()
+                    .iter()
+                    .zip(string.iter())
+                    .all(|(a, b)| *a == b)
+                {
+                    *position += 1;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+        !self.sentence.is_empty()
     }
 }
 
@@ -130,8 +147,8 @@ where
         true
     }
 
-    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
-        todo!()
+    fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
+        todo!();
     }
 }
 
@@ -152,8 +169,11 @@ where
         true
     }
 
-    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
-        todo!();
+    fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
+        self.sentence.push(PhonContent::Affixed(
+            heads.inorder().into_iter().cloned().collect(),
+        ));
+        true
     }
 }
 
@@ -208,7 +228,7 @@ where
         }
     }
 
-    fn multiscan(&mut self, heads: &mut PossibleHeads) -> bool {
+    fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
         todo!()
     }
 }

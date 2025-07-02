@@ -487,7 +487,7 @@ where
     fn get_previous_rules(&mut self, rule_id: RuleIndex) -> Vec<(SemanticState<'src>, HistoryId)> {
         let rule = self.rules.get(rule_id);
         match rule {
-            Rule::Scan { node } => [(
+            Rule::Scan { node, stolen: _ } => [(
                 SemanticState::new(self.lexicon.interpretation(*node).clone()),
                 self.history_node(rule_id, SemanticRule::Scan, None, None),
             )]
@@ -648,7 +648,7 @@ where
             }
             SemanticRule::Scan => {
                 let node = match rule {
-                    Rule::Scan { node } => node,
+                    Rule::Scan { node, stolen: _ } => node,
                     _ => panic!(
                         "The scan semantic rule should only happen with scanning when parsing"
                     ),

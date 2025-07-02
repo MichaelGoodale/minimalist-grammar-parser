@@ -14,7 +14,7 @@ type IndexArray = BitArray<[usize; N_CHUNKS as usize], Lsb0>;
 ///A compile time limitation on the maximum number of steps in a derivation (set to 128).
 pub const MAX_STEPS: usize = (usize::BITS * N_CHUNKS) as usize;
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct GornIndex {
     index: IndexArray,
     size: usize,

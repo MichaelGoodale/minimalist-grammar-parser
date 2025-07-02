@@ -20,8 +20,9 @@ use crate::lexicon::Feature;
 use crate::lexicon::FeatureOrLemma;
 use crate::lexicon::LexicalEntry;
 use crate::lexicon::Lexicon;
+use crate::parsing::trees::GornIndex;
 
-use super::{Rule, RuleIndex, RulePool, TraceId};
+use super::{Rule, RuleIndex, RulePool, StolenInfo, TraceId};
 use crate::Direction;
 
 #[cfg(feature = "semantics")]
@@ -47,7 +48,7 @@ impl std::fmt::Display for MGEdge {
             MGEdge::Merge(Some(Direction::Left)) => "",
             MGEdge::Merge(Some(Direction::Right)) => "",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -665,6 +666,31 @@ impl<C: Eq + Display> Mover<C> {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub enum Lemma<T> {
+    SingleHead(Option<T>),
+    StolenHead(Option<T>),
+    MultiHead(Vec<Option<T>>),
+}
+
+impl<T: Display> Lemma<T> {
+    fn to_string(&self, empty_string: &str, join: &str) -> String {
+        match self {
+            Lemma::SingleHead(Some(x)) => x.to_string(),
+            Lemma::SingleHead(None) | Lemma::StolenHead(_) => empty_string.to_string(),
+            Lemma::MultiHead(items) => items
+                .iter()
+                .map(|x| {
+                    x.as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| empty_string.to_string())
+                })
+                .collect::<Vec<_>>()
+                .join(join),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum MgNode<T, C: Eq + Display> {
     Node {
         features: Vec<Feature<C>>,
@@ -674,7 +700,7 @@ pub enum MgNode<T, C: Eq + Display> {
         root: bool,
     },
     Leaf {
-        lemma: Option<T>,
+        lemma: Lemma<T>,
         features: Vec<Feature<C>>,
         movement: Vec<Mover<C>>,
         trace: Option<TraceId>,
@@ -712,9 +738,9 @@ impl<T, C: Eq + Display> MgNode<T, C> {
         }
     }
 
-    pub fn lemma(&self) -> Result<Option<&T>, PrintError> {
+    pub fn lemma(&self) -> Result<&Lemma<T>, PrintError> {
         match self {
-            MgNode::Leaf { lemma, .. } => Ok(lemma.as_ref()),
+            MgNode::Leaf { lemma, .. } => Ok(lemma),
             MgNode::Node { .. } | MgNode::Trace { .. } => Err(PrintError::NotALeaf),
         }
     }
@@ -732,7 +758,7 @@ fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: b
         .enumerate()
         .map(|(i, x)| {
             if i == 0 && canceled_features {
-                format!("\\cancel{{{}}}", x)
+                format!("\\cancel{{{x}}}")
             } else {
                 x.to_string()
             }
@@ -814,10 +840,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
             ) => {
                 format!(
                     "{{\\plainlex{{{}}}{{{}}} }}",
-                    match lemma {
-                        Some(x) => x.to_string(),
-                        None => "$\\epsilon$".to_string(),
-                    },
+                    lemma.to_string("$\\epsilon$", "-"),
                     feature_vec_to_string(features, !root),
                 )
             }
@@ -832,15 +855,12 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
             ) => {
                 format!(
                     "{{\\semlex{{{}}}{{{}}}{{{}}} }}",
-                    match lemma {
-                        Some(x) => x.to_string(),
-                        None => "$\\epsilon$".to_string(),
-                    },
+                    lemma.to_string("$\\epsilon$", "-"),
                     feature_vec_to_string(features, !root),
                     clean_up_expr(self.semantic.to_string())
                 )
             }
-            (MgNode::Trace { trace, .. }, _) => format!("{{${}$}}", trace),
+            (MgNode::Trace { trace, .. }, _) => format!("{{${trace}$}}"),
         }
     }
 }
@@ -873,14 +893,11 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C>
             } => {
                 format!(
                     "{{\\plainlex{{{}}}{{{}}}}}",
-                    match lemma {
-                        Some(x) => x.to_string(),
-                        None => "$\\epsilon$".to_string(),
-                    },
+                    lemma.to_string("$\\epsilon$", "-"),
                     feature_vec_to_string(features, !root),
                 )
             }
-            MgNode::Trace { trace, .. } => format!("{{${}$}}", trace),
+            MgNode::Trace { trace, .. } => format!("{{${trace}$}}"),
         }
     }
 }
@@ -925,6 +942,37 @@ where
     (node, child_features, child_category)
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum LemmaNode {
+    Normal(NodeIndex),
+    Moved(NodeIndex),
+    Affix(Vec<NodeIndex>),
+}
+
+fn get_lemmas_nodes(
+    rules: &RulePool,
+    rule: RuleIndex,
+    node: NodeIndex,
+    stolen: StolenInfo,
+) -> LemmaNode {
+    match stolen {
+        StolenInfo::Normal => LemmaNode::Normal(node),
+        StolenInfo::Stolen(_, _) => LemmaNode::Moved(node),
+        StolenInfo::Stealer => {
+            let mut affixes = vec![(GornIndex::default(), node)];
+            affixes.extend(rules.iter().filter_map(|x| match x {
+                Rule::Scan {
+                    node,
+                    stolen: StolenInfo::Stolen(rule_index, index),
+                } if *rule_index == rule => Some((*index, *node)),
+                _ => None,
+            }));
+            affixes.sort_by_key(|(i, _n)| *i);
+            LemmaNode::Affix(affixes.into_iter().map(|(_, n)| n).collect())
+        }
+    }
+}
+
 fn inner_to_x_bar_graph<T, C>(
     g: &mut StableDiGraph<String, MGEdge>,
     lex: &Lexicon<T, C>,
@@ -959,13 +1007,28 @@ where
             trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
             x_bar_helper(*child_id, *stored_id, g, lex, rules, trace_h, rules_h)
         }
-        Rule::Scan { node } => {
+        Rule::Scan { node, stolen } => {
             let mut lexeme = lex.get_lexical_entry(*node).unwrap();
+            let lemma = get_lemmas_nodes(rules, index, *node, *stolen);
+            let node = match lemma {
+                LemmaNode::Normal(_) => g.add_node(match &lexeme.lemma {
+                    Some(x) => x.to_string(),
+                    None => "ε".to_string(),
+                }),
+                LemmaNode::Moved(_) => g.add_node("ε".to_string()),
+                LemmaNode::Affix(v) => {
+                    v.iter()
+                        .map(|x| match lex.leaf_to_lemma(*x).unwrap() {
+                            Some(x) => x.to_string(),
+                            None => "ε".to_string(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("-");
+                    g.add_node("ε".to_string())
+                }
+            };
+
             let category = lexeme.category().clone();
-            let node = g.add_node(match lexeme.lemma {
-                Some(x) => x.to_string(),
-                None => "ε".to_string(),
-            });
 
             let parent = g.add_node(category.to_string());
             g.add_edge(parent, node, MGEdge::Merge(None));
@@ -1136,11 +1199,28 @@ where
                 *rule, *child_id, *stored_id, g, lex, rules, trace_h, rules_h, nodes_h,
             )
         }
-        Rule::Scan { node } => {
+        Rule::Scan { node, stolen } => {
+            let lemma = get_lemmas_nodes(rules, index, *node, *stolen);
             let LexicalEntry {
-                lemma,
+                lemma: _,
                 mut features,
             } = lex.get_lexical_entry(*node).unwrap();
+
+            let lemma = match lemma {
+                LemmaNode::Normal(node_index) => {
+                    Lemma::SingleHead(lex.leaf_to_lemma(node_index).unwrap().clone())
+                }
+                LemmaNode::Moved(node_index) => {
+                    Lemma::StolenHead(lex.leaf_to_lemma(node_index).unwrap().clone())
+                }
+                LemmaNode::Affix(items) => Lemma::MultiHead(
+                    items
+                        .into_iter()
+                        .map(|nx| lex.leaf_to_lemma(nx).unwrap())
+                        .cloned()
+                        .collect(),
+                ),
+            };
             let node = g.add_node(MgNode::Leaf {
                 root: false,
                 lemma,
@@ -1148,6 +1228,7 @@ where
                 movement: vec![],
                 trace: None,
             });
+
             features.remove(0);
             (node, features, vec![], None)
         }

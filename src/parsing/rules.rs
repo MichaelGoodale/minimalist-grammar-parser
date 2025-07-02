@@ -8,6 +8,8 @@ mod printing;
 #[cfg(feature = "pretty")]
 pub use printing::{MGEdge, MgNode, PackagedRulePool};
 
+use super::trees::GornIndex;
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct RuleIndex(usize);
 impl RuleIndex {
@@ -34,6 +36,13 @@ impl std::fmt::Display for TraceId {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub(crate) enum StolenInfo {
+    Normal,
+    Stolen(RuleIndex, GornIndex),
+    Stealer,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum Rule {
     Start {
         node: NodeIndex,
@@ -42,6 +51,7 @@ pub(crate) enum Rule {
     UnmoveTrace(TraceId),
     Scan {
         node: NodeIndex,
+        stolen: StolenInfo,
     },
     Unmerge {
         child: NodeIndex,
@@ -207,5 +217,9 @@ impl RulePool {
         }
         .into_iter()
         .flatten()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Rule> {
+        self.0.iter()
     }
 }

@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
+use crate::parsing::rules::StolenInfo;
 use crate::parsing::trees::StolenHead;
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
@@ -28,10 +29,10 @@ pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     phantom: PhantomData<T>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) enum PossibleHeads {
     Possibles(Vec<HeadTree>),
-    FoundTree(HeadTree),
+    FoundTree(HeadTree, RuleIndex),
     #[default]
     PlaceHolder,
 }
@@ -144,11 +145,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
 }
 
 impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T, B> {
-    fn check_node(&self, index: GornIndex, node: NodeIndex, pos: usize) -> bool {
-        let PossibleHeads::FoundTree(headtree) = &self.heads[pos] else {
-            panic!()
-        };
-
+    fn check_node(&self, index: GornIndex, node: NodeIndex, headtree: &HeadTree) -> bool {
         if let Some(found_node) = headtree.find_node(index) {
             found_node == node
         } else {
@@ -165,7 +162,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         child_prob: LogProb<f64>,
         lexicon: &Lexicon<T, Category>,
     ) {
-        let scanned = match moment.stolen_head {
+        let rule = match moment.stolen_head {
             Some(StolenHead::Stealer(pos)) => {
                 let trees = std::mem::take(&mut self.heads[pos]);
 
@@ -180,29 +177,50 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 {
                     let mut new_beam = self.clone();
                     if new_beam.beam.multiscan(&filled_head_tree) {
-                        new_beam.heads[pos] = PossibleHeads::FoundTree(id_tree);
+                        new_beam.heads[pos] = PossibleHeads::FoundTree(id_tree, moment.tree.id);
                         new_beam.log_prob += child_prob;
                         new_beam.rules.push_rule(
                             v.rules_mut(),
-                            Rule::Scan { node: child_node },
+                            Rule::Scan {
+                                node: child_node,
+                                stolen: StolenInfo::Stealer,
+                            },
                             moment.tree.id,
                         );
                         v.push(new_beam);
                     }
                 }
-                false
+                None
             }
-            Some(StolenHead::StolenHead(pos, index)) => self.check_node(index, child_node, pos),
-            None => self.beam.scan(s),
+            Some(StolenHead::StolenHead(pos, index)) => {
+                let PossibleHeads::FoundTree(headtree, rule_id) = &self.heads[pos] else {
+                    panic!()
+                };
+
+                if self.check_node(index, child_node, headtree) {
+                    Some(Rule::Scan {
+                        node: child_node,
+                        stolen: StolenInfo::Stolen(*rule_id, index),
+                    })
+                } else {
+                    None
+                }
+            }
+            None => {
+                if self.beam.scan(s) {
+                    Some(Rule::Scan {
+                        node: child_node,
+                        stolen: StolenInfo::Normal,
+                    })
+                } else {
+                    None
+                }
+            }
         };
 
-        if scanned {
+        if let Some(rule) = rule {
             self.log_prob += child_prob;
-            self.rules.push_rule(
-                v.rules_mut(),
-                Rule::Scan { node: child_node },
-                moment.tree.id,
-            );
+            self.rules.push_rule(v.rules_mut(), rule, moment.tree.id);
             v.push(self);
         }
     }
@@ -538,7 +556,7 @@ fn unmove_head<
             "Only possible if there are multiple head movements to one lemma which is not yet supported"
         ),
         Some(StolenHead::StolenHead(pos, index)) => {
-            let PossibleHeads::FoundTree(heads) = &beam.heads[pos] else {
+            let PossibleHeads::FoundTree(heads, _) = &beam.heads[pos] else {
                 return Ok(());
             };
             let Some(node) = heads.find_node(index) else {

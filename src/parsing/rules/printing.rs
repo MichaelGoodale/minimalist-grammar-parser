@@ -673,7 +673,7 @@ pub enum Lemma<T> {
 }
 
 impl<T: Display> Lemma<T> {
-    fn to_string(&self, empty_string: &str, join: &str) -> String {
+    pub fn to_string(&self, empty_string: &str, join: &str) -> String {
         match self {
             Lemma::SingleHead(Some(x)) => x.to_string(),
             Lemma::SingleHead(None) | Lemma::StolenHead(_) => empty_string.to_string(),
@@ -1367,7 +1367,7 @@ mod test {
             .2;
         let parse = rules.to_x_bar_graph(&lex);
         let dot = Dot::new(&parse);
-        println!("{}", dot);
+        println!("{dot}");
         assert_eq!(
             dot.to_string(),
             "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"the\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    17 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n}\n"

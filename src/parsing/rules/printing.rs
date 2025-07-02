@@ -967,7 +967,7 @@ fn get_lemmas_nodes(
                 } if *rule_index == rule => Some((*index, *node)),
                 _ => None,
             }));
-            affixes.sort_by_key(|(i, _n)| *i);
+            affixes.sort_by_key(|(i, _n)| std::cmp::Reverse(*i));
             LemmaNode::Affix(affixes.into_iter().map(|(_, n)| n).collect())
         }
     }

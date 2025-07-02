@@ -41,10 +41,11 @@ use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::{BeamWrapper, PartialRulePool, expand};
 use petgraph::graph::NodeIndex;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 ///The basic input type of the library used by generation and parsing a like
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum PhonContent<T> {
     ///Normal words
     Normal(T),

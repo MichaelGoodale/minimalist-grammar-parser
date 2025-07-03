@@ -496,7 +496,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     pub fn is_complement(&self, nx: NodeIndex) -> bool {
         matches!(
             self.graph.node_weight(nx).unwrap(),
-            FeatureOrLemma::Complement(_, _)
+            FeatureOrLemma::Complement(_, _) | FeatureOrLemma::Feature(Feature::Affix(_, _))
         )
     }
 

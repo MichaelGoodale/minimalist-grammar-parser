@@ -1,7 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
 use crate::Direction;
-use crate::parsing::HeadTree;
+use crate::parsing::{HeadTree, PossibleTree};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -430,9 +430,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         &self,
         nx: NodeIndex,
         depth: usize,
-    ) -> Result<Vec<HeadTree>, ParsingError<Category>> {
+    ) -> Result<PossibleTree, ParsingError<Category>> {
         if depth > 10 {
-            return Ok(vec![]);
+            return Ok(PossibleTree::empty());
         }
         let Some(FeatureOrLemma::Feature(Feature::Affix(category, direction))) =
             self.graph.node_weight(nx)
@@ -440,9 +440,8 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             panic!("Node must be an affix!")
         };
 
-        //TODO: Consider whether the heads of moved phrases can themselves be moved??
-        //TODO: Make faster by weaving some of this logic into beams
         let mut children = vec![];
+        let mut lemmas = vec![];
         let x: NodeIndex = self.find_category(category)?;
 
         let mut stack = vec![x];
@@ -450,28 +449,24 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         while let Some(nx) = stack.pop() {
             match self.graph.node_weight(nx).unwrap() {
                 FeatureOrLemma::Feature(Feature::Affix(..)) => {
-                    children.extend(self.possible_heads(nx, depth + 1)?.into_iter())
+                    children.push(self.possible_heads(nx, depth + 1)?)
                 }
-                FeatureOrLemma::Lemma(_) => children.push(HeadTree::just_heads(nx)),
+                FeatureOrLemma::Lemma(_) => lemmas.push(nx),
                 _ => stack.extend(self.children_of(nx)),
             }
         }
+        children.push(PossibleTree::just_heads(lemmas));
 
-        let mut heads = vec![];
-        for child in self.children_of(nx).filter(|child| {
-            matches!(
-                self.graph.node_weight(*child).unwrap(),
-                FeatureOrLemma::Lemma(_)
-            )
-        }) {
-            heads.extend(
-                children
-                    .clone()
-                    .into_iter()
-                    .map(|x| HeadTree::just_heads(child).merge(x, *direction)),
-            )
-        }
-        Ok(heads)
+        let heads: Vec<NodeIndex> = self
+            .children_of(nx)
+            .filter(|child| {
+                matches!(
+                    self.graph.node_weight(*child).unwrap(),
+                    FeatureOrLemma::Lemma(_)
+                )
+            })
+            .collect();
+        Ok(PossibleTree::just_heads(heads).merge(children, *direction))
     }
 }
 
@@ -488,6 +483,14 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             }
             None => None,
         }
+    }
+
+    ///Get the parent of a node.
+    pub(crate) fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Incoming)
+            .next()
+            .map(|e| e.source())
     }
 }
 
@@ -732,14 +735,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             },
             FeatureOrLemma::Complement(c, _) => Some(c),
         })
-    }
-
-    ///Get the parent of a node.
-    pub(crate) fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
-        self.graph
-            .edges_directed(nx, petgraph::Direction::Incoming)
-            .next()
-            .map(|e| e.source())
     }
 
     ///Iterate over all categories of a grammar

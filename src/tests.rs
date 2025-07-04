@@ -590,3 +590,62 @@ fn empty_head_movement() -> Result<()> {
     assert_eq!(v, vec![vec![PhonContent::Normal("john")]]);
     Ok(())
 }
+
+#[test]
+fn head_movement_checks() -> Result<()> {
+    let lexicon = [
+        "::V<= =d T",
+        "s::=>v V",
+        "A::d",
+        "see::d= v",
+        "who::T= +rel rel",
+        "B::d -rel",
+    ];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+    );
+
+    let v: Vec<String> = lexicon
+        .generate("rel", &CONFIG)?
+        .map(|(_, s, _)| PhonContent::flatten(s).join(" "))
+        .collect();
+
+    assert_eq!(v, vec!["B who sees A", "B who A sees"]);
+
+    for leaf in lexicon.leaves() {
+        println!("{leaf:?}: {:?}", lexicon.leaf_to_lemma(*leaf).unwrap())
+    }
+    lexicon
+        .parse(
+            &[
+                PhonContent::Normal("B"),
+                PhonContent::Normal("who"),
+                PhonContent::Affixed(vec!["see", "s"]),
+                PhonContent::Normal("A"),
+            ],
+            "rel",
+            &CONFIG,
+        )?
+        .next()
+        .unwrap();
+
+    lexicon
+        .parse(
+            &[
+                PhonContent::Normal("B"),
+                PhonContent::Normal("who"),
+                PhonContent::Normal("A"),
+                PhonContent::Affixed(vec!["see", "s"]),
+            ],
+            "rel",
+            &CONFIG,
+        )?
+        .next()
+        .unwrap();
+
+    Ok(())
+}

@@ -14,10 +14,27 @@ type IndexArray = BitArray<[usize; N_CHUNKS as usize], Lsb0>;
 ///A compile time limitation on the maximum number of steps in a derivation (set to 128).
 pub const MAX_STEPS: usize = (usize::BITS * N_CHUNKS) as usize;
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct GornIndex {
     index: IndexArray,
     size: usize,
+}
+
+impl std::fmt::Debug for GornIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(
+                self.index[..self.size]
+                    .iter()
+                    .map(|x| {
+                        let x: bool = *x.as_ref();
+                        let x: u8 = x.into();
+                        x
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl PartialOrd for GornIndex {
@@ -46,6 +63,7 @@ impl Iterator for GornIterator {
     }
 }
 
+#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct GornIterator {
     pos: usize,
     gorn: GornIndex,

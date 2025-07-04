@@ -1,6 +1,6 @@
-use std::fmt::Display;
+//! This module defines the basic semantic rules which allow for semantic derivations.
 
-use thiserror::Error;
+use std::fmt::Display;
 
 use crate::lexicon::SemanticLexicon;
 use ahash::HashMap;
@@ -17,13 +17,21 @@ use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 
 #[derive(Debug, Clone, PartialEq, Copy, Eq)]
 #[cfg_attr(feature = "pretty", derive(Serialize))]
+///Enum to define possible semantic rules
 pub enum SemanticRule {
+    ///Apply one function to another.
     FunctionalApplication,
+    ///Store a meaning for later
     Store,
+    ///Apply the identity function
     Identity,
+    ///Retrieve something from storage and apply it.
     ApplyFromStorage,
+    ///Change a trace's ID (for multiple movements)
     UpdateTrace,
+    ///This is the landing site of a movement.
     Trace,
+    ///Retrieve a meaning from a word.
     Scan,
 }
 
@@ -46,6 +54,7 @@ impl std::fmt::Display for SemanticRule {
 }
 
 impl RulePool {
+    ///Converts the [`RulePool`] to all possible semantic interpretations (as an iterator)
     pub fn to_interpretation<'a, 'src, T, C>(
         &'a self,
         lex: &'a SemanticLexicon<'src, T, C>,
@@ -75,13 +84,16 @@ struct HistoryNode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+///The history of a semantic derivation, e.g. what meant what when
 pub enum SemanticHistory<'a> {
+    ///Semantic history including partial semantic interpretations
     Rich(Vec<(SemanticRule, Option<SemanticState<'a>>)>),
+    ///Semantic history with only the rules.
     Simple(Vec<SemanticRule>),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SemanticNode<'a> {
+pub(crate) enum SemanticNode<'a> {
     Rich(SemanticRule, Option<SemanticState<'a>>),
     Simple(SemanticRule),
 }
@@ -120,6 +132,8 @@ impl<'a> SemanticHistory<'a> {
         }
     }
 
+    ///Get all the constituents of a semantic history (e.g. the interpretation of all
+    ///constituents). Returns [`None`] if the semantic history is [`SemanticHistory::Simple`]
     pub fn constituents(&self) -> Option<impl Iterator<Item = &RootedLambdaPool<Expr>>> {
         match self {
             SemanticHistory::Rich(items) => Some(
@@ -131,6 +145,7 @@ impl<'a> SemanticHistory<'a> {
         }
     }
 
+    ///Calculates the semantic interpretation of each partial step in a derivation.
     pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<'a, T, C>, rules: &RulePool) -> Self
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
@@ -155,20 +170,14 @@ impl<'a> SemanticHistory<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Error)]
-pub enum LabellingError {
-    #[error("You can't label a simple history! Call `self.into_rich` first!")]
-    MustBeRich,
-}
-
 impl Display for SemanticNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SemanticNode::Rich(semantic_rule, Some(interp)) => {
-                write!(f, "\\semanticRule[{}]{{{}}}", semantic_rule, interp)
+                write!(f, "\\semanticRule[{semantic_rule}]{{{interp}}}")
             }
             SemanticNode::Rich(semantic_rule, None) => {
-                write!(f, "{{[\\textsc{{{}}}]}}", semantic_rule)
+                write!(f, "{{[\\textsc{{{semantic_rule}}}]}}")
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
         }
@@ -182,6 +191,8 @@ impl Display for SemanticState<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+///The semantic state of a derivation at a given point (e.g. the interpretation of a constituent,
+///and all present movers)
 pub struct SemanticState<'src> {
     expr: RootedLambdaPool<'src, Expr<'src>>,
     movers: HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,

@@ -35,8 +35,12 @@ use super::semantics::{SemanticHistory, SemanticNode};
 use regex::Regex;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+///Represents a line in a tree, and stores whether it was movement or a merge (and in which
+///direction)
 pub enum MGEdge {
+    ///The consituent moved
     Move,
+    ///Merge and direction (where [`None`] refers to merging from movement)
     Merge(Option<Direction>),
 }
 
@@ -91,10 +95,14 @@ fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
 }
 
 #[derive(Debug, Clone)]
+///A rule pool that contains a reference to the relevant lexicon and semantic history for
+///serialization
 pub enum PackagedRulePool<'src, 'a, T: Eq, C: Eq> {
+    ///A rule pool paired only with a lexicon.
     Plain(RulePool, &'a Lexicon<T, C>, PhantomData<&'src ()>),
 
     #[cfg(feature = "semantics")]
+    ///A rule pool paired with a semantic lexicon and its semantic history.
     Semantic(
         RulePool,
         &'a SemanticLexicon<'src, T, C>,
@@ -103,6 +111,7 @@ pub enum PackagedRulePool<'src, 'a, T: Eq, C: Eq> {
 }
 
 impl RulePool {
+    ///Create a rule pool that is combined with a lexicon
     pub fn with_lexicon<'a, 'src, T: Eq, C: Eq>(
         self,
         lex: &'a Lexicon<T, C>,
@@ -111,6 +120,7 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
+    ///Create a rule pool that is combined with a semantic lexicon
     pub fn with_semantic_lexicon<'a, 'src, T: Eq, C: Eq>(
         self,
         lex: &'a SemanticLexicon<'src, T, C>,
@@ -155,6 +165,7 @@ where
 }
 
 impl RulePool {
+    ///Converts rules into an x-bar style graph for display.
     pub fn to_x_bar_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
@@ -275,6 +286,7 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
+    ///Converts the [`RulePool`] to a json format combined with semantics.
     pub fn to_semantic_json<'src, T, C>(
         &self,
         semantic_lex: &SemanticLexicon<'src, T, C>,
@@ -300,6 +312,7 @@ impl RulePool {
         serde_json::to_string(&Tree::new_semantic(&g, root)).unwrap()
     }
 
+    ///Converts the [`RulePool`] to a json format.
     pub fn to_json<T, C>(&self, lex: &Lexicon<T, C>) -> String
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
@@ -311,6 +324,7 @@ impl RulePool {
     }
 
     #[cfg(feature = "semantics")]
+    ///Converts a semantic derivation to LaTeX.
     pub fn to_semantic_latex<'src, T, C>(
         &self,
         semantic_lex: &SemanticLexicon<'src, T, C>,
@@ -330,14 +344,12 @@ impl RulePool {
             },
             |_, e| *e,
         );
-        self.inner_latex::<_, T, C>(&g, root)
+        self.inner_latex::<_>(&g, root)
     }
 
-    fn inner_latex<N, T, C>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
+    fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
     where
         N: LaTeXify,
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
         let mut g = g.map(|_, n| n.to_latex(), |_, e| *e);
         let movement_edges = g
@@ -376,15 +388,17 @@ impl RulePool {
         s
     }
 
+    ///Converts a [`RulePool`] to LaTeX.
     pub fn to_latex<T, C>(&self, lex: &Lexicon<T, C>) -> String
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
     {
         let (g, root, _) = self.to_graph(lex);
-        self.inner_latex::<_, T, C>(&g, root)
+        self.inner_latex::<_>(&g, root)
     }
 
+    ///Converts a [`RulePool`] to a graph. Returns graph and its root.
     pub fn to_tree<T, C>(
         &self,
         lex: &Lexicon<T, C>,
@@ -665,19 +679,23 @@ impl<C: Eq + Display> Mover<C> {
     }
 }
 
+///Representation of a lemma for display or printing
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum Lemma<T> {
-    SingleHead(Option<T>),
-    StolenHead(Option<T>),
-    MultiHead(Vec<Option<T>>),
+    ///A normal lemma
+    Single(Option<T>),
+    ///A head that has been stolen and what it would otherwise have been.
+    Stolen(Option<T>),
+    ///A head created by affixing multiple heads.
+    Multi(Vec<Option<T>>),
 }
 
 impl<T: Display> Lemma<T> {
     pub fn to_string(&self, empty_string: &str, join: &str) -> String {
         match self {
-            Lemma::SingleHead(Some(x)) => x.to_string(),
-            Lemma::SingleHead(None) | Lemma::StolenHead(_) => empty_string.to_string(),
-            Lemma::MultiHead(items) => items
+            Lemma::Single(Some(x)) => x.to_string(),
+            Lemma::Single(None) | Lemma::Stolen(_) => empty_string.to_string(),
+            Lemma::Multi(items) => items
                 .iter()
                 .map(|x| {
                     x.as_ref()
@@ -690,25 +708,41 @@ impl<T: Display> Lemma<T> {
     }
 }
 
+///A representation of a node in a derivation for export.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum MgNode<T, C: Eq + Display> {
+    ///A normal node in the derivation
     Node {
+        ///Current features at this node.
         features: Vec<Feature<C>>,
+        ///Current present moving features.
         movement: Vec<Mover<C>>,
+        ///If this node is moved, what is its target trace?
         trace: Option<TraceId>,
+
+        ///Whether a node is root.
         #[serde(skip_serializing)]
         root: bool,
     },
+    ///A lemma/leaf node.
     Leaf {
+        ///The lemma displayed
         lemma: Lemma<T>,
+        ///The full features of the lexical entry.
         features: Vec<Feature<C>>,
+        ///Whether this lemma holds any movers
         movement: Vec<Mover<C>>,
+        ///If this node is moved, what is its target trace?
         trace: Option<TraceId>,
+        ///Whether a node is root.
         #[serde(skip_serializing)]
         root: bool,
     },
+    ///A trace (note usually the target of movement rather than the origin as is typical).
     Trace {
+        ///The node that is moved here will have the same [`TraceId`]
         trace: TraceId,
+        ///If this trace is moved again, where does it go?
         new_trace: Option<TraceId>,
     },
 }
@@ -723,6 +757,7 @@ impl<C: Eq + Display> Serialize for Feature<C> {
 }
 
 impl<T, C: Eq + Display> MgNode<T, C> {
+    ///The features at a given node
     pub fn features(&self) -> &[Feature<C>] {
         match self {
             MgNode::Node { features, .. } => features,
@@ -731,6 +766,7 @@ impl<T, C: Eq + Display> MgNode<T, C> {
         }
     }
 
+    ///Get the trace ID of a node, if it is one
     pub fn trace(&self) -> Result<TraceId, PrintError> {
         match self {
             MgNode::Trace { trace, .. } => Ok(*trace),
@@ -738,6 +774,7 @@ impl<T, C: Eq + Display> MgNode<T, C> {
         }
     }
 
+    ///Get the lemma of a node, if it is a leaf
     pub fn lemma(&self) -> Result<&Lemma<T>, PrintError> {
         match self {
             MgNode::Leaf { lemma, .. } => Ok(lemma),
@@ -1062,6 +1099,8 @@ where
     (node, features, category)
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 fn graph_helper<T, C>(
     current_rule: Rule,
     child_id: RuleIndex,
@@ -1158,6 +1197,7 @@ where
     (node, features, movement, None)
 }
 
+#[allow(clippy::type_complexity)]
 fn inner_to_graph<T, C>(
     g: &mut StableDiGraph<MgNode<T, C>, MGEdge>,
     lex: &Lexicon<T, C>,
@@ -1208,12 +1248,12 @@ where
 
             let lemma = match lemma {
                 LemmaNode::Normal(node_index) => {
-                    Lemma::SingleHead(lex.leaf_to_lemma(node_index).unwrap().clone())
+                    Lemma::Single(lex.leaf_to_lemma(node_index).unwrap().clone())
                 }
                 LemmaNode::Moved(node_index) => {
-                    Lemma::StolenHead(lex.leaf_to_lemma(node_index).unwrap().clone())
+                    Lemma::Stolen(lex.leaf_to_lemma(node_index).unwrap().clone())
                 }
-                LemmaNode::Affix(items) => Lemma::MultiHead(
+                LemmaNode::Affix(items) => Lemma::Multi(
                     items
                         .into_iter()
                         .map(|nx| lex.leaf_to_lemma(nx).unwrap())

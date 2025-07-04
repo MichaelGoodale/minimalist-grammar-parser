@@ -11,6 +11,9 @@ use simple_semantics::LanguageExpression;
 use simple_semantics::lambda::RootedLambdaPool;
 use simple_semantics::language::Expr;
 
+///A lexicon that is paired with semantic interpretations for its leaf nodes.
+///
+///Each leaf must have a semantic interpretation defined as a [`RootedLambdaPool<Expr>`].
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
@@ -18,6 +21,8 @@ pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
 }
 
 impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
+    ///Create a new [`SemanticLexicon`] by combining a [`Lexicon`] and a [`HashMap`] of leaf nodes
+    ///and semantic interpretations ([`RootedLambdaPool`])
     pub fn new(
         lexicon: Lexicon<T, C>,
         semantic_entries: HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
@@ -71,6 +76,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
 }
 
 impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
+    ///Create a new semantic lexicon by parsing a string.
     pub fn parse(s: &'src str) -> Result<Self, LambdaParseError> {
         let (lexicon, semantic_entries) = semantic_grammar_parser().parse(s).into_result()?;
 
@@ -86,30 +92,37 @@ impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
 }
 
 impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T, C> {
+    ///Get the interpretation of a leaf node. Panics if the node has no semantic interpretation.
     pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<'src, Expr<'src>> {
         self.semantic_entries
             .get(&nx)
             .expect("There is no lemma of that node index!")
     }
 
+    ///Get a reference to the underlying [`Lexicon`]
     pub fn lexicon(&self) -> &Lexicon<T, C> {
         &self.lexicon
     }
 
+    ///Get a mutable reference to the underlying [`Lexicon`]
     pub fn lexicon_mut(&mut self) -> &mut Lexicon<T, C> {
         &mut self.lexicon
     }
 
+    ///Get a reference to the underlying [`HashMap`] of lexical entries.
     pub fn interpretations(&self) -> &HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
         &self.semantic_entries
     }
 
+    ///Get a mutable reference to the underlying [`HashMap`] of lexical entries.
     pub fn interpretations_mut(
         &mut self,
     ) -> &mut HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
         &mut self.semantic_entries
     }
 
+    ///Get a mutable reference to both the underlying [`Lexicon`] and [`HashMap`] of lexical
+    ///entries.
     pub fn lexicon_and_interpretations_mut(
         &mut self,
     ) -> (
@@ -119,6 +132,7 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
         (&mut self.lexicon, &mut self.semantic_entries)
     }
 
+    ///Parse a sentence and return all its parses and their interpretations as nested iterators.
     #[allow(clippy::type_complexity)]
     pub fn parse_and_interpret<'a, 'b: 'a>(
         &'a self,
@@ -232,8 +246,7 @@ mod test {
         );
         let lexicon = "john::d::a_j\nmary::d::a_m\nlikes::d= =d v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(x, e) & PatientOf(y, e) & pe_likes(e))))";
         let lexicon = format!(
-            "{}\n::=v c::lambda t phi (phi)\n::v= +wh c::lambda t phi (phi)\nknows::c= =d v::lambda <a,t> P (lambda a x (P(x)))\nwho::d -wh::lambda <a,t> P (P)",
-            lexicon
+            "{lexicon}\n::=v c::lambda t phi (phi)\n::v= +wh c::lambda t phi (phi)\nknows::c= =d v::lambda <a,t> P (lambda a x (P(x)))\nwho::d -wh::lambda <a,t> P (P)",
         );
 
         let s = lexicon.as_str();
@@ -280,7 +293,7 @@ mod test {
             println!("{typst}");
             assert_eq!(
                 typst,
-                "[{\"Node\":{\"features\":[\"c\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(a_j, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Actor\":\"j\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(a_j, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Actor\":\"j\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d\"],\"movement\":[],\"lemma\":{\"SingleHead\":\"john\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"a_j\",\"tokens\":[{\"Actor\":\"j\"}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"=d\",\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"c=\",\"=d\",\"v\"],\"movement\":[],\"lemma\":{\"SingleHead\":\"knows\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda <a,t> P lambda a x P(x)\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Var\":{\"Lambda\":\"P\"}},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"CloseDelim\"],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"c\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"ApplyFromStorage\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Trace\":{\"trace\":0,\"new_trace\":null,\"semantics\":{\"rule\":\"Trace\",\"state\":null}}},[{\"Node\":{\"features\":[\"+wh\",\"c\"],\"movement\":[{\"trace_id\":0,\"canceled\":true,\"features\":[\"-wh\"]}],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(0#a, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Free\":{\"label\":\"0\",\"t\":\"a\",\"anon\":true}}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{\"0\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"type\":\"a\"}}}}}},{\"Leaf\":{\"features\":[\"v=\",\"+wh\",\"c\"],\"movement\":[],\"lemma\":{\"SingleHead\":null},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda t phi phi\",\"tokens\":[{\"Lambda\":{\"t\":\"t\",\"var\":{\"Lambda\":\"phi\"}}},{\"Var\":{\"Lambda\":\"phi\"}}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[{\"trace_id\":0,\"canceled\":false,\"features\":[\"-wh\"]}],\"trace\":null,\"semantics\":{\"rule\":\"Store\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(0#a, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Free\":{\"label\":\"0\",\"t\":\"a\",\"anon\":true}}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{\"0\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"type\":\"a\"}}}}}},{\"Leaf\":{\"features\":[\"d\",\"-wh\"],\"movement\":[],\"lemma\":{\"SingleHead\":\"who\"},\"trace\":0,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"=d\",\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d=\",\"=d\",\"v\"],\"movement\":[],\"lemma\":{\"SingleHead\":\"likes\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda a x lambda a y some_e(z, all_e, AgentOf(x, z) & PatientOf(y, z) & pe_likes(z))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"y\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"z\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"y\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d\"],\"movement\":[],\"lemma\":{\"SingleHead\":\"mary\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"a_m\",\"tokens\":[{\"Actor\":\"m\"}],\"movers\":{}}}}}]]]]]],{\"Leaf\":{\"features\":[\"=v\",\"c\"],\"movement\":[],\"lemma\":{\"SingleHead\":null},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda t phi phi\",\"tokens\":[{\"Lambda\":{\"t\":\"t\",\"var\":{\"Lambda\":\"phi\"}}},{\"Var\":{\"Lambda\":\"phi\"}}],\"movers\":{}}}}}]",
+                "[{\"Node\":{\"features\":[\"c\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(a_j, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Actor\":\"j\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(a_j, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Actor\":\"j\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d\"],\"movement\":[],\"lemma\":{\"Single\":\"john\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"a_j\",\"tokens\":[{\"Actor\":\"j\"}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"=d\",\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"c=\",\"=d\",\"v\"],\"movement\":[],\"lemma\":{\"Single\":\"knows\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda <a,t> P lambda a x P(x)\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Var\":{\"Lambda\":\"P\"}},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"CloseDelim\"],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"c\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"ApplyFromStorage\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Trace\":{\"trace\":0,\"new_trace\":null,\"semantics\":{\"rule\":\"Trace\",\"state\":null}}},[{\"Node\":{\"features\":[\"+wh\",\"c\"],\"movement\":[{\"trace_id\":0,\"canceled\":true,\"features\":[\"-wh\"]}],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(0#a, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Free\":{\"label\":\"0\",\"t\":\"a\",\"anon\":true}}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{\"0\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"type\":\"a\"}}}}}},{\"Leaf\":{\"features\":[\"v=\",\"+wh\",\"c\"],\"movement\":[],\"lemma\":{\"Single\":null},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda t phi phi\",\"tokens\":[{\"Lambda\":{\"t\":\"t\",\"var\":{\"Lambda\":\"phi\"}}},{\"Var\":{\"Lambda\":\"phi\"}}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[{\"trace_id\":0,\"canceled\":false,\"features\":[\"-wh\"]}],\"trace\":null,\"semantics\":{\"rule\":\"Store\",\"state\":{\"expr\":\"some_e(x, all_e, AgentOf(a_m, x) & PatientOf(0#a, x) & pe_likes(x))\",\"tokens\":[{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"x\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Free\":{\"label\":\"0\",\"t\":\"a\",\"anon\":true}}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"x\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{\"0\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"type\":\"a\"}}}}}},{\"Leaf\":{\"features\":[\"d\",\"-wh\"],\"movement\":[],\"lemma\":{\"Single\":\"who\"},\"trace\":0,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda <a,t> P P\",\"tokens\":[{\"Lambda\":{\"t\":\"<a,t>\",\"var\":{\"Lambda\":\"P\"}}},{\"Var\":{\"Lambda\":\"P\"}}],\"movers\":{}}}}},[{\"Node\":{\"features\":[\"=d\",\"v\"],\"movement\":[],\"trace\":null,\"semantics\":{\"rule\":\"FunctionalApplication\",\"state\":{\"expr\":\"lambda a x some_e(y, all_e, AgentOf(a_m, y) & PatientOf(x, y) & pe_likes(y))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"y\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Actor\":\"m\"},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"y\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d=\",\"=d\",\"v\"],\"movement\":[],\"lemma\":{\"Single\":\"likes\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda a x lambda a y some_e(z, all_e, AgentOf(x, z) & PatientOf(y, z) & pe_likes(z))\",\"tokens\":[{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"x\"}}},{\"Lambda\":{\"t\":\"a\",\"var\":{\"Lambda\":\"y\"}}},{\"Quantifier\":{\"q\":\"some\",\"var\":{\"Quantifier\":\"z\"},\"t\":\"e\"}},\"OpenDelim\",{\"Const\":\"all_e\"},\"ArgSep\",{\"Func\":\"AgentOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"x\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"PatientOf\"},\"OpenDelim\",{\"Var\":{\"Lambda\":\"y\"}},\"ArgSep\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",{\"Func\":\"&\"},{\"Func\":\"likes\"},\"OpenDelim\",{\"Var\":{\"Quantifier\":\"z\"}},\"CloseDelim\",\"CloseDelim\"],\"movers\":{}}}}},{\"Leaf\":{\"features\":[\"d\"],\"movement\":[],\"lemma\":{\"Single\":\"mary\"},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"a_m\",\"tokens\":[{\"Actor\":\"m\"}],\"movers\":{}}}}}]]]]]],{\"Leaf\":{\"features\":[\"=v\",\"c\"],\"movement\":[],\"lemma\":{\"Single\":null},\"trace\":null,\"semantics\":{\"rule\":\"Scan\",\"state\":{\"expr\":\"lambda t phi phi\",\"tokens\":[{\"Lambda\":{\"t\":\"t\",\"var\":{\"Lambda\":\"phi\"}}},{\"Var\":{\"Lambda\":\"phi\"}}],\"movers\":{}}}}}]",
             );
         }
         Ok(())
@@ -321,7 +334,7 @@ mod test {
                 s.push('\n');
                 s.push_str(&interpretation);
             }
-            println!("{}", s);
+            println!("{s}");
             v.push(s);
         }
         assert_eq!(
@@ -362,7 +375,7 @@ mod test {
                 s.push('\n');
                 s.push_str(&interpretation);
             }
-            println!("{}", s);
+            println!("{s}");
             v.push(s);
         }
         assert_eq!(

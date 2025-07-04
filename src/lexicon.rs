@@ -1,7 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
 use crate::Direction;
-use crate::parsing::{HeadTree, PossibleTree};
+use crate::parsing::PossibleTree;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,

@@ -485,6 +485,22 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
         }
     }
 
+    ///Get the category of a node by climbing up its parents until you reach a category node.
+    pub fn category(&self, nx: NodeIndex) -> Option<&Category> {
+        let mut pos = nx;
+        while !matches!(
+            self.graph[pos],
+            FeatureOrLemma::Feature(Feature::Category(_))
+        ) {
+            let new_pos = self.parent_of(pos)?;
+            pos = new_pos
+        }
+        let FeatureOrLemma::Feature(Feature::Category(cat)) = &self.graph[pos] else {
+            return None;
+        };
+        Some(cat)
+    }
+
     ///Get the parent of a node.
     pub(crate) fn parent_of(&self, nx: NodeIndex) -> Option<NodeIndex> {
         self.graph
@@ -1086,6 +1102,34 @@ mod tests {
 
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use petgraph::dot::Dot;
+
+    #[test]
+    fn category() -> anyhow::Result<()> {
+        let lex = Lexicon::from_string(STABLER2011)?;
+        let leaves = lex
+            .leaves()
+            .iter()
+            .map(|&x| (*lex.leaf_to_lemma(x).unwrap(), *lex.category(x).unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            leaves,
+            vec![
+                (None, "C"),
+                (None, "C"),
+                (Some("knows"), "V"),
+                (Some("says"), "V"),
+                (Some("prefers"), "V"),
+                (Some("drinks"), "V"),
+                (Some("king"), "N"),
+                (Some("wine"), "N"),
+                (Some("beer"), "N"),
+                (Some("queen"), "N"),
+                (Some("the"), "D"),
+                (Some("which"), "D")
+            ]
+        );
+        Ok(())
+    }
 
     #[test]
     fn siblings() -> anyhow::Result<()> {

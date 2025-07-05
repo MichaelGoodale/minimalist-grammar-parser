@@ -77,9 +77,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.28"
+version = "1.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ad45f4f74e4e20eaa392913b7b33a7091c87e59628f4dd27888205ad888843c"
+checksum = "5c1599538de2394445747c8cf7935946e3cc27e9625f889d979bfb2aaf569362"
 dependencies = [
  "shlex",
 ]
@@ -586,7 +586,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simple-semantics"
 version = "0.1.0"
-source = "git+ssh://git@github.com/MichaelGoodale/simple-semantics.git#93581f5ed10701896c75fd7d7d2e0b9a87f93404"
+source = "git+https://github.com/MichaelGoodale/simple-semantics.git#94d00781a526ac1bfa33347c1b91d5642f048192"
 dependencies = [
  "ahash",
  "chumsky",

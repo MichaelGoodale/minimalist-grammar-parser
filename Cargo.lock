@@ -586,7 +586,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 [[package]]
 name = "simple-semantics"
 version = "0.1.0"
-source = "git+https://github.com/MichaelGoodale/simple-semantics.git#94d00781a526ac1bfa33347c1b91d5642f048192"
+source = "git+https://github.com/MichaelGoodale/simple-semantics.git#67f61d2d55347119e28971dddafee846fa3bdc40"
 dependencies = [
  "ahash",
  "chumsky",

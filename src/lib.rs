@@ -149,17 +149,34 @@ impl From<bool> for Direction {
 /// - `max_time`: The maximum amount of *time* before the parse crashes (not available on `wasm32). Disabled by default
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ParsingConfig {
-    min_log_prob: LogProb<f64>,
+    min_log_prob: Option<LogProb<f64>>,
     move_prob: LogProb<f64>,
     dont_move_prob: LogProb<f64>,
-    max_steps: usize,
-    max_beams: usize,
+    max_steps: Option<usize>,
+    max_beams: Option<usize>,
 
     #[cfg(not(target_arch = "wasm32"))]
     max_time: Option<Duration>,
 }
 
 impl ParsingConfig {
+    ///Create a new [`ParsingConfig`] with no limits on parsing and default move probability. Be careful to ensure when parsing
+    ///or generating with this config to avoid infinite loops (at the very least use
+    ///[`ParsingConfig::with_max_time`]).
+    pub fn empty() -> ParsingConfig {
+        let move_prob = LogProb::from_raw_prob(0.5).unwrap();
+        let dont_move_prob = move_prob.opposite_prob();
+
+        ParsingConfig {
+            min_log_prob: None,
+            move_prob,
+            dont_move_prob,
+            max_steps: None,
+            max_beams: None,
+            max_time: None,
+        }
+    }
+
     ///Create a new [`ParsingConfig`] with the following parameters
     pub fn new(
         min_log_prob: LogProb<f64>,
@@ -170,11 +187,11 @@ impl ParsingConfig {
         let max_steps = usize::min(parsing::MAX_STEPS, max_steps);
         let merge_prob = move_prob.opposite_prob();
         ParsingConfig {
-            min_log_prob,
+            min_log_prob: Some(min_log_prob),
             move_prob,
             dont_move_prob: merge_prob,
-            max_steps,
-            max_beams,
+            max_steps: Some(max_steps),
+            max_beams: Some(max_beams),
             #[cfg(not(target_arch = "wasm32"))]
             max_time: None,
         }
@@ -189,19 +206,19 @@ impl ParsingConfig {
 
     ///Set the minimum log probability for a parse.
     pub fn with_min_log_prob(mut self, min_log_prob: LogProb<f64>) -> Self {
-        self.min_log_prob = min_log_prob;
+        self.min_log_prob = Some(min_log_prob);
         self
     }
 
     ///Set the maximum number of derivational steps for a parse.
     pub fn with_max_steps(mut self, max_steps: usize) -> Self {
-        self.max_steps = max_steps;
+        self.max_steps = Some(max_steps);
         self
     }
 
     ///Set the maximum number of competing parses at a single time.
     pub fn with_max_beams(mut self, max_beams: usize) -> Self {
-        self.max_beams = max_beams;
+        self.max_beams = Some(max_beams);
         self
     }
 
@@ -237,9 +254,25 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
         self.parse_heap.pop_max()
     }
 
+    fn can_push(&self, v: &BeamWrapper<T, B>) -> bool {
+        let is_probable_enough = self
+            .config
+            .min_log_prob
+            .map(|p| v.log_prob() > p)
+            .unwrap_or(true);
+        let is_short_enough = self
+            .config
+            .max_steps
+            .map(|max_steps| v.n_steps() < max_steps)
+            .unwrap_or(true);
+        is_short_enough && is_probable_enough
+    }
+
     fn push(&mut self, v: BeamWrapper<T, B>) {
-        if v.log_prob() > self.config.min_log_prob && v.n_steps() < self.config.max_steps {
-            if self.parse_heap.len() > self.config.max_beams {
+        if self.can_push(&v) {
+            if let Some(max_beams) = self.config.max_beams
+                && self.parse_heap.len() > max_beams
+            {
                 self.parse_heap.push_pop_min(v);
             } else {
                 self.parse_heap.push(v);
@@ -248,7 +281,7 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
     }
 
     fn new(start: BeamWrapper<T, B>, config: &ParsingConfig, cat: NodeIndex) -> Self {
-        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams);
+        let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(50));
         parse_heap.push(start);
         ParseHeap {
             parse_heap,

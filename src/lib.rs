@@ -4,12 +4,22 @@
 //!
 //!
 //!# Examples of usage
+//!The following code generates 4 sentences from the $a^nb^n$ language.
 //!```
 //!use minimalist_grammar_parser::Lexicon;
 //!use minimalist_grammar_parser::ParsingConfig;
 //!# use minimalist_grammar_parser::lexicon::LexiconParsingError;
 //!let lexicon = Lexicon::from_string("a::s= b= s\nb::b\n::s")?;
-//!let v = lexicon.generate("s", &ParsingConfig::default())?.take(4).map(|(_prob, s, _rules)| s.into_iter().map(|word| word.try_inner().unwrap()).collect::<Vec<_>>().join("")).collect::<Vec<_>>();
+//!let v = lexicon
+//!    .generate("s", &ParsingConfig::default())?
+//!    .take(4)
+//!    .map(|(_prob, s, _rules)| {
+//!        s.into_iter()
+//!            .map(|word| word.try_inner().unwrap())
+//!            .collect::<Vec<_>>()
+//!            .join("")
+//!    })
+//!    .collect::<Vec<_>>();
 //!assert_eq!(v, vec!["", "ab", "aabb", "aaabbb"]);
 //!# Ok::<(), anyhow::Error>(())
 //!```

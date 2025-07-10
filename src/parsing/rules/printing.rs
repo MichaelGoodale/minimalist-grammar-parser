@@ -343,7 +343,7 @@ impl RulePool {
         self.inner_latex::<_>(&g, root)
     }
 
-    ///Converts a [`RulePool`] to a graph. Returns graph and its root.
+    ///Converts a [`RulePool`] to a [`Tree`]
     pub fn to_tree<'a, T, C>(&'a self, lex: &Lexicon<T, C>) -> Tree<'a, T, C>
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,
@@ -352,6 +352,18 @@ impl RulePool {
         let (g, root, _) = self.to_graph(lex);
 
         Tree(TreeData::new(&g, root))
+    }
+    ///Converts a [`RulePool`] to a petgraph [`StableDiGraph`]. Returns graph and its root.
+    pub fn to_petgraph<'a, T, C>(
+        &'a self,
+        lex: &Lexicon<T, C>,
+    ) -> (StableDiGraph<MgNode<T, C>, MGEdge>, NodeIndex)
+    where
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,
+    {
+        let (g, root, _) = self.to_graph(lex);
+        (g, root)
     }
 }
 

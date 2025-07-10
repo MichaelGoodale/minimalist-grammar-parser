@@ -214,7 +214,7 @@ mod test {
 
         #[cfg(feature = "pretty")]
         {
-            let latex = rules.to_semantic_latex(&semantic, &history);
+            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
             println!("{latex}");
             assert_eq!(
                 latex,
@@ -222,7 +222,7 @@ mod test {
             );
 
             history = history.into_rich(&semantic, &rules);
-            let latex = rules.to_semantic_latex(&semantic, &history);
+            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
             println!("{latex}");
             assert_eq!(
                 latex,
@@ -271,7 +271,7 @@ mod test {
         );
         #[cfg(feature = "pretty")]
         {
-            let latex = rules.to_semantic_latex(&semantic, &history);
+            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
 
             println!("{latex}");
             assert_eq!(
@@ -280,7 +280,7 @@ mod test {
             );
 
             history = history.into_rich(&semantic, &rules);
-            let latex = rules.to_semantic_latex(&semantic, &history);
+            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
             println!("{latex}");
             assert_eq!(
                 latex,
@@ -402,7 +402,7 @@ mod test {
                 .unwrap();
 
             let (_, mut history) = rules.to_interpretation(&lex).next().unwrap();
-            let latex = rules.to_semantic_latex(&lex, &history);
+            let latex = rules.to_semantic_tree(&lex, &history).to_latex();
 
             println!("{}", latex);
             assert_eq!(
@@ -411,7 +411,7 @@ mod test {
             );
 
             history = history.into_rich(&lex, &rules);
-            let latex = rules.to_semantic_latex(&lex, &history);
+            let latex = rules.to_semantic_tree(&lex, &history).to_latex();
             println!("{latex}");
             assert_eq!(
                 latex,

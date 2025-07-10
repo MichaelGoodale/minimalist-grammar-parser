@@ -268,30 +268,6 @@ impl RulePool {
         Tree(TreeData::new_semantic(&g, root))
     }
 
-    #[cfg(feature = "semantics")]
-    ///Converts a semantic derivation to LaTeX.
-    pub fn to_semantic_latex<'src, T, C>(
-        &self,
-        semantic_lex: &SemanticLexicon<'src, T, C>,
-        history: &SemanticHistory<'src>,
-    ) -> String
-    where
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-    {
-        let (g, root, node_to_rule) = self.to_graph(semantic_lex.lexicon());
-        let g = g.map(
-            |i, node| SemanticMGNode {
-                node: node.clone(),
-                semantic: history
-                    .semantic_node(*node_to_rule.get(&i).unwrap())
-                    .unwrap(),
-            },
-            |_, e| *e,
-        );
-        self.inner_latex::<_>(&g, root)
-    }
-
     fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
     where
         N: LaTeXify,
@@ -413,6 +389,29 @@ where
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+impl<'a, T: Display, C: Eq + Display> Tree<'a, T, C> {
+    pub fn to_latex(&self) -> String {
+        to_latex(&self.0)
+    }
+}
+
+fn to_latex<'a, T: Display, C: Eq + Display>(tree: &TreeData<'a, T, C>) -> String {
+    match tree {
+        TreeData::Node {
+            node,
+            #[cfg(feature = "semantics")]
+            semantics,
+        } => {
+            #[cfg(feature = "semantics")]
+            if let Some(semantics) = semantics {
+                (node, semantics).to_latex();
+            }
+            node.to_latex()
+        }
+        TreeData::Children(tree_datas) => tree_datas.iter().map(|x| to_latex(x)).join(" "),
     }
 }
 
@@ -793,9 +792,12 @@ fn clean_up_expr(s: String) -> String {
 }
 
 #[cfg(feature = "semantics")]
-impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNode<'_, T, C> {
+impl<'a, T: Display, C: Eq + Display> LaTeXify for (&MgNode<T, C>, &SemanticNode<'a>)
+where
+    MgNode<T, C>: LaTeXify,
+{
     fn to_latex(&self) -> String {
-        match (&self.node, &self.semantic) {
+        match (&self.0, &self.1) {
             (
                 MgNode::Node {
                     features,
@@ -815,7 +817,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     "".to_string()
                 },
                 feature_vec_to_string(features, !root),
-                self.semantic
+                self.1
             ),
             (
                 MgNode::Node {
@@ -836,7 +838,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     "".to_string()
                 },
                 feature_vec_to_string(features, !root),
-                clean_up_expr(self.semantic.to_string())
+                clean_up_expr(self.1.to_string())
             ),
             (
                 MgNode::Leaf {
@@ -866,7 +868,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
                     "{{\\semlex{{{}}}{{{}}}{{{}}} }}",
                     lemma.to_string("$\\epsilon$", "-"),
                     feature_vec_to_string(features, !root),
-                    clean_up_expr(self.semantic.to_string())
+                    clean_up_expr(self.1.to_string())
                 )
             }
             (MgNode::Trace { trace, .. }, _) => format!("{{${trace}$}}"),
@@ -874,7 +876,7 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for SemanticMGNo
     }
 }
 
-impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C> {
+impl<T: Display, C: Eq + Display> LaTeXify for MgNode<T, C> {
     fn to_latex(&self) -> String {
         match self {
             MgNode::Node {

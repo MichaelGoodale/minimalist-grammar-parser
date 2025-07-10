@@ -34,7 +34,7 @@ use super::semantics::{SemanticHistory, SemanticNode};
 #[cfg(feature = "semantics")]
 use regex::Regex;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 ///Represents a line in a tree, and stores whether it was movement or a merge (and in which
 ///direction)
 pub enum MGEdge {
@@ -56,6 +56,7 @@ impl std::fmt::Display for MGEdge {
     }
 }
 
+#[allow(dead_code)]
 ///Awful helper function to make chains from pairs, e.g. [(a,b), (b,c), (c,d), (z, w)] ->
 ///[(a,b,c,d), (z,w)]
 fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
@@ -142,7 +143,7 @@ where
         match self {
             PackagedRulePool::Plain(rule_pool, lexicon, _) => {
                 let (g, root, _) = rule_pool.to_graph(lexicon);
-                (Tree::new(&g, root)).serialize(serializer)
+                (TreeData::new(&g, root)).serialize(serializer)
             }
             #[cfg(feature = "semantics")]
             PackagedRulePool::Semantic(rule_pool, semantic_lexicon, history) => {
@@ -158,58 +159,13 @@ where
                     },
                     |_, e| *e,
                 );
-                (Tree::new_semantic(&g, root)).serialize(serializer)
+                (TreeData::new_semantic(&g, root)).serialize(serializer)
             }
         }
     }
 }
 
 impl RulePool {
-    ///Converts rules into an x-bar style graph for display.
-    pub fn to_x_bar_graph<T, C>(&self, lex: &Lexicon<T, C>) -> StableDiGraph<String, MGEdge>
-    where
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-    {
-        let mut g = StableDiGraph::<String, MGEdge>::new();
-        let mut trace_h = HashMap::new();
-        let mut rule_h: HashMap<RuleIndex, NodeIndex> = HashMap::new();
-        inner_to_x_bar_graph(&mut g, lex, self, RuleIndex(0), &mut trace_h, &mut rule_h);
-
-        let paths = to_chains(trace_h.into_iter().filter_map(|(_, x)| {
-            if let (Some(a), Some(b)) = x {
-                let a = *rule_h.get(&a).unwrap();
-                Some((a, b))
-            } else {
-                None
-            }
-        }));
-
-        for mut path in paths {
-            let parents = path
-                .iter()
-                .map(|x| {
-                    let parent_edge = g
-                        .edges_directed(*x, petgraph::Direction::Incoming)
-                        .next()
-                        .unwrap();
-                    let parent = parent_edge.source();
-                    let w = g.remove_edge(parent_edge.id()).unwrap();
-                    (parent, w)
-                })
-                .collect_vec();
-            path.rotate_left(1);
-
-            for (x, (p, w)) in path.iter().zip(parents.into_iter()) {
-                g.add_edge(p, *x, w);
-            }
-            for (x, y) in path.into_iter().tuple_windows() {
-                g.add_edge(x, y, MGEdge::Move);
-            }
-        }
-        g
-    }
-
     #[allow(clippy::type_complexity)]
     fn to_graph<T, C>(
         &self,
@@ -287,11 +243,11 @@ impl RulePool {
 
     #[cfg(feature = "semantics")]
     ///Converts the [`RulePool`] to a json format combined with semantics.
-    pub fn to_semantic_json<'src, T, C>(
+    pub fn to_semantic_tree<'src, T, C>(
         &self,
-        semantic_lex: &SemanticLexicon<'src, T, C>,
-        history: &SemanticHistory<'src>,
-    ) -> String
+        semantic_lex: &'_ SemanticLexicon<'src, T, C>,
+        history: &'_ SemanticHistory<'src>,
+    ) -> Tree<'src, T, C>
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
         C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
@@ -309,18 +265,7 @@ impl RulePool {
             |_, e| *e,
         );
 
-        serde_json::to_string(&Tree::new_semantic(&g, root)).unwrap()
-    }
-
-    ///Converts the [`RulePool`] to a json format.
-    pub fn to_json<T, C>(&self, lex: &Lexicon<T, C>) -> String
-    where
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
-    {
-        let (g, root, _) = self.to_graph(lex);
-
-        serde_json::to_string(&Tree::new(&g, root)).unwrap()
+        Tree(TreeData::new_semantic(&g, root))
     }
 
     #[cfg(feature = "semantics")]
@@ -399,17 +344,14 @@ impl RulePool {
     }
 
     ///Converts a [`RulePool`] to a graph. Returns graph and its root.
-    pub fn to_tree<T, C>(
-        &self,
-        lex: &Lexicon<T, C>,
-    ) -> (StableDiGraph<MgNode<T, C>, MGEdge>, NodeIndex)
+    pub fn to_tree<'a, T, C>(&'a self, lex: &Lexicon<T, C>) -> Tree<'a, T, C>
     where
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
+        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,
+        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,
     {
         let (g, root, _) = self.to_graph(lex);
 
-        (g, root)
+        Tree(TreeData::new(&g, root))
     }
 }
 
@@ -445,18 +387,8 @@ fn get_children<N>(g: &StableDiGraph<N, MGEdge>, x: NodeIndex) -> Vec<NodeIndex>
         .collect()
 }
 
-enum Tree<'a, T, C: Eq + Display> {
-    Node {
-        node: MgNode<T, C>,
-
-        #[cfg(feature = "semantics")]
-        semantics: Option<SemanticNode<'a>>,
-
-        #[cfg(not(feature = "semantics"))]
-        data: PhantomData<&'a ()>,
-    },
-    Children(Vec<Tree<'a, T, C>>),
-}
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Tree<'a, T, C: Eq + Display>(TreeData<'a, T, C>);
 
 impl<T, C: Eq> Serialize for Tree<'_, T, C>
 where
@@ -468,8 +400,36 @@ where
     where
         S: serde::Serializer,
     {
+        self.0.serialize(serializer)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum TreeData<'a, T, C: Eq + Display> {
+    Node {
+        node: MgNode<T, C>,
+
+        #[cfg(feature = "semantics")]
+        semantics: Option<SemanticNode<'a>>,
+
+        #[cfg(not(feature = "semantics"))]
+        data: PhantomData<&'a ()>,
+    },
+    Children(Vec<TreeData<'a, T, C>>),
+}
+
+impl<T, C: Eq> Serialize for TreeData<'_, T, C>
+where
+    C: Display,
+    Mover<C>: Serialize,
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
         match self {
-            Tree::Node {
+            TreeData::Node {
                 node,
                 #[cfg(feature = "semantics")]
                 semantics,
@@ -557,7 +517,7 @@ where
                 //typst_data.serialize(serializer)?;
             }
 
-            Tree::Children(trees) => {
+            TreeData::Children(trees) => {
                 let mut seq = serializer.serialize_seq(Some(trees.len()))?;
                 for tree in trees {
                     seq.serialize_element(tree)?;
@@ -568,18 +528,18 @@ where
     }
 }
 
-impl<T, C> Tree<'_, T, C>
+impl<T, C> TreeData<'_, T, C>
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     MgNode<T, C>: Serialize,
 {
-    fn new(g: &StableDiGraph<MgNode<T, C>, MGEdge>, x: NodeIndex) -> Tree<T, C> {
+    fn new<'a>(g: &'_ StableDiGraph<MgNode<T, C>, MGEdge>, x: NodeIndex) -> TreeData<'a, T, C> {
         let node = g.node_weight(x).unwrap();
         let children: Vec<_> = get_children(g, x);
 
-        let node = Tree::Node {
+        let node = TreeData::Node {
             node: node.clone(),
 
             #[cfg(feature = "semantics")]
@@ -592,19 +552,19 @@ where
         } else {
             let mut row = vec![node];
             row.extend(children.into_iter().map(|x| Self::new(g, x)));
-            Tree::Children(row)
+            TreeData::Children(row)
         }
     }
 
     #[cfg(feature = "semantics")]
     fn new_semantic<'a>(
-        g: &'a StableDiGraph<SemanticMGNode<T, C>, MGEdge>,
+        g: &'_ StableDiGraph<SemanticMGNode<'a, T, C>, MGEdge>,
         x: NodeIndex,
-    ) -> Tree<'a, T, C> {
+    ) -> TreeData<'a, T, C> {
         let node = g.node_weight(x).unwrap();
         let children: Vec<_> = get_children(g, x);
 
-        let node = Tree::Node {
+        let node = TreeData::Node {
             node: node.node.clone(),
             semantics: Some(node.semantic.clone()),
         };
@@ -613,7 +573,7 @@ where
         } else {
             let mut row = vec![node];
             row.extend(children.into_iter().map(|x| Self::new_semantic(g, x)));
-            Tree::Children(row)
+            TreeData::Children(row)
         }
     }
 }
@@ -627,7 +587,7 @@ impl Serialize for TraceId {
     }
 }
 
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, Hash)]
 pub struct Mover<C: Eq + Display> {
     trace_id: TraceId,
     canceled: bool,
@@ -680,7 +640,7 @@ impl<C: Eq + Display> Mover<C> {
 }
 
 ///Representation of a lemma for display or printing
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub enum Lemma<T> {
     ///A normal lemma
     Single(Option<T>),
@@ -709,7 +669,7 @@ impl<T: Display> Lemma<T> {
 }
 
 ///A representation of a node in a derivation for export.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub enum MgNode<T, C: Eq + Display> {
     ///A normal node in the derivation
     Node {
@@ -784,7 +744,7 @@ impl<T, C: Eq + Display> MgNode<T, C> {
 }
 
 #[cfg(feature = "semantics")]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct SemanticMGNode<'a, T, C: Eq + Display> {
     node: MgNode<T, C>,
     semantic: SemanticNode<'a>,
@@ -939,46 +899,6 @@ impl<T: Eq + Debug + Display, C: Eq + Debug + Display> LaTeXify for MgNode<T, C>
     }
 }
 
-fn x_bar_helper<T, C>(
-    child_id: RuleIndex,
-    complement_id: RuleIndex,
-    g: &mut StableDiGraph<String, MGEdge>,
-    lex: &Lexicon<T, C>,
-    rules: &RulePool,
-    trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
-    rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-) -> (NodeIndex, Vec<Feature<C>>, Option<C>)
-where
-    FeatureOrLemma<T, C>: std::fmt::Display,
-    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-{
-    let (child_node, mut child_features, child_category) =
-        inner_to_x_bar_graph(g, lex, rules, child_id, trace_h, rules_h);
-    let feature = child_features.pop();
-
-    let (complement_node, _, _) =
-        inner_to_x_bar_graph(g, lex, rules, complement_id, trace_h, rules_h);
-
-    let node = if let Some(Feature::Category(_)) = child_features.last() {
-        child_features.pop();
-        g.add_node(format!("{}P", child_category.as_ref().unwrap()))
-    } else {
-        g.add_node(format!("{}'", child_category.as_ref().unwrap()))
-    };
-
-    let (child_dir, complement_dir) = if let Some(Feature::Selector(_, dir)) = feature {
-        (dir.flip(), dir)
-    } else {
-        (Direction::Left, Direction::Right)
-    };
-
-    g.add_edge(node, child_node, MGEdge::Merge(Some(child_dir)));
-    g.add_edge(node, complement_node, MGEdge::Merge(Some(complement_dir)));
-
-    (node, child_features, child_category)
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum LemmaNode {
     Normal(NodeIndex),
@@ -1008,95 +928,6 @@ fn get_lemmas_nodes(
             LemmaNode::Affix(affixes.into_iter().map(|(_, n)| n).collect())
         }
     }
-}
-
-fn inner_to_x_bar_graph<T, C>(
-    g: &mut StableDiGraph<String, MGEdge>,
-    lex: &Lexicon<T, C>,
-    rules: &RulePool,
-    index: RuleIndex,
-    trace_h: &mut HashMap<TraceId, (Option<RuleIndex>, Option<NodeIndex>)>,
-    rules_h: &mut HashMap<RuleIndex, NodeIndex>,
-) -> (NodeIndex, Vec<Feature<C>>, Option<C>)
-where
-    FeatureOrLemma<T, C>: std::fmt::Display,
-    T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-    C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-{
-    let (mut node, features, category) = match rules.get(index) {
-        Rule::UnmoveTrace(trace_id) => {
-            let node = g.add_node(trace_id.to_string());
-            trace_h.entry(*trace_id).or_default().1 = Some(node);
-            (node, vec![], None)
-        }
-        Rule::UnmergeFromMover {
-            trace_id,
-            stored_id,
-            child_id,
-            ..
-        }
-        | Rule::UnmoveFromMover {
-            trace_id,
-            stored_id,
-            child_id,
-            ..
-        } => {
-            trace_h.entry(*trace_id).or_default().0 = Some(*stored_id);
-            x_bar_helper(*child_id, *stored_id, g, lex, rules, trace_h, rules_h)
-        }
-        Rule::Scan { node, stolen } => {
-            let mut lexeme = lex.get_lexical_entry(*node).unwrap();
-            let lemma = get_lemmas_nodes(rules, index, *node, *stolen);
-            let node = match lemma {
-                LemmaNode::Normal(_) => g.add_node(match &lexeme.lemma {
-                    Some(x) => x.to_string(),
-                    None => "ε".to_string(),
-                }),
-                LemmaNode::Moved(_) => g.add_node("ε".to_string()),
-                LemmaNode::Affix(v) => {
-                    v.iter()
-                        .map(|x| match lex.leaf_to_lemma(*x).unwrap() {
-                            Some(x) => x.to_string(),
-                            None => "ε".to_string(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join("-");
-                    g.add_node("ε".to_string())
-                }
-            };
-
-            let category = lexeme.category().clone();
-
-            let parent = g.add_node(category.to_string());
-            g.add_edge(parent, node, MGEdge::Merge(None));
-
-            lexeme.features.reverse();
-            (parent, lexeme.features, Some(category))
-        }
-        Rule::Unmove {
-            child_id,
-            stored_id: complement_id,
-        }
-        | Rule::Unmerge {
-            child_id,
-            complement_id,
-            ..
-        } => x_bar_helper(*child_id, *complement_id, g, lex, rules, trace_h, rules_h),
-        Rule::Start { child, .. } => {
-            let (node, _, category) = inner_to_x_bar_graph(g, lex, rules, *child, trace_h, rules_h);
-
-            (node, vec![], category)
-        }
-    };
-    if let Some(Feature::Category(c)) = features.last() {
-        let new_node = g.add_node(format!("{c}P"));
-        g.add_edge(new_node, node, MGEdge::Merge(None));
-        node = new_node
-    }
-
-    rules_h.insert(index, node);
-
-    (node, features, category)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1381,91 +1212,6 @@ mod test {
                 "\\begin{forest}\n[{\\der{T}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-l}}{0}}]{\\cancel{+l} T}}\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\der[{\\mover{\\cancel{-r}}{1}, \\mover{-l}{0}}]{\\cancel{+r} +l T}}\n\t\t\t[{\\der[{\\mover{-r}{1}}]{\\cancel{T} -l}},name=node18\n\t\t\t\t[{$t2$},name=node2 ]\n\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{2}, \\mover{-r}{1}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t[{\\der[{\\mover{-l}{2}}]{\\cancel{B} -r}},name=node15\n\t\t\t\t\t\t[{$t3$},name=node3 ]\n\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-r}}{3}, \\mover{-l}{2}}]{\\cancel{+r} B -r}}\n\t\t\t\t\t\t\t[{\\der[{\\mover{-r}{3}}]{\\cancel{T} -l}},name=node12\n\t\t\t\t\t\t\t\t[{$t4$},name=node4 ]\n\t\t\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{4}, \\mover{-r}{3}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t\t\t\t\t[{\\der[{\\mover{-l}{4}}]{\\cancel{A} -r}},name=node9\n\t\t\t\t\t\t\t\t\t\t[{$t5$},name=node5 ]\n\t\t\t\t\t\t\t\t\t\t[{\\der[{\\mover[{-l}]{\\cancel{-r}}{5}}]{\\cancel{+r} A -r}}\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{T} -r -l}},name=node6 ]\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=T} +r A -r}} ] ] ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=A} +l T -l}} ] ] ]\n\t\t\t\t\t\t\t[{\\plainlex{b}{\\cancel{=T} +r B -r}} ] ] ]\n\t\t\t\t\t[{\\plainlex{b}{\\cancel{=B} +l T -l}} ] ] ]\n\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{=T} +r +l T}} ] ] ] ]\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node4);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node9) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node12) to[out=west,in=south west] (node2);\n\\draw[densely dotted,->] (node15) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node18) to[out=west,in=south west] (node0);\n\\end{forest}"
             );
         }
-        Ok(())
-    }
-
-    #[test]
-    fn no_movement_xbar() -> anyhow::Result<()> {
-        let config = ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            1000,
-        );
-        let lex = Lexicon::from_string(STABLER2011)?;
-        let rules = lex
-            .parse(
-                &"the queen prefers the wine"
-                    .split(' ')
-                    .map(PhonContent::Normal)
-                    .collect::<Vec<_>>(),
-                "C",
-                &config,
-            )?
-            .next()
-            .unwrap()
-            .2;
-        let parse = rules.to_x_bar_graph(&lex);
-        let dot = Dot::new(&parse);
-        println!("{dot}");
-        assert_eq!(
-            dot.to_string(),
-            "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"the\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    17 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n}\n"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn tree_building() -> anyhow::Result<()> {
-        let config = ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            1000,
-        );
-        let lex = Lexicon::from_string(STABLER2011)?;
-        let rules = lex
-            .parse(
-                &"which queen prefers the wine"
-                    .split(' ')
-                    .map(PhonContent::Normal)
-                    .collect::<Vec<_>>(),
-                "C",
-                &config,
-            )?
-            .next()
-            .unwrap()
-            .2;
-        let parse = rules.to_x_bar_graph(&lex);
-        let dot = Dot::new(&parse);
-        println!("{}", dot);
-        assert_eq!(
-            dot.to_string(),
-            "digraph {\n    0 [ label = \"ε\" ]\n    1 [ label = \"C\" ]\n    2 [ label = \"prefers\" ]\n    3 [ label = \"V\" ]\n    4 [ label = \"the\" ]\n    5 [ label = \"D\" ]\n    6 [ label = \"wine\" ]\n    7 [ label = \"N\" ]\n    8 [ label = \"NP\" ]\n    9 [ label = \"DP\" ]\n    10 [ label = \"V'\" ]\n    11 [ label = \"which\" ]\n    12 [ label = \"D\" ]\n    13 [ label = \"queen\" ]\n    14 [ label = \"N\" ]\n    15 [ label = \"NP\" ]\n    16 [ label = \"DP\" ]\n    17 [ label = \"VP\" ]\n    18 [ label = \"C'\" ]\n    19 [ label = \"t0\" ]\n    20 [ label = \"CP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    5 -> 4 [ label = \"\" ]\n    7 -> 6 [ label = \"\" ]\n    8 -> 7 [ label = \"\" ]\n    9 -> 5 [ label = \"\" ]\n    9 -> 8 [ label = \"\" ]\n    10 -> 3 [ label = \"\" ]\n    10 -> 9 [ label = \"\" ]\n    12 -> 11 [ label = \"\" ]\n    14 -> 13 [ label = \"\" ]\n    15 -> 14 [ label = \"\" ]\n    16 -> 12 [ label = \"\" ]\n    16 -> 15 [ label = \"\" ]\n    17 -> 10 [ label = \"\" ]\n    20 -> 16 [ label = \"\" ]\n    18 -> 1 [ label = \"\" ]\n    18 -> 17 [ label = \"\" ]\n    20 -> 18 [ label = \"\" ]\n    17 -> 19 [ label = \"\" ]\n    19 -> 16 [ label = \"move\" ]\n}\n"
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn multimove() -> anyhow::Result<()> {
-        let config: ParsingConfig = ParsingConfig::new(
-            LogProb::new(-256.0).unwrap(),
-            LogProb::from_raw_prob(0.5).unwrap(),
-            100,
-            1000,
-        );
-
-        let lex = Lexicon::from_string("a::v= +k +q z\nb::v -k -q")?;
-        let (_, _s, r) = lex
-            .parse(&PhonContent::from(["b", "a"]), "z", &config)?
-            .next()
-            .unwrap();
-        let g = r.to_x_bar_graph(&lex);
-        println!("{}", Dot::new(&g));
-        assert_eq!(
-            Dot::new(&g).to_string(),
-            "digraph {\n    0 [ label = \"a\" ]\n    1 [ label = \"z\" ]\n    2 [ label = \"b\" ]\n    3 [ label = \"v\" ]\n    4 [ label = \"vP\" ]\n    5 [ label = \"z'\" ]\n    6 [ label = \"t1\" ]\n    7 [ label = \"z'\" ]\n    8 [ label = \"t0\" ]\n    9 [ label = \"zP\" ]\n    1 -> 0 [ label = \"\" ]\n    3 -> 2 [ label = \"\" ]\n    4 -> 3 [ label = \"\" ]\n    5 -> 1 [ label = \"\" ]\n    9 -> 4 [ label = \"\" ]\n    7 -> 5 [ label = \"\" ]\n    7 -> 8 [ label = \"\" ]\n    9 -> 7 [ label = \"\" ]\n    5 -> 6 [ label = \"\" ]\n    6 -> 8 [ label = \"move\" ]\n    8 -> 4 [ label = \"move\" ]\n}\n"
-        );
         Ok(())
     }
 

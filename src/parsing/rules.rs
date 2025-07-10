@@ -19,7 +19,7 @@ impl RuleIndex {
 }
 
 ///This struct record the ID of each trace in a derivation.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct TraceId(usize);
 
 impl TraceId {

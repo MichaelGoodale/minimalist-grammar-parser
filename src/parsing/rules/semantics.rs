@@ -1,9 +1,7 @@
 //! This module defines the basic semantic rules which allow for semantic derivations.
-
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
 use crate::lexicon::SemanticLexicon;
-use ahash::HashMap;
 use itertools::Itertools;
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},
@@ -15,7 +13,7 @@ use super::{Rule, RuleIndex, RulePool, TraceId};
 #[cfg(feature = "pretty")]
 use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 
-#[derive(Debug, Clone, PartialEq, Copy, Eq)]
+#[derive(Debug, Clone, PartialEq, Copy, Eq, Hash)]
 #[cfg_attr(feature = "pretty", derive(Serialize))]
 ///Enum to define possible semantic rules
 pub enum SemanticRule {
@@ -92,7 +90,7 @@ pub enum SemanticHistory<'a> {
     Simple(Vec<SemanticRule>),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum SemanticNode<'a> {
     Rich(SemanticRule, Option<SemanticState<'a>>),
     Simple(SemanticRule),
@@ -121,7 +119,7 @@ impl Serialize for SemanticNode<'_> {
 }
 
 impl<'a> SemanticHistory<'a> {
-    pub(super) fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode> {
+    pub(super) fn semantic_node(&self, i: RuleIndex) -> Option<SemanticNode<'a>> {
         match self {
             SemanticHistory::Rich(items) => items
                 .get(i.0)
@@ -190,17 +188,17 @@ impl Display for SemanticState<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 ///The semantic state of a derivation at a given point (e.g. the interpretation of a constituent,
 ///and all present movers)
 pub struct SemanticState<'src> {
     expr: RootedLambdaPool<'src, Expr<'src>>,
-    movers: HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
+    movers: BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
 }
 
 #[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Movers<'a, 'src>(&'a HashMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>);
+struct Movers<'a, 'src>(&'a BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>);
 
 #[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,7 +252,7 @@ impl<'src> SemanticState<'src> {
     fn new(alpha: RootedLambdaPool<'src, Expr<'src>>) -> Self {
         SemanticState {
             expr: alpha,
-            movers: HashMap::default(),
+            movers: BTreeMap::default(),
         }
     }
 

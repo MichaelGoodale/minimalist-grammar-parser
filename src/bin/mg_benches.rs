@@ -13,7 +13,7 @@ fn main() {
         100,
         1000,
     );
-    for _ in 0..10000 {
+    for _ in 0..100 {
         parse_long_sentence(&config);
         parse_copy_language(&config);
         generate_sentence(&config);

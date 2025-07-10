@@ -336,7 +336,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
     }
 
     pub(super) fn new(beam: B, category_index: NodeIndex) -> Self {
-        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::new();
+        let mut queue = BinaryHeap::<Reverse<ParseMoment>>::with_capacity(5);
         queue.push(Reverse(ParseMoment::new(
             FutureTree {
                 node: category_index,

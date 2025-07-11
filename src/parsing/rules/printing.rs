@@ -143,7 +143,7 @@ where
         match self {
             PackagedRulePool::Plain(rule_pool, lexicon, _) => {
                 let (g, root, _) = rule_pool.to_graph(lexicon);
-                (TreeData::new(&g, root)).serialize(serializer)
+                (Tree::new(&g, root)).serialize(serializer)
             }
             #[cfg(feature = "semantics")]
             PackagedRulePool::Semantic(rule_pool, semantic_lexicon, history) => {
@@ -159,7 +159,7 @@ where
                     },
                     |_, e| *e,
                 );
-                (TreeData::new_semantic(&g, root)).serialize(serializer)
+                (Tree::new_semantic(&g, root)).serialize(serializer)
             }
         }
     }
@@ -265,7 +265,7 @@ impl RulePool {
             |_, e| *e,
         );
 
-        Tree(TreeData::new_semantic(&g, root))
+        Tree::new_semantic(&g, root)
     }
 
     fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
@@ -327,7 +327,7 @@ impl RulePool {
     {
         let (g, root, _) = self.to_graph(lex);
 
-        Tree(TreeData::new(&g, root))
+        Tree::new(&g, root)
     }
     ///Converts a [`RulePool`] to a petgraph [`StableDiGraph`]. Returns graph and its root.
     pub fn to_petgraph<'a, T, C>(
@@ -375,8 +375,123 @@ fn get_children<N>(g: &StableDiGraph<N, MGEdge>, x: NodeIndex) -> Vec<NodeIndex>
         .collect()
 }
 
+impl<'a, T: Display, C: Eq + Display> Tree<'a, T, C> {
+    pub fn to_latex(&self) -> String {
+        let node = self.node.node.to_latex();
+
+        let children: Vec<_> = self.children.iter().map(|x| x.to_latex()).collect();
+        if children.is_empty() {
+            format!("[{node}]")
+        } else {
+            format!("[{node} {}]", children.join(" "))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Tree<'a, T, C: Eq + Display>(TreeData<'a, T, C>);
+pub struct Tree<'a, T, C: Eq + Display> {
+    node: TreeNode<'a, T, C>,
+    children: Vec<Tree<'a, T, C>>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct TreeNode<'a, T, C: Eq + Display> {
+    node: MgNode<T, C>,
+
+    #[cfg(feature = "semantics")]
+    semantics: Option<SemanticNode<'a>>,
+
+    #[cfg(not(feature = "semantics"))]
+    data: PhantomData<&'a ()>,
+}
+
+impl<T, C: Eq> Serialize for TreeNode<'_, T, C>
+where
+    C: Display,
+    Mover<C>: Serialize,
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match &self.node {
+            MgNode::Node {
+                features,
+                movement,
+                trace,
+                ..
+            } => {
+                #[cfg(not(feature = "semantics"))]
+                let n = 3;
+
+                #[cfg(feature = "semantics")]
+                let n = if self.semantics.is_some() { 4 } else { 3 };
+
+                let mut seq = serializer.serialize_struct_variant("MgNode", 0, "Node", n)?;
+
+                seq.serialize_field("features", features)?;
+                seq.serialize_field("movement", movement)?;
+                seq.serialize_field("trace", trace)?;
+
+                #[cfg(feature = "semantics")]
+                if let Some(semantics) = &self.semantics {
+                    seq.serialize_field("semantics", &semantics)?;
+                }
+
+                seq.end()
+            }
+
+            MgNode::Leaf {
+                lemma,
+                features,
+                movement,
+                trace,
+                ..
+            } => {
+                #[cfg(not(feature = "semantics"))]
+                let n = 4;
+
+                #[cfg(feature = "semantics")]
+                let n = if self.semantics.is_some() { 5 } else { 4 };
+
+                let mut seq = serializer.serialize_struct_variant("MgNode", 1, "Leaf", n)?;
+
+                seq.serialize_field("features", features)?;
+                seq.serialize_field("movement", movement)?;
+                seq.serialize_field("lemma", lemma)?;
+                seq.serialize_field("trace", trace)?;
+
+                #[cfg(feature = "semantics")]
+                if let Some(semantics) = &self.semantics {
+                    seq.serialize_field("semantics", semantics)?;
+                }
+
+                seq.end()
+            }
+
+            MgNode::Trace { trace, new_trace } => {
+                #[cfg(not(feature = "semantics"))]
+                let n = 2;
+
+                #[cfg(feature = "semantics")]
+                let n = if self.semantics.is_some() { 3 } else { 2 };
+
+                let mut seq = serializer.serialize_struct_variant("MgNode", 2, "Trace", n)?;
+
+                seq.serialize_field("trace", trace)?;
+                seq.serialize_field("new_trace", new_trace)?;
+
+                #[cfg(feature = "semantics")]
+                if let Some(semantics) = &self.semantics {
+                    seq.serialize_field("semantics", semantics)?;
+                }
+
+                seq.end()
+            }
+        }
+    }
+}
 
 impl<T, C: Eq> Serialize for Tree<'_, T, C>
 where
@@ -388,182 +503,41 @@ where
     where
         S: serde::Serializer,
     {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'a, T: Display, C: Eq + Display> Tree<'a, T, C> {
-    pub fn to_latex(&self) -> String {
-        to_latex(&self.0)
-    }
-}
-
-fn to_latex<'a, T: Display, C: Eq + Display>(tree: &TreeData<'a, T, C>) -> String {
-    match tree {
-        TreeData::Node {
-            node,
-            #[cfg(feature = "semantics")]
-            semantics,
-        } => {
-            #[cfg(feature = "semantics")]
-            if let Some(semantics) = semantics {
-                (node, semantics).to_latex();
+        //Slightly odd serialization order for compatibility with Typst's Cetz library.
+        if self.children.is_empty() {
+            self.node.serialize(serializer)
+        } else {
+            let mut seq = serializer.serialize_seq(Some(self.children.len() + 1))?;
+            seq.serialize_element(&self.node)?;
+            for tree in &self.children {
+                seq.serialize_element(tree)?;
             }
-            node.to_latex()
-        }
-        TreeData::Children(tree_datas) => tree_datas.iter().map(|x| to_latex(x)).join(" "),
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-enum TreeData<'a, T, C: Eq + Display> {
-    Node {
-        node: MgNode<T, C>,
-
-        #[cfg(feature = "semantics")]
-        semantics: Option<SemanticNode<'a>>,
-
-        #[cfg(not(feature = "semantics"))]
-        data: PhantomData<&'a ()>,
-    },
-    Children(Vec<TreeData<'a, T, C>>),
-}
-
-impl<T, C: Eq> Serialize for TreeData<'_, T, C>
-where
-    C: Display,
-    Mover<C>: Serialize,
-    T: Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            TreeData::Node {
-                node,
-                #[cfg(feature = "semantics")]
-                semantics,
-                ..
-            } => {
-                match node {
-                    MgNode::Node {
-                        features,
-                        movement,
-                        trace,
-                        ..
-                    } => {
-                        #[cfg(not(feature = "semantics"))]
-                        let n = 3;
-
-                        #[cfg(feature = "semantics")]
-                        let n = if semantics.is_some() { 4 } else { 3 };
-
-                        let mut seq =
-                            serializer.serialize_struct_variant("MgNode", 0, "Node", n)?;
-
-                        seq.serialize_field("features", features)?;
-                        seq.serialize_field("movement", movement)?;
-                        seq.serialize_field("trace", trace)?;
-
-                        #[cfg(feature = "semantics")]
-                        if let Some(semantics) = semantics {
-                            seq.serialize_field("semantics", semantics)?;
-                        }
-
-                        seq.end()
-                    }
-
-                    MgNode::Leaf {
-                        lemma,
-                        features,
-                        movement,
-                        trace,
-                        ..
-                    } => {
-                        #[cfg(not(feature = "semantics"))]
-                        let n = 4;
-
-                        #[cfg(feature = "semantics")]
-                        let n = if semantics.is_some() { 5 } else { 4 };
-
-                        let mut seq =
-                            serializer.serialize_struct_variant("MgNode", 1, "Leaf", n)?;
-
-                        seq.serialize_field("features", features)?;
-                        seq.serialize_field("movement", movement)?;
-                        seq.serialize_field("lemma", lemma)?;
-                        seq.serialize_field("trace", trace)?;
-
-                        #[cfg(feature = "semantics")]
-                        if let Some(semantics) = semantics {
-                            seq.serialize_field("semantics", semantics)?;
-                        }
-
-                        seq.end()
-                    }
-
-                    MgNode::Trace { trace, new_trace } => {
-                        #[cfg(not(feature = "semantics"))]
-                        let n = 2;
-
-                        #[cfg(feature = "semantics")]
-                        let n = if semantics.is_some() { 3 } else { 2 };
-
-                        let mut seq =
-                            serializer.serialize_struct_variant("MgNode", 2, "Trace", n)?;
-
-                        seq.serialize_field("trace", trace)?;
-                        seq.serialize_field("new_trace", new_trace)?;
-
-                        #[cfg(feature = "semantics")]
-                        if let Some(semantics) = semantics {
-                            seq.serialize_field("semantics", semantics)?;
-                        }
-
-                        seq.end()
-                    }
-                }
-
-                //typst_data.serialize(serializer)?;
-            }
-
-            TreeData::Children(trees) => {
-                let mut seq = serializer.serialize_seq(Some(trees.len()))?;
-                for tree in trees {
-                    seq.serialize_element(tree)?;
-                }
-                seq.end()
-            }
+            seq.end()
         }
     }
 }
 
-impl<T, C> TreeData<'_, T, C>
+impl<T, C> Tree<'_, T, C>
 where
     FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     MgNode<T, C>: Serialize,
 {
-    fn new<'a>(g: &'_ StableDiGraph<MgNode<T, C>, MGEdge>, x: NodeIndex) -> TreeData<'a, T, C> {
-        let node = g.node_weight(x).unwrap();
-        let children: Vec<_> = get_children(g, x);
+    fn new<'a>(g: &'_ StableDiGraph<MgNode<T, C>, MGEdge>, x: NodeIndex) -> Tree<'a, T, C> {
+        Tree {
+            node: TreeNode {
+                node: g.node_weight(x).unwrap().clone(),
 
-        let node = TreeData::Node {
-            node: node.clone(),
-
-            #[cfg(feature = "semantics")]
-            semantics: None,
-            #[cfg(not(feature = "semantics"))]
-            data: PhantomData,
-        };
-        if children.is_empty() {
-            node
-        } else {
-            let mut row = vec![node];
-            row.extend(children.into_iter().map(|x| Self::new(g, x)));
-            TreeData::Children(row)
+                #[cfg(feature = "semantics")]
+                semantics: None,
+                #[cfg(not(feature = "semantics"))]
+                data: PhantomData,
+            },
+            children: get_children(g, x)
+                .into_iter()
+                .map(|x| Self::new(g, x))
+                .collect(),
         }
     }
 
@@ -571,20 +545,21 @@ where
     fn new_semantic<'a>(
         g: &'_ StableDiGraph<SemanticMGNode<'a, T, C>, MGEdge>,
         x: NodeIndex,
-    ) -> TreeData<'a, T, C> {
+    ) -> Tree<'a, T, C> {
         let node = g.node_weight(x).unwrap();
-        let children: Vec<_> = get_children(g, x);
+        Tree {
+            node: TreeNode {
+                node: node.node.clone(),
 
-        let node = TreeData::Node {
-            node: node.node.clone(),
-            semantics: Some(node.semantic.clone()),
-        };
-        if children.is_empty() {
-            node
-        } else {
-            let mut row = vec![node];
-            row.extend(children.into_iter().map(|x| Self::new_semantic(g, x)));
-            TreeData::Children(row)
+                #[cfg(feature = "semantics")]
+                semantics: Some(node.semantic.clone()),
+                #[cfg(not(feature = "semantics"))]
+                data: PhantomData,
+            },
+            children: get_children(g, x)
+                .into_iter()
+                .map(|x| Self::new_semantic(g, x))
+                .collect(),
         }
     }
 }

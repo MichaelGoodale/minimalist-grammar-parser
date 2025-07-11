@@ -11,4 +11,4 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - run: cargo test --all-features
-      - run: cargo build --default-features false --target wasm32-unknown-unknown
+      - run: cargo build --no-default-features --features "pretty" --target wasm32-unknown-unknown

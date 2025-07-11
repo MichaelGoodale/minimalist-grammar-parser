@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fmt::Display;
 
+#[cfg(not(feature = "semantics"))]
 use std::marker::PhantomData;
 
 use thiserror::Error;
@@ -92,76 +93,6 @@ fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
             None
         }
     })
-}
-
-#[derive(Debug, Clone)]
-///A rule pool that contains a reference to the relevant lexicon and semantic history for
-///serialization
-pub enum PackagedRulePool<'src, 'a, T: Eq, C: Eq> {
-    ///A rule pool paired only with a lexicon.
-    Plain(RulePool, &'a Lexicon<T, C>, PhantomData<&'src ()>),
-
-    #[cfg(feature = "semantics")]
-    ///A rule pool paired with a semantic lexicon and its semantic history.
-    Semantic(
-        RulePool,
-        &'a SemanticLexicon<'src, T, C>,
-        &'a SemanticHistory<'src>,
-    ),
-}
-
-impl RulePool {
-    ///Create a rule pool that is combined with a lexicon
-    pub fn with_lexicon<'a, 'src, T: Eq, C: Eq>(
-        self,
-        lex: &'a Lexicon<T, C>,
-    ) -> PackagedRulePool<'src, 'a, T, C> {
-        PackagedRulePool::Plain(self, lex, PhantomData)
-    }
-
-    #[cfg(feature = "semantics")]
-    ///Create a rule pool that is combined with a semantic lexicon
-    pub fn with_semantic_lexicon<'a, 'src, T: Eq, C: Eq>(
-        self,
-        lex: &'a SemanticLexicon<'src, T, C>,
-        history: &'a SemanticHistory<'src>,
-    ) -> PackagedRulePool<'src, 'a, T, C> {
-        PackagedRulePool::Semantic(self, lex, history)
-    }
-}
-
-impl<'src, 'a, T, C> Serialize for PackagedRulePool<'src, 'a, T, C>
-where
-    T: Debug + Clone + Display + Eq + Serialize,
-    C: Debug + Clone + Display + Eq + Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            PackagedRulePool::Plain(rule_pool, lexicon, _) => {
-                let (g, root, _) = rule_pool.to_graph(lexicon);
-                (Tree::new(&g, root)).serialize(serializer)
-            }
-            #[cfg(feature = "semantics")]
-            PackagedRulePool::Semantic(rule_pool, semantic_lexicon, history) => {
-                let (g, root, node_to_rule) = rule_pool.to_graph(semantic_lexicon.lexicon());
-                let g = g.map(
-                    |i, node| SemanticMGNode {
-                        node: node.clone(),
-                        semantic: {
-                            history
-                                .semantic_node(*node_to_rule.get(&i).unwrap())
-                                .unwrap()
-                        },
-                    },
-                    |_, e| *e,
-                );
-                (Tree::new_semantic(&g, root)).serialize(serializer)
-            }
-        }
-    }
 }
 
 impl RulePool {
@@ -376,21 +307,33 @@ struct TreeNode<'a, T, C: Eq + Display> {
 impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
     fn to_latex(&self) -> String {
         match &self.node {
-            MgNode::Node { features, .. } => {
-                let features = features.iter().map(|x| x.to_string()).join(" ");
+            MgNode::Node {
+                features, trace, ..
+            } => {
+                let s = {
+                    let features = features.iter().map(|x| x.to_string()).join(" ");
 
-                #[cfg(feature = "semantics")]
-                if let Some(meaning) = &self.semantics {
-                    match meaning {
-                        SemanticNode::Rich(..) => {
-                            return format!("\\semder{{{features}}}{{\\texttt{{{meaning}}}}}");
-                        }
-                        SemanticNode::Simple(_) => {
-                            return format!("\\semder{{{features}}}{{\\textsc{{{meaning}}}}}");
+                    #[cfg(feature = "semantics")]
+                    if let Some(meaning) = &self.semantics {
+                        match meaning {
+                            SemanticNode::Rich(..) => {
+                                return format!(
+                                    "\\semder{{{features}}}{{\\texttt{{{}}}}}",
+                                    clean_up_expr(meaning.to_string())
+                                );
+                            }
+                            SemanticNode::Simple(_) => {
+                                return format!("\\semder{{{features}}}{{\\textsc{{{meaning}}}}}");
+                            }
                         }
                     }
+                    format!("\\der{{{features}}}")
+                };
+                if let Some(trace) = trace {
+                    format!("{s}, name=node{trace}")
+                } else {
+                    s
                 }
-                format!("\\der{{{features}}}")
             }
             MgNode::Leaf {
                 lemma, features, ..
@@ -402,7 +345,8 @@ impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
                     match meaning {
                         SemanticNode::Rich(..) => {
                             return format!(
-                                "\\lex{{{features}}}{{{lemma}}}{{\\texttt{{{meaning}}}}}"
+                                "\\lex{{{features}}}{{{lemma}}}{{\\texttt{{{}}}}}",
+                                clean_up_expr(meaning.to_string())
                             );
                         }
                         SemanticNode::Simple(_) => {
@@ -414,7 +358,7 @@ impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
                 }
                 format!("\\plainlex{{{features}}}{{{lemma}}}")
             }
-            MgNode::Trace { trace, new_trace } => "t".to_string(),
+            MgNode::Trace { trace, .. } => format!("$t$, name=trace{trace}"),
         }
     }
 }
@@ -1030,9 +974,10 @@ mod test {
                 )?
                 .next()
                 .unwrap();
+            println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
                 rules.to_tree(&lex).to_latex(),
-                "\\begin{forest}\n[{\\der{C}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-W}}{0}}]{\\cancel{+W} C}}\n\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +W C}} ]\n\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{V}}}\n\t\t\t[{\\der{\\cancel{D}}}\n\t\t\t\t[{\\plainlex{the}{\\cancel{N=} D}} ]\n\t\t\t\t[{\\plainlex{queen}{\\cancel{N}}} ] ]\n\t\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{=D} V}}\n\t\t\t\t[{\\plainlex{prefers}{\\cancel{D=} =D V}} ]\n\t\t\t\t[{\\der{\\cancel{D} -W}},name=node6\n\t\t\t\t\t[{\\plainlex{which}{\\cancel{N=} D -W}} ]\n\t\t\t\t\t[{\\plainlex{wine}{\\cancel{N}}} ] ] ] ] ] ]\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node0);\n\\end{forest}"
+                "\\begin{forest}[\\der{C} [$t$, name=tracet0] [\\der{+W C} [\\plainlex{V= +W C}{$\\epsilon$}] [\\der{V} [\\der{D} [\\plainlex{N= D}{the}] [\\plainlex{N}{queen}]] [\\der{=D V} [\\plainlex{D= =D V}{prefers}] [\\der{D -W}, name=nodet0 [\\plainlex{N= D -W}{which}] [\\plainlex{N}{wine}]]]]]]\\end{forest}"
             );
         }
         Ok(())
@@ -1062,7 +1007,7 @@ mod test {
             println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
                 rules.to_tree(&lex).to_latex(),
-                "\\begin{forest}\n[{\\der{T}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-l}}{0}}]{\\cancel{+l} T}}\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\der[{\\mover{\\cancel{-r}}{1}, \\mover{-l}{0}}]{\\cancel{+r} +l T}}\n\t\t\t[{\\der[{\\mover{-r}{1}}]{\\cancel{T} -l}},name=node18\n\t\t\t\t[{$t2$},name=node2 ]\n\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{2}, \\mover{-r}{1}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t[{\\der[{\\mover{-l}{2}}]{\\cancel{B} -r}},name=node15\n\t\t\t\t\t\t[{$t3$},name=node3 ]\n\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-r}}{3}, \\mover{-l}{2}}]{\\cancel{+r} B -r}}\n\t\t\t\t\t\t\t[{\\der[{\\mover{-r}{3}}]{\\cancel{T} -l}},name=node12\n\t\t\t\t\t\t\t\t[{$t4$},name=node4 ]\n\t\t\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{4}, \\mover{-r}{3}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t\t\t\t\t[{\\der[{\\mover{-l}{4}}]{\\cancel{A} -r}},name=node9\n\t\t\t\t\t\t\t\t\t\t[{$t5$},name=node5 ]\n\t\t\t\t\t\t\t\t\t\t[{\\der[{\\mover[{-l}]{\\cancel{-r}}{5}}]{\\cancel{+r} A -r}}\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{T} -r -l}},name=node6 ]\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=T} +r A -r}} ] ] ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=A} +l T -l}} ] ] ]\n\t\t\t\t\t\t\t[{\\plainlex{b}{\\cancel{=T} +r B -r}} ] ] ]\n\t\t\t\t\t[{\\plainlex{b}{\\cancel{=B} +l T -l}} ] ] ]\n\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{=T} +r +l T}} ] ] ] ]\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node4);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node9) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node12) to[out=west,in=south west] (node2);\n\\draw[densely dotted,->] (node15) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node18) to[out=west,in=south west] (node0);\n\\end{forest}"
+                "\\begin{forest}[\\der{T} [$t$, name=tracet0] [\\der{+l T} [$t$, name=tracet1] [\\der{+r +l T} [\\der{T -l}, name=nodet0 [$t$, name=tracet2] [\\der{+l T -l} [\\der{B -r}, name=nodet1 [$t$, name=tracet3] [\\der{+r B -r} [\\der{T -l}, name=nodet2 [$t$, name=tracet4] [\\der{+l T -l} [\\der{A -r}, name=nodet3 [$t$, name=tracet5] [\\der{+r A -r} [\\plainlex{T -r -l}{$\\epsilon$}] [\\plainlex{=T +r A -r}{a}]]] [\\plainlex{=A +l T -l}{a}]]] [\\plainlex{=T +r B -r}{b}]]] [\\plainlex{=B +l T -l}{b}]]] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
             );
         }
         Ok(())

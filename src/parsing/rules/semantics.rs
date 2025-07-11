@@ -171,11 +171,11 @@ impl<'a> SemanticHistory<'a> {
 impl Display for SemanticNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SemanticNode::Rich(semantic_rule, Some(interp)) => {
-                write!(f, "\\semanticRule[{semantic_rule}]{{{interp}}}")
+            SemanticNode::Rich(_, Some(interp)) => {
+                write!(f, "{interp}")
             }
             SemanticNode::Rich(semantic_rule, None) => {
-                write!(f, "{{[\\textsc{{{semantic_rule}}}]}}")
+                write!(f, "{semantic_rule}")
             }
             SemanticNode::Simple(semantic_rule) => write!(f, "{semantic_rule}"),
         }

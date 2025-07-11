@@ -6,7 +6,7 @@ use std::{fmt::Debug, hash::Hash};
 mod printing;
 
 #[cfg(feature = "pretty")]
-pub use printing::{MGEdge, MgNode, PackagedRulePool};
+pub use printing::{MGEdge, MgNode};
 
 use super::trees::GornIndex;
 

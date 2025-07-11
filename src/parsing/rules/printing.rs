@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
-use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
 use serde::Serialize;
@@ -54,45 +53,6 @@ impl std::fmt::Display for MGEdge {
         };
         write!(f, "{s}")
     }
-}
-
-#[allow(dead_code)]
-///Awful helper function to make chains from pairs, e.g. [(a,b), (b,c), (c,d), (z, w)] ->
-///[(a,b,c,d), (z,w)]
-fn to_chains<I: Iterator<Item = (NodeIndex, NodeIndex)>>(
-    x: I,
-) -> impl Iterator<Item = Vec<NodeIndex>> {
-    let mut trace_paths = DiGraphMap::<NodeIndex, ()>::new();
-    x.map(|(a, b)| {
-        trace_paths.add_node(a);
-        trace_paths.add_node(b);
-        trace_paths.add_edge(a, b, ());
-        a
-    })
-    .collect_vec()
-    .into_iter()
-    .filter_map(move |mut x| {
-        if trace_paths
-            .edges_directed(x, petgraph::Direction::Incoming)
-            .next()
-            .is_none()
-        {
-            let mut path = vec![x];
-            let get_child = |x| {
-                trace_paths
-                    .edges_directed(x, petgraph::Direction::Outgoing)
-                    .next()
-                    .map(|(_start, end, _edge_weight)| end)
-            };
-            while let Some(next) = get_child(x) {
-                path.push(next);
-                x = next;
-            }
-            Some(path)
-        } else {
-            None
-        }
-    })
 }
 
 impl RulePool {
@@ -197,45 +157,6 @@ impl RulePool {
 
         Tree::new_semantic(&g, root)
     }
-
-    /*
-    fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String {
-        let mut g = g.map(|_, n| n.to_latex(), |_, e| *e);
-        let movement_edges = g
-            .edge_references()
-            .filter_map(|x| {
-                if matches!(x.weight(), MGEdge::Move) {
-                    Some([x.source(), x.target()])
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-
-        movement_edges
-            .iter()
-            .flatten()
-            .unique()
-            .sorted()
-            .for_each(|x| {
-                g.node_weight_mut(*x)
-                    .unwrap()
-                    .push_str(&format!(",name=node{}", x.index()));
-            });
-
-        let mut s = String::new();
-        recursive_latex(&g, root, &mut s, 0);
-        s = format!("\\begin{{forest}}\n{s}");
-        for [a, b] in movement_edges.into_iter().sorted() {
-            s.push_str(&format!(
-                "\n\\draw[densely dotted,->] (node{}) to[out=west,in=south west] (node{});",
-                a.index(),
-                b.index()
-            ))
-        }
-        s.push_str("\n\\end{forest}");
-        s
-    }*/
 
     ///Converts a [`RulePool`] to a [`Tree`]
     pub fn to_tree<'a, T, C>(&'a self, lex: &Lexicon<T, C>) -> Tree<'a, T, C>
@@ -535,37 +456,6 @@ pub struct Mover<C: Eq + Display> {
     trace_id: TraceId,
     canceled: bool,
     features: Vec<Feature<C>>,
-}
-
-impl<C: Eq + std::fmt::Display> Display for Mover<C> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.features.len() {
-            0 => write!(f, ""),
-            1 => write!(
-                f,
-                "\\mover{{{}}}{{{}}}",
-                match self.canceled {
-                    true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
-                    false => self.features.first().unwrap().to_string(),
-                },
-                self.trace_id.0
-            ),
-            _ => write!(
-                f,
-                "\\mover[{{{}}}]{{{}}}{{{}}}",
-                self.features
-                    .iter()
-                    .skip(1)
-                    .map(|x| x.to_string())
-                    .join(" "),
-                match self.canceled {
-                    true => format!("\\cancel{{{}}}", self.features.first().unwrap()),
-                    false => self.features.first().unwrap().to_string(),
-                },
-                self.trace_id.0,
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]

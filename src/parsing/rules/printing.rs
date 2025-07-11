@@ -700,6 +700,7 @@ where
         MgNode::Node { features, .. } | MgNode::Leaf { features, .. } => {
             match features.first().unwrap() {
                 Feature::Selector(_, direction) => Some(direction),
+                Feature::Affix(_, _) => Some(&Direction::Right),
                 _ => None,
             }
         }

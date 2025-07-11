@@ -183,6 +183,8 @@ impl ParsingConfig {
             dont_move_prob,
             max_steps: None,
             max_beams: None,
+
+            #[cfg(not(target_arch = "wasm32"))]
             max_time: None,
         }
     }

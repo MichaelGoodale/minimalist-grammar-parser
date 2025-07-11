@@ -3,7 +3,6 @@ use petgraph::graph::NodeIndex;
 use petgraph::prelude::DiGraphMap;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
-use petgraph::visit::IntoEdgeReferences;
 use serde::Serialize;
 use serde::ser::SerializeSeq;
 use serde::ser::SerializeStructVariant;
@@ -268,10 +267,8 @@ impl RulePool {
         Tree::new_semantic(&g, root)
     }
 
-    fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String
-    where
-        N: LaTeXify,
-    {
+    /*
+    fn inner_latex<N>(&self, g: &StableDiGraph<N, MGEdge>, root: NodeIndex) -> String {
         let mut g = g.map(|_, n| n.to_latex(), |_, e| *e);
         let movement_edges = g
             .edge_references()
@@ -307,17 +304,7 @@ impl RulePool {
         }
         s.push_str("\n\\end{forest}");
         s
-    }
-
-    ///Converts a [`RulePool`] to LaTeX.
-    pub fn to_latex<T, C>(&self, lex: &Lexicon<T, C>) -> String
-    where
-        T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-        C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display,
-    {
-        let (g, root, _) = self.to_graph(lex);
-        self.inner_latex::<_>(&g, root)
-    }
+    }*/
 
     ///Converts a [`RulePool`] to a [`Tree`]
     pub fn to_tree<'a, T, C>(&'a self, lex: &Lexicon<T, C>) -> Tree<'a, T, C>
@@ -343,28 +330,6 @@ impl RulePool {
     }
 }
 
-fn recursive_latex(
-    g: &StableDiGraph<String, MGEdge>,
-    node: NodeIndex,
-    s: &mut String,
-    depth: usize,
-) {
-    let indent = (0..depth).map(|_| '\t').collect::<String>();
-    s.push_str(&format!("{}[{}", indent, g.node_weight(node).unwrap()));
-    let children = get_children(g, node);
-    if !children.is_empty() {
-        s.push('\n');
-        let n_children = children.len();
-        for (i, child) in children.into_iter().enumerate() {
-            recursive_latex(g, child, s, depth + 1);
-            if i < n_children - 1 {
-                s.push('\n');
-            }
-        }
-    }
-    s.push_str(" ]");
-}
-
 fn get_children<N>(g: &StableDiGraph<N, MGEdge>, x: NodeIndex) -> Vec<NodeIndex> {
     g.edges_directed(x, petgraph::Direction::Outgoing)
         .sorted_by_key(|x| x.weight())
@@ -377,9 +342,13 @@ fn get_children<N>(g: &StableDiGraph<N, MGEdge>, x: NodeIndex) -> Vec<NodeIndex>
 
 impl<'a, T: Display, C: Eq + Display> Tree<'a, T, C> {
     pub fn to_latex(&self) -> String {
-        let node = self.node.node.to_latex();
+        format!("\\begin{{forest}}{}\\end{{forest}}", self.to_latex_inner())
+    }
 
-        let children: Vec<_> = self.children.iter().map(|x| x.to_latex()).collect();
+    fn to_latex_inner(&self) -> String {
+        let node = self.node.to_latex();
+
+        let children: Vec<_> = self.children.iter().map(|x| x.to_latex_inner()).collect();
         if children.is_empty() {
             format!("[{node}]")
         } else {
@@ -403,6 +372,51 @@ struct TreeNode<'a, T, C: Eq + Display> {
 
     #[cfg(not(feature = "semantics"))]
     data: PhantomData<&'a ()>,
+}
+impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
+    fn to_latex(&self) -> String {
+        match &self.node {
+            MgNode::Node { features, .. } => {
+                let features = features.iter().map(|x| x.to_string()).join(" ");
+
+                #[cfg(feature = "semantics")]
+                if let Some(meaning) = &self.semantics {
+                    match meaning {
+                        SemanticNode::Rich(..) => {
+                            return format!("\\semder{{{features}}}{{\\texttt{{{meaning}}}}}");
+                        }
+                        SemanticNode::Simple(_) => {
+                            return format!("\\semder{{{features}}}{{\\textsc{{{meaning}}}}}");
+                        }
+                    }
+                }
+                format!("\\der{{{features}}}")
+            }
+            MgNode::Leaf {
+                lemma, features, ..
+            } => {
+                let features = features.iter().map(|x| x.to_string()).join(" ");
+                let lemma = lemma.to_string("$\\epsilon$", "-");
+                #[cfg(feature = "semantics")]
+                if let Some(meaning) = &self.semantics {
+                    match meaning {
+                        SemanticNode::Rich(..) => {
+                            return format!(
+                                "\\lex{{{features}}}{{{lemma}}}{{\\texttt{{{meaning}}}}}"
+                            );
+                        }
+                        SemanticNode::Simple(_) => {
+                            return format!(
+                                "\\lex{{{features}}}{{{lemma}}}{{\\textsc{{{meaning}}}}}"
+                            );
+                        }
+                    }
+                }
+                format!("\\plainlex{{{features}}}{{{lemma}}}")
+            }
+            MgNode::Trace { trace, new_trace } => "t".to_string(),
+        }
+    }
 }
 
 impl<T, C: Eq> Serialize for TreeNode<'_, T, C>
@@ -519,7 +533,6 @@ where
 
 impl<T, C> Tree<'_, T, C>
 where
-    FeatureOrLemma<T, C>: std::fmt::Display,
     T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     C: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize,
     MgNode<T, C>: Serialize,
@@ -736,23 +749,6 @@ struct SemanticMGNode<'a, T, C: Eq + Display> {
     semantic: SemanticNode<'a>,
 }
 
-fn feature_vec_to_string<C: Eq + Display>(v: &[Feature<C>], canceled_features: bool) -> String {
-    v.iter()
-        .enumerate()
-        .map(|(i, x)| {
-            if i == 0 && canceled_features {
-                format!("\\cancel{{{x}}}")
-            } else {
-                x.to_string()
-            }
-        })
-        .join(" ")
-}
-
-trait LaTeXify {
-    fn to_latex(&self) -> String;
-}
-
 #[cfg(feature = "semantics")]
 fn clean_up_expr(s: String) -> String {
     let re = Regex::new(r"lambda (?<t>[eat,< >]+) ").unwrap();
@@ -764,128 +760,6 @@ fn clean_up_expr(s: String) -> String {
         .to_string()
         .replace("<", "\\left\\langle ")
         .replace(">", "\\right\\rangle ")
-}
-
-#[cfg(feature = "semantics")]
-impl<'a, T: Display, C: Eq + Display> LaTeXify for (&MgNode<T, C>, &SemanticNode<'a>)
-where
-    MgNode<T, C>: LaTeXify,
-{
-    fn to_latex(&self) -> String {
-        match (&self.0, &self.1) {
-            (
-                MgNode::Node {
-                    features,
-                    movement,
-                    root,
-                    ..
-                },
-                SemanticNode::Simple(_),
-            ) => format!(
-                "{{\\rulesemder{}{{{}}}{{{}}} }}",
-                if !movement.is_empty() {
-                    format!(
-                        "[{{{}}}]",
-                        movement.iter().map(|x| x.to_string()).join(", ")
-                    )
-                } else {
-                    "".to_string()
-                },
-                feature_vec_to_string(features, !root),
-                self.1
-            ),
-            (
-                MgNode::Node {
-                    features,
-                    movement,
-                    root,
-                    ..
-                },
-                SemanticNode::Rich(_, _),
-            ) => format!(
-                "{{\\semder{}{{{}}}{{{}}} }}",
-                if !movement.is_empty() {
-                    format!(
-                        "[{{{}}}]",
-                        movement.iter().map(|x| x.to_string()).join(", ")
-                    )
-                } else {
-                    "".to_string()
-                },
-                feature_vec_to_string(features, !root),
-                clean_up_expr(self.1.to_string())
-            ),
-            (
-                MgNode::Leaf {
-                    lemma,
-                    features,
-                    root,
-                    ..
-                },
-                SemanticNode::Simple(_),
-            ) => {
-                format!(
-                    "{{\\plainlex{{{}}}{{{}}} }}",
-                    lemma.to_string("$\\epsilon$", "-"),
-                    feature_vec_to_string(features, !root),
-                )
-            }
-            (
-                MgNode::Leaf {
-                    lemma,
-                    features,
-                    root,
-                    ..
-                },
-                SemanticNode::Rich(_, _),
-            ) => {
-                format!(
-                    "{{\\semlex{{{}}}{{{}}}{{{}}} }}",
-                    lemma.to_string("$\\epsilon$", "-"),
-                    feature_vec_to_string(features, !root),
-                    clean_up_expr(self.1.to_string())
-                )
-            }
-            (MgNode::Trace { trace, .. }, _) => format!("{{${trace}$}}"),
-        }
-    }
-}
-
-impl<T: Display, C: Eq + Display> LaTeXify for MgNode<T, C> {
-    fn to_latex(&self) -> String {
-        match self {
-            MgNode::Node {
-                features,
-                movement,
-                root,
-                ..
-            } => format!(
-                "{{\\der{}{{{}}}}}",
-                if !movement.is_empty() {
-                    format!(
-                        "[{{{}}}]",
-                        movement.iter().map(|x| x.to_string()).join(", ")
-                    )
-                } else {
-                    "".to_string()
-                },
-                feature_vec_to_string(features, !root),
-            ),
-            MgNode::Leaf {
-                lemma,
-                features,
-                root,
-                ..
-            } => {
-                format!(
-                    "{{\\plainlex{{{}}}{{{}}}}}",
-                    lemma.to_string("$\\epsilon$", "-"),
-                    feature_vec_to_string(features, !root),
-                )
-            }
-            MgNode::Trace { trace, .. } => format!("{{${trace}$}}"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1134,7 +1008,6 @@ mod test {
     use super::*;
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
     use crate::{ParsingConfig, PhonContent};
-    use petgraph::dot::Dot;
 
     #[test]
     fn to_graph() -> anyhow::Result<()> {
@@ -1157,13 +1030,8 @@ mod test {
                 )?
                 .next()
                 .unwrap();
-            let (g, _, _) = rules.to_graph(&lex);
-            let g = g.map(|_, n| n.to_latex(), |_, e| e);
-            let dot = Dot::new(&g);
-            println!("{dot}");
-            println!("{}", rules.to_latex(&lex));
             assert_eq!(
-                rules.to_latex(&lex),
+                rules.to_tree(&lex).to_latex(),
                 "\\begin{forest}\n[{\\der{C}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-W}}{0}}]{\\cancel{+W} C}}\n\t\t[{\\plainlex{$\\epsilon$}{\\cancel{V=} +W C}} ]\n\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{V}}}\n\t\t\t[{\\der{\\cancel{D}}}\n\t\t\t\t[{\\plainlex{the}{\\cancel{N=} D}} ]\n\t\t\t\t[{\\plainlex{queen}{\\cancel{N}}} ] ]\n\t\t\t[{\\der[{\\mover{-W}{0}}]{\\cancel{=D} V}}\n\t\t\t\t[{\\plainlex{prefers}{\\cancel{D=} =D V}} ]\n\t\t\t\t[{\\der{\\cancel{D} -W}},name=node6\n\t\t\t\t\t[{\\plainlex{which}{\\cancel{N=} D -W}} ]\n\t\t\t\t\t[{\\plainlex{wine}{\\cancel{N}}} ] ] ] ] ] ]\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node0);\n\\end{forest}"
             );
         }
@@ -1191,13 +1059,9 @@ mod test {
                 )?
                 .next()
                 .unwrap();
-            let (g, _, _) = rules.to_graph(&lex);
-            let g = g.map(|_, n| n.to_latex(), |_, e| e);
-            let dot = Dot::new(&g);
-            println!("{dot}");
-            println!("{}", rules.to_latex(&lex));
+            println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
-                rules.to_latex(&lex),
+                rules.to_tree(&lex).to_latex(),
                 "\\begin{forest}\n[{\\der{T}}\n\t[{$t0$},name=node0 ]\n\t[{\\der[{\\mover{\\cancel{-l}}{0}}]{\\cancel{+l} T}}\n\t\t[{$t1$},name=node1 ]\n\t\t[{\\der[{\\mover{\\cancel{-r}}{1}, \\mover{-l}{0}}]{\\cancel{+r} +l T}}\n\t\t\t[{\\der[{\\mover{-r}{1}}]{\\cancel{T} -l}},name=node18\n\t\t\t\t[{$t2$},name=node2 ]\n\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{2}, \\mover{-r}{1}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t[{\\der[{\\mover{-l}{2}}]{\\cancel{B} -r}},name=node15\n\t\t\t\t\t\t[{$t3$},name=node3 ]\n\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-r}}{3}, \\mover{-l}{2}}]{\\cancel{+r} B -r}}\n\t\t\t\t\t\t\t[{\\der[{\\mover{-r}{3}}]{\\cancel{T} -l}},name=node12\n\t\t\t\t\t\t\t\t[{$t4$},name=node4 ]\n\t\t\t\t\t\t\t\t[{\\der[{\\mover{\\cancel{-l}}{4}, \\mover{-r}{3}}]{\\cancel{+l} T -l}}\n\t\t\t\t\t\t\t\t\t[{\\der[{\\mover{-l}{4}}]{\\cancel{A} -r}},name=node9\n\t\t\t\t\t\t\t\t\t\t[{$t5$},name=node5 ]\n\t\t\t\t\t\t\t\t\t\t[{\\der[{\\mover[{-l}]{\\cancel{-r}}{5}}]{\\cancel{+r} A -r}}\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{T} -r -l}},name=node6 ]\n\t\t\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=T} +r A -r}} ] ] ]\n\t\t\t\t\t\t\t\t\t[{\\plainlex{a}{\\cancel{=A} +l T -l}} ] ] ]\n\t\t\t\t\t\t\t[{\\plainlex{b}{\\cancel{=T} +r B -r}} ] ] ]\n\t\t\t\t\t[{\\plainlex{b}{\\cancel{=B} +l T -l}} ] ] ]\n\t\t\t[{\\plainlex{$\\epsilon$}{\\cancel{=T} +r +l T}} ] ] ] ]\n\\draw[densely dotted,->] (node5) to[out=west,in=south west] (node4);\n\\draw[densely dotted,->] (node6) to[out=west,in=south west] (node5);\n\\draw[densely dotted,->] (node9) to[out=west,in=south west] (node3);\n\\draw[densely dotted,->] (node12) to[out=west,in=south west] (node2);\n\\draw[densely dotted,->] (node15) to[out=west,in=south west] (node1);\n\\draw[densely dotted,->] (node18) to[out=west,in=south west] (node0);\n\\end{forest}"
             );
         }

@@ -37,6 +37,30 @@ pub enum Feature<Category: Eq> {
     Licensee(Category),
 }
 
+impl<C: Eq> Feature<C> {
+    ///Get a reference to the inner category of a feature.
+    pub fn inner(&self) -> &C {
+        match self {
+            Feature::Category(c)
+            | Feature::Selector(c, _)
+            | Feature::Affix(c, _)
+            | Feature::Licensor(c)
+            | Feature::Licensee(c) => c,
+        }
+    }
+
+    ///Convert the [`Feature<C>`] to its inner category.
+    pub fn into_inner(self) -> C {
+        match self {
+            Feature::Category(c)
+            | Feature::Selector(c, _)
+            | Feature::Affix(c, _)
+            | Feature::Licensor(c)
+            | Feature::Licensee(c) => c,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 ///Returns either a licensee or category: used only in [`ParsingError`]
 #[allow(missing_docs)]

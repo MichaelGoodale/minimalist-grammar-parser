@@ -470,7 +470,42 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 }
 
+///Iterator that climbs up a graph until it reaches the root.
+pub struct Climber<'a, T: Eq, C: Eq> {
+    lex: &'a Lexicon<T, C>,
+    pos: NodeIndex,
+}
+
+impl<'a, T: Eq, C: Eq + Clone> Iterator for Climber<'a, T, C> {
+    type Item = Feature<C>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pos = self.lex.parent_of(self.pos)?;
+
+        match self.lex.graph.node_weight(self.pos) {
+            Some(x) => match x {
+                FeatureOrLemma::Root => None,
+                FeatureOrLemma::Lemma(_) => None,
+                FeatureOrLemma::Feature(feature) => Some(feature.clone()),
+                FeatureOrLemma::Complement(c, direction) => {
+                    Some(Feature::Selector(c.clone(), *direction))
+                }
+            },
+            None => None,
+        }
+    }
+}
+
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
+    ///Climb up a leaf over all of its features
+    pub fn leaf_to_features<'a>(&'a self, nx: NodeIndex) -> Option<Climber<'a, T, Category>> {
+        if !matches!(self.graph.node_weight(nx), Some(FeatureOrLemma::Lemma(_))) {
+            return None;
+        }
+
+        Some(Climber { lex: self, pos: nx })
+    }
+
     ///Gets the lemma of a leaf.
     pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
         match self.graph.node_weight(nx) {
@@ -593,38 +628,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         }
         .clone();
 
-        let mut parent = self
-            .parent_of(nx)
-            .expect("A lemma must always have a parent node");
-        let mut parent_node = self
-            .graph
-            .node_weight(parent)
-            .expect("A lemma must always have a parent node");
-        let mut features = vec![];
-        while !(matches!(parent_node, FeatureOrLemma::Root)) {
-            match parent_node {
-                FeatureOrLemma::Feature(feature) => {
-                    features.push(feature.clone());
-                }
-                FeatureOrLemma::Complement(cat, d) => {
-                    features.push(Feature::Selector(cat.clone(), *d))
-                }
-                FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => {
-                    return Err(LexiconError::InvalidOrder(nx));
-                }
-            }
-
-            match self.parent_of(parent) {
-                Some(p) => {
-                    parent = p;
-                    parent_node = self
-                        .graph
-                        .node_weight(parent)
-                        .expect("parent_of returning invalid node index!")
-                }
-                None => return Err(LexiconError::DoesntGoToRoot(nx)),
-            }
-        }
+        let features = self.leaf_to_features(nx).unwrap().collect();
         Ok(LexicalEntry { features, lemma })
     }
 

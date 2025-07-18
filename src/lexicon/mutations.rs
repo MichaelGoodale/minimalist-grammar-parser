@@ -42,7 +42,7 @@ impl Position {
     ) -> Feature<C> {
         match self {
             Position::PreCategory => {
-                if licensors.is_empty() || rng.random_bool(config.licensee_prob) {
+                if licensors.is_empty() || !rng.random_bool(config.licensee_prob) {
                     *self = Position::PostCategory;
                     Feature::Category(categories.choose(rng).unwrap().clone())
                 } else {
@@ -50,7 +50,7 @@ impl Position {
                 }
             }
             Position::PostCategory => {
-                if licensors.is_empty() || rng.random_bool(config.mover_prob) {
+                if licensors.is_empty() || !rng.random_bool(config.mover_prob) {
                     if rng.random_bool(config.lemma_prob) {
                         *self = Position::Done;
                     }

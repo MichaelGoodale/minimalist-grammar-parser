@@ -132,6 +132,25 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
         (&mut self.lexicon, &mut self.semantic_entries)
     }
 
+    ///Remaps the lexicon to a new category or lemma type
+    pub fn remap_lexicon<T2: Eq, C2: Eq>(
+        self,
+        lemma_map: impl Fn(&T) -> T2,
+        category_map: impl Fn(&C) -> C2,
+    ) -> SemanticLexicon<'src, T2, C2> {
+        let SemanticLexicon {
+            lexicon,
+            semantic_entries,
+        } = self;
+
+        let lexicon = lexicon.remap_lexicon(lemma_map, category_map);
+
+        SemanticLexicon {
+            lexicon,
+            semantic_entries,
+        }
+    }
+
     ///Parse a sentence and return all its parses and their interpretations as nested iterators.
     #[allow(clippy::type_complexity)]
     pub fn parse_and_interpret<'a, 'b: 'a>(

@@ -839,6 +839,8 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
             leaves,
         } = self;
 
+        //Per StableGraph documentation, the node indices are still valid on the mapped data
+        //structure.
         let graph = graph.map(
             |_, x| match x {
                 FeatureOrLemma::Root => FeatureOrLemma::Root,

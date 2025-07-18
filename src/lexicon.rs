@@ -63,10 +63,7 @@ impl<C: Eq> Feature<C> {
 
     ///Checks whether this features is a [`Feature::Selector`] or not.
     pub fn is_selector(&self) -> bool {
-        match self {
-            Self::Selector(_, _) => true,
-            _ => false,
-        }
+        matches!(self, Self::Selector(_, _))
     }
 }
 
@@ -558,7 +555,10 @@ pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
-    pub(crate) fn add_lexical_entry(&mut self, lexical_entry: LexicalEntry<T, Category>) {
+    pub(crate) fn add_lexical_entry(
+        &mut self,
+        lexical_entry: LexicalEntry<T, Category>,
+    ) -> Option<NodeIndex> {
         let LexicalEntry { lemma, features } = lexical_entry;
 
         let mut new_nodes = vec![FeatureOrLemma::Lemma(lemma)];
@@ -585,8 +585,11 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
                 pos = new_pos;
             }
         }
-        if !self.leaves.contains(&pos) {
+        if self.leaves.contains(&pos) {
+            None
+        } else {
             self.leaves.push(pos);
+            Some(pos)
         }
     }
 

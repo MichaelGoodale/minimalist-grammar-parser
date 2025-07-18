@@ -424,19 +424,19 @@ where
         }
     }
 
-    ///Adds a new lexeme.
+    ///Adds a new lexeme and return its node index if it is novel.
     pub fn add_new_lexeme(
         &mut self,
         lemma: Option<T>,
         config: Option<LexicalProbConfig>,
         rng: &mut impl Rng,
-    ) {
+    ) -> Option<NodeIndex> {
         let categories: Vec<_> = self.categories().cloned().collect();
         let licensors: Vec<_> = self.licensor_types().cloned().collect();
         let config = config.unwrap_or_default();
 
         let x = LexicalEntry::sample(&categories, &licensors, lemma, config, rng);
-        self.add_lexical_entry(x);
+        self.add_lexical_entry(x)
     }
 
     ///Deletes a lexeme from the grammar. Returns [`MutationError`] if the grammar has only

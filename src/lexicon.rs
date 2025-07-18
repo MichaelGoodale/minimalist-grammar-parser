@@ -8,7 +8,8 @@ use chumsky::{
     text::{inline_whitespace, newline},
 };
 use itertools::Itertools;
-use logprob::{LogProb, Softmax};
+use logprob::{LogProb, LogSumExp, Softmax};
+use petgraph::Direction::Outgoing;
 use petgraph::dot::Dot;
 use petgraph::prelude::StableDiGraph;
 use petgraph::{
@@ -57,6 +58,14 @@ impl<C: Eq> Feature<C> {
             | Feature::Affix(c, _)
             | Feature::Licensor(c)
             | Feature::Licensee(c) => c,
+        }
+    }
+
+    ///Checks whether this features is a [`Feature::Selector`] or not.
+    pub fn is_selector(&self) -> bool {
+        match self {
+            Self::Selector(_, _) => true,
+            _ => false,
         }
     }
 }
@@ -282,7 +291,6 @@ pub struct LexicalEntry<T: Eq, Category: Eq> {
     pub(crate) lemma: Option<T>,
     pub(crate) features: Vec<Feature<Category>>,
 }
-
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
     ///Creates a new lexical entry
     pub fn new(lemma: Option<T>, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
@@ -520,7 +528,87 @@ impl<'a, T: Eq, C: Eq + Clone> Iterator for Climber<'a, T, C> {
     }
 }
 
+pub(crate) fn fix_weights_per_node<T: Eq, C: Eq>(
+    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
+    node_index: NodeIndex,
+) {
+    let sum = graph
+        .edges_directed(node_index, Outgoing)
+        .map(|x| x.weight())
+        .log_sum_exp_float_no_alloc();
+
+    if sum != 0.0 {
+        let edges: Vec<_> = graph
+            .edges_directed(node_index, Outgoing)
+            .map(|e| e.id())
+            .collect();
+        for e in edges {
+            graph[e] = LogProb::new(graph[e].into_inner() - sum).unwrap();
+        }
+    }
+}
+
+pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
+    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
+) {
+    //Renormalise probabilities to sum to one.
+    for node_index in graph.node_indices().collect_vec() {
+        fix_weights_per_node(graph, node_index);
+    }
+}
+
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
+    pub(crate) fn add_lexical_entry(&mut self, lexical_entry: LexicalEntry<T, Category>) {
+        let LexicalEntry { lemma, features } = lexical_entry;
+
+        let mut new_nodes = vec![FeatureOrLemma::Lemma(lemma)];
+        for (i, f) in features.into_iter().enumerate() {
+            let f = if i == 0 && f.is_selector() {
+                let Feature::Selector(c, d) = f else {
+                    panic!("We checked it was a selector!")
+                };
+                FeatureOrLemma::Complement(c, d)
+            } else {
+                FeatureOrLemma::Feature(f)
+            };
+            new_nodes.push(f);
+        }
+
+        let mut pos = self.root;
+        while let Some(f) = new_nodes.pop() {
+            if let Some(p) = self.children_of(pos).find(|x| self.find(*x) == Some(&f)) {
+                pos = p;
+            } else {
+                let new_pos = self.graph.add_node(f);
+                self.graph.add_edge(pos, new_pos, LogProb::prob_of_one());
+                fix_weights_per_node(&mut self.graph, pos);
+                pos = new_pos;
+            }
+        }
+        if !self.leaves.contains(&pos) {
+            self.leaves.push(pos);
+        }
+    }
+
+    ///The number of children of a node
+    pub(crate) fn n_children(&self, nx: NodeIndex) -> usize {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Outgoing)
+            .count()
+    }
+
+    ///The children of a node
+    pub(crate) fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
+        self.graph
+            .edges_directed(nx, petgraph::Direction::Outgoing)
+            .map(|e| e.target())
+    }
+
+    ///Finds a node's feature
+    pub(crate) fn find(&self, nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
+        self.graph.node_weight(nx)
+    }
+
     ///Climb up a leaf over all of its features
     pub fn leaf_to_features<'a>(&'a self, nx: NodeIndex) -> Option<Climber<'a, T, Category>> {
         if !matches!(self.graph.node_weight(nx), Some(FeatureOrLemma::Lemma(_))) {
@@ -796,20 +884,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             | FeatureOrLemma::Feature(Feature::Licensee(x)) => Some(x),
             _ => None,
         })
-    }
-
-    ///The number of children of a node
-    pub(crate) fn n_children(&self, nx: NodeIndex) -> usize {
-        self.graph
-            .edges_directed(nx, petgraph::Direction::Outgoing)
-            .count()
-    }
-
-    ///The children of a node
-    pub(crate) fn children_of(&self, nx: NodeIndex) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.graph
-            .edges_directed(nx, petgraph::Direction::Outgoing)
-            .map(|e| e.target())
     }
 }
 

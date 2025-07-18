@@ -5,11 +5,13 @@ use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Has
 
 use thiserror::Error;
 
-use crate::Direction;
+use crate::{
+    Direction,
+    lexicon::{LexicalEntry, fix_weights, fix_weights_per_node},
+};
 
 use super::{Feature, FeatureOrLemma, Lexicon};
 use ahash::{AHashMap, AHashSet, HashMap};
-use itertools::Itertools;
 use logprob::{LogProb, LogSumExp};
 use petgraph::{
     Direction::{Incoming, Outgoing},
@@ -22,6 +24,68 @@ use rand::{
     seq::{IndexedRandom, IteratorRandom},
 };
 use rand_distr::{Distribution, Geometric};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Position {
+    PreCategory,
+    PostCategory,
+    Done,
+}
+
+impl Position {
+    fn sample<C: Eq + Clone>(
+        &mut self,
+        categories: &[C],
+        licensors: &[C],
+        config: LexicalProbConfig,
+        rng: &mut impl Rng,
+    ) -> Feature<C> {
+        match self {
+            Position::PreCategory => {
+                if licensors.is_empty() || rng.random_bool(config.licensee_prob) {
+                    *self = Position::PostCategory;
+                    Feature::Category(categories.choose(rng).unwrap().clone())
+                } else {
+                    Feature::Licensee(licensors.choose(rng).unwrap().clone())
+                }
+            }
+            Position::PostCategory => {
+                if licensors.is_empty() || rng.random_bool(config.mover_prob) {
+                    if rng.random_bool(config.lemma_prob) {
+                        *self = Position::Done;
+                    }
+
+                    Feature::Selector(
+                        categories.choose(rng).unwrap().clone(),
+                        config.direction(rng),
+                    )
+                } else {
+                    Feature::Licensor(licensors.choose(rng).unwrap().clone())
+                }
+            }
+            Position::Done => panic!(),
+        }
+    }
+}
+
+impl<T: Eq, Category: Eq + Clone> LexicalEntry<T, Category> {
+    fn sample(
+        categories: &[Category],
+        licensors: &[Category],
+        lemma: Option<T>,
+        config: LexicalProbConfig,
+        rng: &mut impl Rng,
+    ) -> Self {
+        let mut pos = Position::PreCategory;
+        let mut features = vec![];
+        while pos != Position::Done {
+            features.push(pos.sample(categories, licensors, config, rng));
+        }
+        features.reverse();
+
+        LexicalEntry { lemma, features }
+    }
+}
 
 #[derive(Debug)]
 struct AccessibilityChecker<'a, T: Eq, Category: Eq> {
@@ -239,35 +303,6 @@ impl FreshCategory for u64 {
     }
 }
 
-fn fix_weights_per_node<T: Eq + Clone, C: Eq + Clone>(
-    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
-    node_index: NodeIndex,
-) {
-    let sum = graph
-        .edges_directed(node_index, Outgoing)
-        .map(|x| x.weight())
-        .log_sum_exp_float_no_alloc();
-
-    if sum != 0.0 {
-        let edges: Vec<_> = graph
-            .edges_directed(node_index, Outgoing)
-            .map(|e| e.id())
-            .collect();
-        for e in edges {
-            graph[e] = LogProb::new(graph[e].into_inner() - sum).unwrap();
-        }
-    }
-}
-
-fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
-    graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
-) {
-    //Renormalise probabilities to sum to one.
-    for node_index in graph.node_indices().collect_vec() {
-        fix_weights_per_node(graph, node_index);
-    }
-}
-
 #[derive(Error, Debug, Clone)]
 ///Error that can occur if a grammar is made invalid
 pub enum MutationError {
@@ -281,7 +316,7 @@ pub enum MutationError {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-///Used by [`Lexicon::add_new_lexeme_randomly`] to return a new lexeme along with its sibling that
+///Used by [`Lexicon::add_new_lexeme_from_sibling`] to return a new lexeme along with its sibling that
 ///has the same features.
 pub struct NewLexeme {
     /// The new lexeme.
@@ -367,7 +402,11 @@ where
 
     ///Adds a new lexeme with the same features but a different lemma as another lexeme.
     ///Returns the node of the new lexeme as a [`NewLexeme`] with data about its copied sibling.
-    pub fn add_new_lexeme_randomly(&mut self, lemma: T, rng: &mut impl Rng) -> Option<NewLexeme> {
+    pub fn add_new_lexeme_from_sibling(
+        &mut self,
+        lemma: T,
+        rng: &mut impl Rng,
+    ) -> Option<NewLexeme> {
         if let Some(&leaf) = self
             .leaves
             .iter()
@@ -383,6 +422,21 @@ where
         }else{
             None
         }
+    }
+
+    ///Adds a new lexeme.
+    pub fn add_new_lexeme(
+        &mut self,
+        lemma: Option<T>,
+        config: Option<LexicalProbConfig>,
+        rng: &mut impl Rng,
+    ) {
+        let categories: Vec<_> = self.categories().cloned().collect();
+        let licensors: Vec<_> = self.licensor_types().cloned().collect();
+        let config = config.unwrap_or_default();
+
+        let x = LexicalEntry::sample(&categories, &licensors, lemma, config, rng);
+        self.add_lexical_entry(x);
     }
 
     ///Deletes a lexeme from the grammar. Returns [`MutationError`] if the grammar has only
@@ -740,6 +794,16 @@ impl Default for LexicalProbConfig {
     }
 }
 
+impl LexicalProbConfig {
+    fn direction(&self, rng: &mut impl Rng) -> Direction {
+        if rng.random_bool(self.left_prob) {
+            Direction::Left
+        } else {
+            Direction::Right
+        }
+    }
+}
+
 impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
     LexicalProbs<'a, 'b, 'c, T, C>
 {
@@ -773,9 +837,9 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         } else {
             let c = self.choose_category_for_feature(rng);
             if self.is_lemma(rng) {
-                FeatureOrLemma::Complement(c, self.direction(rng))
+                FeatureOrLemma::Complement(c, self.config.direction(rng))
             } else {
-                FeatureOrLemma::Feature(Feature::Selector(c, self.direction(rng)))
+                FeatureOrLemma::Feature(Feature::Selector(c, self.config.direction(rng)))
             }
         }
     }
@@ -881,14 +945,6 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         }
     }
 
-    fn direction(&self, rng: &mut impl Rng) -> Direction {
-        if rng.random_bool(self.config.left_prob) {
-            Direction::Left
-        } else {
-            Direction::Right
-        }
-    }
-
     ///Assign a random feature to node at `node` while respecting the rules of what makes a grammar
     ///valid.
     fn set_node(&mut self, node: NodeIndex, rng: &mut impl Rng) {
@@ -917,13 +973,13 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         Feature::Licensor(feature)
                     } else {
                         let feature = self.choose_category_for_feature(rng);
-                        Feature::Selector(feature, self.direction(rng))
+                        Feature::Selector(feature, self.config.direction(rng))
                     }
                 }
             }),
             FeatureOrLemma::Complement(..) => FeatureOrLemma::Complement(
                 self.choose_category_for_feature(rng),
-                self.direction(rng),
+                self.config.direction(rng),
             ),
         };
         *self.lexicon.graph.node_weight_mut(node).unwrap() = new_feature;
@@ -1220,7 +1276,10 @@ mod test {
         for _ in 0..10000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
             validate_lexicon(&lex)?;
-            lex.add_new_lexeme_randomly("lbarg", &mut rng);
+            lex.add_new_lexeme_from_sibling("lbarg", &mut rng);
+            validate_lexicon(&lex)?;
+            let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
+            lex.add_new_lexeme(Some("lbarg"), None, &mut rng);
             validate_lexicon(&lex)?;
         }
         Ok(())
@@ -1232,7 +1291,7 @@ mod test {
         let lemmas = &["the", "dog", "runs"];
         for _ in 0..10000 {
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
-            println!("{}", lex);
+            println!("{lex}");
             validate_lexicon(&lex)?;
             println!("NEW VERSION");
             lex.change_feature(lemmas, None, &mut rng);

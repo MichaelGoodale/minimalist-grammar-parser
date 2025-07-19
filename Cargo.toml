@@ -42,6 +42,10 @@ pretty = []
 name = "mg_benches"
 harness = false
 
+[profile.bench]
+debug = true
+
+
 [profile.profiling]
 inherits = "release"
 debug = true

@@ -31,26 +31,24 @@ lazy_static! {
 }
 
 #[divan::bench]
-fn parse_long_sentence() {
-    let g = divan::black_box(get_grammar());
-    let sentence: Vec<_> = divan::black_box(
-        "which king knows the queen knows which beer the king drinks"
-            .split(' ')
-            .map(PhonContent::Normal)
-            .collect(),
-    );
-    g.parse(&sentence, "C", &CONFIG).unwrap().next().unwrap();
+fn parse_long_sentence(bencher: divan::Bencher) {
+    let g = get_grammar();
+    let sentence: Vec<_> = "which king knows the queen knows which beer the king drinks"
+        .split(' ')
+        .map(PhonContent::Normal)
+        .collect();
+    bencher.bench(|| g.parse(&sentence, "C", &CONFIG).unwrap().next().unwrap());
 }
 
 #[divan::bench]
-fn generate_sentence() {
-    let g = divan::black_box(get_grammar());
-    g.generate("C", &CONFIG).unwrap().take(100).count();
+fn generate_sentence(bencher: divan::Bencher) {
+    let g = get_grammar();
+    bencher.bench(|| g.generate("C", &CONFIG).unwrap().take(100).count());
 }
 
 #[divan::bench]
-fn parse_copy_language() {
-    let (lex, strings) = divan::black_box({
+fn parse_copy_language(bencher: divan::Bencher) {
+    let (lex, strings) = {
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
             .map(LexicalEntry::parse)
@@ -72,16 +70,18 @@ fn parse_copy_language() {
             );
         }
         (lex, strings)
-    });
+    };
 
-    for s in strings.iter() {
-        lex.parse(s, "T", &CONFIG).unwrap().next().unwrap();
-    }
+    bencher.bench(|| {
+        for s in strings.iter() {
+            lex.parse(s, "T", &CONFIG).unwrap().next().unwrap();
+        }
+    });
 }
 
 #[divan::bench]
-fn parse_copy_language_together() {
-    let (lex, strings) = divan::black_box({
+fn parse_copy_language_together(bencher: divan::Bencher) {
+    let (lex, strings) = {
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
             .map(LexicalEntry::parse)
@@ -103,24 +103,28 @@ fn parse_copy_language_together() {
             );
         }
         (lex, strings)
-    });
+    };
 
-    lex.parse_multiple(&strings, "T", &CONFIG)
-        .unwrap()
-        .take(strings.len())
-        .for_each(|_| ());
+    bencher.bench(|| {
+        lex.parse_multiple(&strings, "T", &CONFIG)
+            .unwrap()
+            .take(strings.len())
+            .for_each(|_| ());
+    });
 }
 
 #[divan::bench]
-fn generate_copy_language() {
-    let lex = divan::black_box({
+fn generate_copy_language(bencher: divan::Bencher) {
+    let lex = {
         let v: Vec<_> = COPY_LANGUAGE
             .split('\n')
             .map(LexicalEntry::parse)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         Lexicon::new(v)
-    });
+    };
 
-    lex.generate("T", &CONFIG).unwrap().take(100).count();
+    bencher.bench(|| {
+        lex.generate("T", &CONFIG).unwrap().take(100).count();
+    });
 }

@@ -42,11 +42,6 @@ pretty = []
 name = "mg_benches"
 harness = false
 
-[[bin]]
-name = "mg_benches"
-bench = false
-test = false
-
 [profile.profiling]
 inherits = "release"
 debug = true

@@ -549,7 +549,6 @@ where
             {
                 let trace_id = self.get_trace(*stored_id);
                 let children = self.get_previous_rules(*child_id);
-
                 children
                     .into_iter()
                     .filter_map(

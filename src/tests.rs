@@ -178,6 +178,7 @@ fn generation() -> Result<()> {
                 max_steps: Some(100),
                 max_beams: Some(1000),
                 max_time: None,
+                max_consecutive_empty: None,
             },
         )?
         .collect();
@@ -334,6 +335,19 @@ fn degenerate_grammar() -> Result<()> {
     let lexicon = Lexicon::from_string("a::=c c")?;
     let x: Vec<_> = lexicon.generate("c", &CONFIG)?.take(50).collect();
     assert_eq!(x, vec![]);
+    Ok(())
+}
+
+#[test]
+fn too_many_empties() -> Result<()> {
+    let lexicon = Lexicon::from_string("a::c\n::c= c")?;
+    let config = ParsingConfig::empty().with_max_consecutive_empty(1);
+    let x: Vec<_> = lexicon
+        .generate("c", &config)?
+        .take(50)
+        .map(|(_, s, _)| PhonContent::flatten(s).join(" "))
+        .collect();
+    assert_eq!(x, vec!["a", "a"]);
     Ok(())
 }
 

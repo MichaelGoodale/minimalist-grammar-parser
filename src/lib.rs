@@ -164,6 +164,7 @@ pub struct ParsingConfig {
     dont_move_prob: LogProb<f64>,
     max_steps: Option<usize>,
     max_beams: Option<usize>,
+    max_consecutive_empty: Option<usize>,
 
     #[cfg(not(target_arch = "wasm32"))]
     max_time: Option<Duration>,
@@ -181,6 +182,7 @@ impl ParsingConfig {
             min_log_prob: None,
             move_prob,
             dont_move_prob,
+            max_consecutive_empty: None,
             max_steps: None,
             max_beams: None,
 
@@ -202,6 +204,7 @@ impl ParsingConfig {
             min_log_prob: Some(min_log_prob),
             move_prob,
             dont_move_prob: merge_prob,
+            max_consecutive_empty: None,
             max_steps: Some(max_steps),
             max_beams: Some(max_beams),
             #[cfg(not(target_arch = "wasm32"))]
@@ -213,6 +216,12 @@ impl ParsingConfig {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_max_time(mut self, duration: Duration) -> Self {
         self.max_time = Some(duration);
+        self
+    }
+
+    ///Set the maximum number of repeated empty heads.
+    pub fn with_max_consecutive_empty(mut self, n: usize) -> Self {
+        self.max_consecutive_empty = Some(n);
         self
     }
 
@@ -277,7 +286,12 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
             .max_steps
             .map(|max_steps| v.n_steps() < max_steps)
             .unwrap_or(true);
-        is_short_enough && is_probable_enough
+        let is_not_fake_structure = self
+            .config
+            .max_consecutive_empty
+            .map(|n_empty| v.n_consecutive_empty() <= n_empty)
+            .unwrap_or(true);
+        is_short_enough && is_probable_enough && is_not_fake_structure
     }
 
     fn push(&mut self, v: BeamWrapper<T, B>) {

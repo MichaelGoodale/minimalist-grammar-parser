@@ -26,6 +26,7 @@ pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     queue: BinaryHeap<Reverse<ParseMoment>>,
     heads: Vec<PossibleHeads>,
     rules: PartialRulePool,
+    n_consec_empties: usize,
     pub beam: B,
     phantom: PhantomData<T>,
 }
@@ -251,6 +252,10 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         child_prob: LogProb<f64>,
         lexicon: &Lexicon<T, Category>,
     ) {
+        match s {
+            Some(_) => self.n_consec_empties = 0,
+            None => self.n_consec_empties += 1,
+        }
         let rule = match moment.stolen_head {
             Some(StolenHead::Stealer(pos)) => {
                 let trees = std::mem::take(&mut self.heads[pos]);
@@ -349,6 +354,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         BeamWrapper {
             beam,
             heads: vec![],
+            n_consec_empties: 0,
             queue,
             log_prob: LogProb::prob_of_one(),
             rules: PartialRulePool::default(),
@@ -362,6 +368,10 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
 
     pub fn n_steps(&self) -> usize {
         self.rules.n_steps()
+    }
+
+    pub fn n_consecutive_empty(&self) -> usize {
+        self.n_consec_empties
     }
 
     pub fn pop_moment(&mut self) -> Option<ParseMoment> {

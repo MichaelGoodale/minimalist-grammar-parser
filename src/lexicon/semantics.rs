@@ -459,4 +459,21 @@ John::0 -1::a_1";
         }
         Ok(())
     }
+
+    #[test]
+    fn merge_non_lambdas() -> anyhow::Result<()> {
+        let grammar = "a::=1 0::pa_man\nb::1::a_john";
+
+        let lexicon = SemanticLexicon::parse(grammar)?;
+        for (_, _, r) in lexicon.lexicon.parse(
+            &PhonContent::from(["b", "a"]),
+            "0",
+            &ParsingConfig::default(),
+        )? {
+            println!("{r:?}");
+            let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
+            assert_eq!(pool.to_string(), "pa_man(a_john)");
+        }
+        Ok(())
+    }
 }

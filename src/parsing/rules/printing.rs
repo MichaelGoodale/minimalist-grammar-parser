@@ -17,6 +17,7 @@ use thiserror::Error;
 
 use crate::lexicon::Feature;
 use crate::lexicon::FeatureOrLemma;
+use crate::lexicon::LexemeId;
 use crate::lexicon::LexicalEntry;
 use crate::lexicon::Lexicon;
 use crate::parsing::trees::GornIndex;
@@ -598,27 +599,27 @@ fn clean_up_expr(s: String) -> String {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum LemmaNode {
-    Normal(NodeIndex),
-    Moved(NodeIndex),
-    Affix(Vec<NodeIndex>),
+    Normal(LexemeId),
+    Moved(LexemeId),
+    Affix(Vec<LexemeId>),
 }
 
 fn get_lemmas_nodes(
     rules: &RulePool,
     rule: RuleIndex,
-    node: NodeIndex,
+    lexeme: LexemeId,
     stolen: StolenInfo,
 ) -> LemmaNode {
     match stolen {
-        StolenInfo::Normal => LemmaNode::Normal(node),
-        StolenInfo::Stolen(_, _) => LemmaNode::Moved(node),
+        StolenInfo::Normal => LemmaNode::Normal(lexeme),
+        StolenInfo::Stolen(_, _) => LemmaNode::Moved(lexeme),
         StolenInfo::Stealer => {
-            let mut affixes = vec![(GornIndex::default(), node)];
+            let mut affixes = vec![(GornIndex::default(), lexeme)];
             affixes.extend(rules.iter().filter_map(|x| match x {
                 Rule::Scan {
-                    node,
+                    lexeme,
                     stolen: StolenInfo::Stolen(rule_index, index),
-                } if *rule_index == rule => Some((*index, *node)),
+                } if *rule_index == rule => Some((*index, *lexeme)),
                 _ => None,
             }));
             affixes.sort_by_key(|(i, _n)| std::cmp::Reverse(*i));
@@ -768,12 +769,12 @@ where
                 *rule, *child_id, *stored_id, g, lex, rules, trace_h, rules_h, nodes_h,
             )
         }
-        Rule::Scan { node, stolen } => {
-            let lemma = get_lemmas_nodes(rules, index, *node, *stolen);
+        Rule::Scan { lexeme, stolen } => {
+            let lemma = get_lemmas_nodes(rules, index, *lexeme, *stolen);
             let LexicalEntry {
                 lemma: _,
                 mut features,
-            } = lex.get_lexical_entry(*node).unwrap();
+            } = lex.get_lexical_entry(*lexeme).unwrap();
 
             let lemma = match lemma {
                 LemmaNode::Normal(node_index) => {

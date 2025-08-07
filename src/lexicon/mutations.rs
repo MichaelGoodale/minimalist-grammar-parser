@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     Direction,
-    lexicon::{LexicalEntry, fix_weights, fix_weights_per_node},
+    lexicon::{LexemeId, LexicalEntry, fix_weights, fix_weights_per_node},
 };
 
 use super::{Feature, FeatureOrLemma, Lexicon};
@@ -243,11 +243,12 @@ where
         self.leaves = self
             .graph
             .node_indices()
-            .filter(|x| {
-                matches!(
-                    self.graph.node_weight(*x).unwrap(),
-                    FeatureOrLemma::Lemma(_)
-                )
+            .filter_map(|x| {
+                if matches!(self.graph.node_weight(x).unwrap(), FeatureOrLemma::Lemma(_)) {
+                    Some(LexemeId(x))
+                } else {
+                    None
+                }
             })
             .collect();
     }
@@ -308,11 +309,11 @@ impl FreshCategory for u64 {
 pub enum MutationError {
     ///You cannot delete the a non-leaf without stitching together its child and parent.
     #[error("Node {0:?} is not a leaf so we can't delete it.")]
-    CantDeleteNonLeaf(NodeIndex),
+    CantDeleteNonLeaf(LexemeId),
 
     ///A grammar cannot delete its last leaf.
     #[error("Node {0:?} is the only leaf so we can't delete it.")]
-    LastLeaf(NodeIndex),
+    LastLeaf(LexemeId),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -320,18 +321,23 @@ pub enum MutationError {
 ///has the same features.
 pub struct NewLexeme {
     /// The new lexeme.
-    pub new_lexeme: NodeIndex,
+    pub new_lexeme: LexemeId,
     /// The sibling of that lexeme with the same features.
-    pub sibling: NodeIndex,
+    pub sibling: LexemeId,
 }
 
 ///Used by [`Lexicon::unify`]
-pub struct NodeDetails {
+pub struct LexemeDetails {
     ///Node from the added lexicon that are being replaced
-    pub other_node: NodeIndex,
+    pub other_node: LexemeId,
 
     ///The new node that corresponds to the old index.
-    pub this_node: NodeIndex,
+    pub this_node: LexemeId,
+}
+
+struct NodeDetails {
+    other_node: NodeIndex,
+    this_node: NodeIndex,
 }
 
 impl<T, C> Lexicon<T, C>
@@ -349,7 +355,7 @@ where
 
     ///Combines two lexicons and returns a vector of the leaves from `other` as [`NodeDetails`] consisting
     ///of the index of the old leaves in `other` and their new index in the `self`.
-    pub fn unify(&mut self, other: &Self) -> Vec<NodeDetails> {
+    pub fn unify(&mut self, other: &Self) -> Vec<LexemeDetails> {
         let mut new_leaves = vec![];
         let mut stack = vec![NodeDetails {
             other_node: other.root,
@@ -379,10 +385,10 @@ where
                         self.graph.add_edge(this_node, this_child, *child_prob);
                         vacant_entry.insert(this_child);
                         if matches!(weight, FeatureOrLemma::Lemma(_)) {
-                            self.leaves.push(this_child);
-                            new_leaves.push(NodeDetails {
-                                other_node: other_child,
-                                this_node: this_child,
+                            self.leaves.push(LexemeId(this_child));
+                            new_leaves.push(LexemeDetails {
+                                other_node: LexemeId(other_child),
+                                this_node: LexemeId(this_child),
                             });
                         }
 
@@ -410,15 +416,15 @@ where
         if let Some(&leaf) = self
             .leaves
             .iter()
-            .filter(|&&x| matches!(self.graph.node_weight(x).unwrap(), FeatureOrLemma::Lemma(Some(s)) if s!=&lemma))
+            .filter(|&&x| matches!(self.graph.node_weight(x.0).unwrap(), FeatureOrLemma::Lemma(Some(s)) if s!=&lemma))
             .choose(rng)
         {
-            let parent = self.parent_of(leaf).unwrap();
+            let parent = self.parent_of(leaf.0).unwrap();
             let node = self.graph.add_node(FeatureOrLemma::Lemma(Some(lemma)));
             self.graph.add_edge(parent, node, LogProb::prob_of_one());
             fix_weights_per_node(&mut self.graph, parent);
-            self.leaves.push(node);
-            Some(NewLexeme { new_lexeme: node, sibling: leaf})
+            self.leaves.push(LexemeId(node));
+            Some(NewLexeme { new_lexeme: LexemeId(node), sibling: leaf})
         }else{
             None
         }
@@ -441,15 +447,15 @@ where
 
     ///Deletes a lexeme from the grammar. Returns [`MutationError`] if the grammar has only
     ///one lexeme or if the [`NodeIndex`] passed is not a leaf.
-    pub fn delete_lexeme(&mut self, leaf: NodeIndex) -> Result<(), MutationError> {
-        if !self.leaves.contains(&leaf) {
-            return Err(MutationError::CantDeleteNonLeaf(leaf));
+    pub fn delete_lexeme(&mut self, lexeme: LexemeId) -> Result<(), MutationError> {
+        if !self.leaves.contains(&lexeme) {
+            return Err(MutationError::CantDeleteNonLeaf(lexeme));
         }
         if self.leaves.len() == 1 {
-            return Err(MutationError::LastLeaf(leaf));
+            return Err(MutationError::LastLeaf(lexeme));
         }
 
-        let mut next_node = Some(leaf);
+        let mut next_node = Some(lexeme.0);
         while let Some(node) = next_node {
             if self.n_children(node) == 0 {
                 next_node = self.parent_of(node);
@@ -459,7 +465,7 @@ where
                 next_node = None;
             }
         }
-        self.leaves.retain(|x| x != &leaf);
+        self.leaves.retain(|x| x != &lexeme);
 
         Ok(())
     }
@@ -487,7 +493,7 @@ where
                 self.graph.remove_node(nx);
             }
             fix_weights_per_node(&mut self.graph, parent);
-            self.leaves.retain(|&x| self.graph.contains_node(x));
+            self.leaves.retain(|&x| self.graph.contains_node(x.0));
         }
     }
 
@@ -586,7 +592,7 @@ where
             }
 
             if matches!(self.graph[node], FeatureOrLemma::Lemma(_)) {
-                self.leaves.retain(|&a| a != node);
+                self.leaves.retain(|&a| a.0 != node);
             }
             self.graph.remove_node(node);
             self.clean_up();
@@ -679,7 +685,7 @@ where
                     self.graph.node_weight(child).unwrap(),
                     FeatureOrLemma::Lemma(_)
                 ) {
-                    self.leaves.retain(|&x| x != child);
+                    self.leaves.retain(|&x| x != LexemeId(child));
                 }
                 self.graph.remove_node(child);
             }
@@ -914,7 +920,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                             .graph
                             .add_edge(node, child, LogProb::prob_of_one());
                         if is_lemma {
-                            self.lexicon.leaves.push(child);
+                            self.lexicon.leaves.push(LexemeId(child));
                         } else {
                             stack.push(child);
                         }
@@ -930,7 +936,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         self.lexicon
                             .graph
                             .add_edge(node, child, LogProb::prob_of_one());
-                        self.lexicon.leaves.push(child);
+                        self.lexicon.leaves.push(LexemeId(child));
                     }
                 }
             }
@@ -1167,7 +1173,7 @@ mod test {
                 }
                 FeatureOrLemma::Lemma(_) => {
                     assert!(parent.is_some());
-                    found_leaves.insert(node);
+                    found_leaves.insert(LexemeId(node));
 
                     assert!(matches!(
                         lex.graph.node_weight(parent.unwrap()).unwrap(),

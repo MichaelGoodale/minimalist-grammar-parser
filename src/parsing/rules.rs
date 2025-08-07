@@ -8,6 +8,8 @@ mod printing;
 #[cfg(feature = "pretty")]
 pub use printing::{MGEdge, MgNode};
 
+use crate::lexicon::LexemeId;
+
 use super::trees::GornIndex;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -50,7 +52,7 @@ pub(crate) enum Rule {
     },
     UnmoveTrace(TraceId),
     Scan {
-        node: NodeIndex,
+        lexeme: LexemeId,
         stolen: StolenInfo,
     },
     Unmerge {
@@ -224,10 +226,10 @@ impl RulePool {
     }
 
     ///Gets an iterator of all used leaves.
-    pub fn used_lemmas(&self) -> impl Iterator<Item = NodeIndex> {
+    pub fn used_lemmas(&self) -> impl Iterator<Item = LexemeId> {
         self.0.iter().filter_map(|x| {
-            if let Rule::Scan { node, .. } = x {
-                Some(*node)
+            if let Rule::Scan { lexeme, .. } = x {
+                Some(*lexeme)
             } else {
                 None
             }

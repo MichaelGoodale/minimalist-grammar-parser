@@ -5,7 +5,7 @@ use std::collections::BinaryHeap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::lexicon::{Feature, FeatureOrLemma, Lexicon, ParsingError};
+use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
 use crate::parsing::rules::StolenInfo;
 use crate::parsing::trees::{GornIterator, StolenHead};
 use crate::{Direction, ParseHeap, ParsingConfig};
@@ -41,7 +41,7 @@ pub(crate) enum PossibleHeads {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PossibleTree {
-    head: Vec<NodeIndex>,
+    head: Vec<LexemeId>,
     left_child: Option<Vec<PossibleTree>>,
     right_child: Option<Vec<PossibleTree>>,
 }
@@ -74,13 +74,14 @@ impl PossibleTree {
                 }
             }
             None => {
-                self.head.retain(|x| node == lexicon.parent_of(*x).unwrap());
+                self.head
+                    .retain(|x| node == lexicon.parent_of(x.0).unwrap());
                 !self.head.is_empty()
             }
         }
     }
 
-    pub(crate) fn just_heads(nodes: Vec<NodeIndex>) -> Self {
+    pub(crate) fn just_heads(nodes: Vec<LexemeId>) -> Self {
         Self {
             head: nodes,
             left_child: None,
@@ -141,7 +142,7 @@ impl PossibleTree {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HeadTree {
-    head: NodeIndex,
+    head: LexemeId,
     child: Option<(Box<HeadTree>, Direction)>,
 }
 
@@ -195,7 +196,7 @@ impl HeadTree {
         }
     }
 
-    pub fn find_node(&self, index: GornIndex) -> Option<NodeIndex> {
+    pub fn find_node(&self, index: GornIndex) -> Option<LexemeId> {
         let mut pos = self;
         let mut node = self.head;
         for d in index {
@@ -235,7 +236,7 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
 }
 
 impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T, B> {
-    fn check_node(&self, index: GornIndex, node: NodeIndex, headtree: &HeadTree) -> bool {
+    fn check_node(&self, index: GornIndex, node: LexemeId, headtree: &HeadTree) -> bool {
         if let Some(found_node) = headtree.find_node(index) {
             found_node == node
         } else {
@@ -248,7 +249,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         v: &mut ParseHeap<T, B>,
         moment: &ParseMoment,
         s: &Option<T>,
-        child_node: NodeIndex,
+        child_node: LexemeId,
         child_prob: LogProb<f64>,
         lexicon: &Lexicon<T, Category>,
     ) {
@@ -276,7 +277,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                         new_beam.rules.push_rule(
                             v.rules_mut(),
                             Rule::Scan {
-                                node: child_node,
+                                lexeme: child_node,
                                 stolen: StolenInfo::Stealer,
                             },
                             moment.tree.id,
@@ -293,7 +294,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
 
                 if self.check_node(index, child_node, headtree) {
                     Some(Rule::Scan {
-                        node: child_node,
+                        lexeme: child_node,
                         stolen: StolenInfo::Stolen(*rule_id, index),
                     })
                 } else {
@@ -303,7 +304,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             None => {
                 if self.beam.scan(s) {
                     Some(Rule::Scan {
-                        node: child_node,
+                        lexeme: child_node,
                         stolen: StolenInfo::Normal,
                     })
                 } else {
@@ -671,7 +672,7 @@ fn set_beam_head<
                         //Wrong shape of head movement
                         return Ok(None);
                     };
-                    if child_node != lexicon.parent_of(node).unwrap() {
+                    if child_node != lexicon.parent_of(node.0).unwrap() {
                         //Wrong head for the head movement
                         return Ok(None);
                     }
@@ -718,7 +719,7 @@ pub(crate) fn expand<
         .for_each(
             |(mut beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
-                    beam.scan(extender, &moment, s, child_node, p, lexicon)
+                    beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon)
                 }
                 (FeatureOrLemma::Complement(cat, dir), mut p)
                 | (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), mut p) => {

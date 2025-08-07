@@ -91,9 +91,9 @@ pub enum LexiconError {
     #[error("There is no node ({0:?})")]
     MissingNode(NodeIndex),
 
-    ///Treats a node index as a leaf when it is not one.
-    #[error("Node ({0:?}) is not a leaf")]
-    NotALeaf(NodeIndex),
+    ///Reference a lexeme that doesn't exist
+    #[error("{0:?} is not a lexeme")]
+    MissingLexeme(LexemeId),
 
     ///Lexicon is malformed since a node isn't a descendent from the root.
     #[error("Following the parents of node, ({0:?}), doesn't lead to root")]
@@ -384,9 +384,12 @@ impl<Category: Display + Eq> Display for Feature<Category> {
 pub struct Lexicon<T: Eq, Category: Eq> {
     graph: StableDiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
-
-    leaves: Vec<NodeIndex>,
+    leaves: Vec<LexemeId>,
 }
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+///An ID for each lexeme in a grammar
+pub struct LexemeId(pub(crate) NodeIndex);
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
     for Lexicon<T, Category>
@@ -480,19 +483,23 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 FeatureOrLemma::Feature(Feature::Affix(..)) => {
                     children.push(self.possible_heads(nx, depth + 1)?)
                 }
-                FeatureOrLemma::Lemma(_) => lemmas.push(nx),
+                FeatureOrLemma::Lemma(_) => lemmas.push(LexemeId(nx)),
                 _ => stack.extend(self.children_of(nx)),
             }
         }
         children.push(PossibleTree::just_heads(lemmas));
 
-        let heads: Vec<NodeIndex> = self
+        let heads: Vec<LexemeId> = self
             .children_of(nx)
-            .filter(|child| {
-                matches!(
-                    self.graph.node_weight(*child).unwrap(),
+            .filter_map(|child| {
+                if matches!(
+                    self.graph.node_weight(child).unwrap(),
                     FeatureOrLemma::Lemma(_)
-                )
+                ) {
+                    Some(LexemeId(child))
+                } else {
+                    None
+                }
             })
             .collect();
         Ok(PossibleTree::just_heads(heads).merge(children, *direction))
@@ -585,10 +592,10 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
                 pos = new_pos;
             }
         }
-        if self.leaves.contains(&pos) {
+        if self.leaves.contains(&LexemeId(pos)) {
             None
         } else {
-            self.leaves.push(pos);
+            self.leaves.push(LexemeId(pos));
             Some(pos)
         }
     }
@@ -612,18 +619,24 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
         self.graph.node_weight(nx)
     }
 
-    ///Climb up a leaf over all of its features
-    pub fn leaf_to_features<'a>(&'a self, nx: NodeIndex) -> Option<Climber<'a, T, Category>> {
-        if !matches!(self.graph.node_weight(nx), Some(FeatureOrLemma::Lemma(_))) {
+    ///Climb up a lexeme over all of its features
+    pub fn leaf_to_features<'a>(&'a self, lexeme: LexemeId) -> Option<Climber<'a, T, Category>> {
+        if !matches!(
+            self.graph.node_weight(lexeme.0),
+            Some(FeatureOrLemma::Lemma(_))
+        ) {
             return None;
         }
 
-        Some(Climber { lex: self, pos: nx })
+        Some(Climber {
+            lex: self,
+            pos: lexeme.0,
+        })
     }
 
-    ///Gets the lemma of a leaf.
-    pub fn leaf_to_lemma(&self, nx: NodeIndex) -> Option<&Option<T>> {
-        match self.graph.node_weight(nx) {
+    ///Gets the lemma of a lexeme.
+    pub fn leaf_to_lemma(&self, lexeme_id: LexemeId) -> Option<&Option<T>> {
+        match self.graph.node_weight(lexeme_id.0) {
             Some(x) => {
                 if let FeatureOrLemma::Lemma(l) = x {
                     Some(l)
@@ -635,9 +648,9 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
         }
     }
 
-    ///Get the category of a node by climbing up its parents until you reach a category node.
-    pub fn category(&self, nx: NodeIndex) -> Option<&Category> {
-        let mut pos = nx;
+    ///Get the category of a lexeme.
+    pub fn category(&self, lexeme_id: LexemeId) -> Option<&Category> {
+        let mut pos = lexeme_id.0;
         while !matches!(
             self.graph[pos],
             FeatureOrLemma::Feature(Feature::Category(_))
@@ -675,19 +688,25 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     ///Returns the leaves of a grammar
-    pub fn leaves(&self) -> &[NodeIndex] {
+    pub fn leaves(&self) -> &[LexemeId] {
         &self.leaves
     }
 
     ///Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for
     ///their lemma)
-    pub fn sibling_leaves(&self) -> Vec<Vec<NodeIndex>> {
+    pub fn sibling_leaves(&self) -> Vec<Vec<LexemeId>> {
         let mut leaves = self.leaves.clone();
         let mut result = vec![];
         while let Some(leaf) = leaves.pop() {
             let siblings: Vec<_> = self
-                .children_of(self.parent_of(leaf).unwrap())
-                .filter(|&a| matches!(self.graph.node_weight(a).unwrap(), FeatureOrLemma::Lemma(_)))
+                .children_of(self.parent_of(leaf.0).unwrap())
+                .filter_map(|a| {
+                    if matches!(self.graph.node_weight(a).unwrap(), FeatureOrLemma::Lemma(_)) {
+                        Some(LexemeId(a))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             leaves.retain(|x| !siblings.contains(x));
             result.push(siblings);
@@ -702,9 +721,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 
         //NOTE: Must guarantee to iterate in this order.
         for leaf in self.leaves.iter() {
-            if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
+            if let FeatureOrLemma::Lemma(lemma) = &self.graph[leaf.0] {
                 let mut features = vec![];
-                let mut nx = *leaf;
+                let mut nx = leaf.0;
                 while let Some(parent) = self.parent_of(nx) {
                     if parent == self.root {
                         break;
@@ -721,7 +740,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     features,
                 })
             } else {
-                return Err(LexiconError::NotALeaf(*leaf));
+                return Err(LexiconError::MissingLexeme(*leaf));
             }
         }
         Ok(v)
@@ -730,26 +749,28 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     ///Given a leaf node, return its [`LexicalEntry`]
     pub fn get_lexical_entry(
         &self,
-        nx: NodeIndex,
+        lexeme_id: LexemeId,
     ) -> Result<LexicalEntry<T, Category>, LexiconError> {
-        let Some(lemma) = self.graph.node_weight(nx) else {
-            return Err(LexiconError::MissingNode(nx));
+        let Some(lemma) = self.graph.node_weight(lexeme_id.0) else {
+            return Err(LexiconError::MissingLexeme(lexeme_id));
         };
         let lemma = match lemma {
             FeatureOrLemma::Lemma(lemma) => lemma,
             FeatureOrLemma::Feature(_)
             | FeatureOrLemma::Root
-            | FeatureOrLemma::Complement(_, _) => return Err(LexiconError::NotALeaf(nx)),
+            | FeatureOrLemma::Complement(_, _) => {
+                return Err(LexiconError::MissingLexeme(lexeme_id));
+            }
         }
         .clone();
 
-        let features = self.leaf_to_features(nx).unwrap().collect();
+        let features = self.leaf_to_features(lexeme_id).unwrap().collect();
         Ok(LexicalEntry { features, lemma })
     }
 
     ///Get all lemmas of a grammar
     pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
-        self.leaves.iter().filter_map(|x| match &self.graph[*x] {
+        self.leaves.iter().filter_map(|x| match &self.graph[x.0] {
             FeatureOrLemma::Lemma(x) => Some(x),
             _ => None,
         })
@@ -789,7 +810,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 };
 
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
-                    leaves.push(node_index);
+                    leaves.push(LexemeId(node_index));
                 };
             }
         }

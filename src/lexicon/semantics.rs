@@ -17,7 +17,7 @@ use simple_semantics::language::Expr;
 #[derive(Debug, Clone)]
 pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
-    semantic_entries: HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
+    semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
 }
 
 impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
@@ -25,7 +25,7 @@ impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
     ///and semantic interpretations ([`RootedLambdaPool`])
     pub fn new(
         lexicon: Lexicon<T, C>,
-        semantic_entries: HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
+        semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
     ) -> Self {
         SemanticLexicon {
             lexicon,
@@ -41,7 +41,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
     (
         Lexicon<&'src str, &'src str>,
         Vec<(
-            NodeIndex,
+            LexemeId,
             Result<RootedLambdaPool<'src, Expr<'src>>, LambdaParseError>,
         )>,
     ),
@@ -93,9 +93,9 @@ impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
 
 impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T, C> {
     ///Get the interpretation of a leaf node. Panics if the node has no semantic interpretation.
-    pub fn interpretation(&self, nx: NodeIndex) -> &RootedLambdaPool<'src, Expr<'src>> {
+    pub fn interpretation(&self, lexeme_id: LexemeId) -> &RootedLambdaPool<'src, Expr<'src>> {
         self.semantic_entries
-            .get(&nx)
+            .get(&lexeme_id)
             .expect("There is no lemma of that node index!")
     }
 
@@ -110,14 +110,14 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
     }
 
     ///Get a reference to the underlying [`HashMap`] of lexical entries.
-    pub fn interpretations(&self) -> &HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
+    pub fn interpretations(&self) -> &HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>> {
         &self.semantic_entries
     }
 
     ///Get a mutable reference to the underlying [`HashMap`] of lexical entries.
     pub fn interpretations_mut(
         &mut self,
-    ) -> &mut HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>> {
+    ) -> &mut HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>> {
         &mut self.semantic_entries
     }
 
@@ -127,7 +127,7 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
         &mut self,
     ) -> (
         &mut Lexicon<T, C>,
-        &mut HashMap<NodeIndex, RootedLambdaPool<'src, Expr<'src>>>,
+        &mut HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
     ) {
         (&mut self.lexicon, &mut self.semantic_entries)
     }

@@ -80,10 +80,10 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
         let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
         for leaf in self.leaves.iter() {
-            if let FeatureOrLemma::Lemma(lemma) = &self.graph[*leaf] {
+            if let FeatureOrLemma::Lemma(lemma) = &self.graph[leaf.0] {
                 let n_phonemes = T::symbol_cost(lemma);
 
-                let mut nx = *leaf;
+                let mut nx = leaf.0;
                 let mut n_features = 0;
                 while let Some(parent) = self.parent_of(nx) {
                     if parent == self.root {
@@ -105,7 +105,7 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
                 }
                 lexemes.push((n_phonemes.into(), n_features.into()));
             } else {
-                return Err(LexiconError::NotALeaf(*leaf));
+                return Err(LexiconError::MissingLexeme(*leaf));
             }
         }
         let n_categories: u16 =

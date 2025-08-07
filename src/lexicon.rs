@@ -565,7 +565,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     pub(crate) fn add_lexical_entry(
         &mut self,
         lexical_entry: LexicalEntry<T, Category>,
-    ) -> Option<NodeIndex> {
+    ) -> Option<LexemeId> {
         let LexicalEntry { lemma, features } = lexical_entry;
 
         let mut new_nodes = vec![FeatureOrLemma::Lemma(lemma)];
@@ -596,7 +596,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             None
         } else {
             self.leaves.push(LexemeId(pos));
-            Some(pos)
+            Some(LexemeId(pos))
         }
     }
 

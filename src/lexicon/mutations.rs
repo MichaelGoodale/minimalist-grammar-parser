@@ -436,7 +436,7 @@ where
         lemma: Option<T>,
         config: Option<LexicalProbConfig>,
         rng: &mut impl Rng,
-    ) -> Option<NodeIndex> {
+    ) -> Option<LexemeId> {
         let categories: Vec<_> = self.categories().cloned().collect();
         let licensors: Vec<_> = self.licensor_types().cloned().collect();
         let config = config.unwrap_or_default();
@@ -498,7 +498,7 @@ where
     }
 
     ///Find a random node and deletes it, and then restitches its parent and children.
-    pub fn delete_node(&mut self, rng: &mut impl Rng) -> Option<NodeIndex> {
+    pub fn delete_node(&mut self, rng: &mut impl Rng) -> Option<LexemeId> {
         if let Some(&node) = self
             .graph
             .node_indices()
@@ -591,12 +591,15 @@ where
                 }
             }
 
-            if matches!(self.graph[node], FeatureOrLemma::Lemma(_)) {
+            let x = if matches!(self.graph[node], FeatureOrLemma::Lemma(_)) {
                 self.leaves.retain(|&a| a.0 != node);
-            }
+                Some(LexemeId(node))
+            } else {
+                None
+            };
             self.graph.remove_node(node);
             self.clean_up();
-            Some(node)
+            x
         } else {
             None
         }

@@ -222,4 +222,15 @@ impl RulePool {
     fn iter(&self) -> impl Iterator<Item = &Rule> {
         self.0.iter()
     }
+
+    ///Gets an iterator of all used leaves.
+    pub fn used_lemmas(&self) -> impl Iterator<Item = NodeIndex> {
+        self.0.iter().filter_map(|x| {
+            if let Rule::Scan { node, .. } = x {
+                Some(*node)
+            } else {
+                None
+            }
+        })
+    }
 }

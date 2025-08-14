@@ -132,12 +132,14 @@ impl<'a> SemanticHistory<'a> {
 
     ///Get all the constituents of a semantic history (e.g. the interpretation of all
     ///constituents). Returns [`None`] if the semantic history is [`SemanticHistory::Simple`]
-    pub fn constituents(&self) -> Option<impl Iterator<Item = &RootedLambdaPool<'a, Expr<'a>>>> {
+    pub fn constituents(
+        &self,
+    ) -> Option<impl Iterator<Item = (SemanticRule, &RootedLambdaPool<'a, Expr<'a>>)>> {
         match self {
             SemanticHistory::Rich(items) => Some(
                 items
                     .iter()
-                    .filter_map(|(_, x)| x.as_ref().map(|x| &x.expr)),
+                    .filter_map(|(b, x)| x.as_ref().map(|x| (*b, &x.expr))),
             ),
             SemanticHistory::Simple(_) => None,
         }

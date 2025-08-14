@@ -1,7 +1,7 @@
 //! This module defines the basic semantic rules which allow for semantic derivations.
 use std::{collections::BTreeMap, fmt::Display};
 
-use crate::lexicon::SemanticLexicon;
+use crate::lexicon::{LexemeId, SemanticLexicon};
 use itertools::Itertools;
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},
@@ -30,7 +30,7 @@ pub enum SemanticRule {
     ///This is the landing site of a movement.
     Trace,
     ///Retrieve a meaning from a word.
-    Scan,
+    Scan(LexemeId),
 }
 
 impl std::fmt::Display for SemanticRule {
@@ -45,7 +45,7 @@ impl std::fmt::Display for SemanticRule {
                 SemanticRule::ApplyFromStorage => "ApplyFromStorage",
                 SemanticRule::UpdateTrace => "UpdateTrace",
                 SemanticRule::Trace => "Trace",
-                SemanticRule::Scan => "LexicalEntry",
+                SemanticRule::Scan(_) => "LexicalEntry",
             }
         )
     }
@@ -500,7 +500,7 @@ where
         match rule {
             Rule::Scan { lexeme, stolen: _ } => [(
                 SemanticState::new(self.lexicon.interpretation(*lexeme).clone()),
-                self.history_node(rule_id, SemanticRule::Scan, None, None),
+                self.history_node(rule_id, SemanticRule::Scan(*lexeme), None, None),
             )]
             .into(),
             // These shouldn't be called.
@@ -656,7 +656,7 @@ where
             SemanticRule::Trace => {
                 return;
             }
-            SemanticRule::Scan => {
+            SemanticRule::Scan(_) => {
                 let node = match rule {
                     Rule::Scan { lexeme, stolen: _ } => lexeme,
                     _ => panic!(

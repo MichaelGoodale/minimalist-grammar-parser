@@ -1,5 +1,8 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
+#[cfg(feature = "pretty")]
+use serde::Serialize;
+
 use crate::Direction;
 use crate::parsing::PossibleTree;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
@@ -390,6 +393,20 @@ pub struct Lexicon<T: Eq, Category: Eq> {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 ///An ID for each lexeme in a grammar
 pub struct LexemeId(pub(crate) NodeIndex);
+
+#[cfg(feature = "pretty")]
+impl Serialize for LexemeId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeTupleStruct;
+
+        let mut s = serializer.serialize_tuple_struct("LexemeId", 1)?;
+        s.serialize_field(&self.0.index())?;
+        s.end()
+    }
+}
 
 impl<T: Eq, Category: Eq> PartialEq for Lexicon<T, Category> {
     fn eq(&self, other: &Self) -> bool {

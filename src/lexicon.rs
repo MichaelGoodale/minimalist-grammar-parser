@@ -391,24 +391,15 @@ pub struct Lexicon<T: Eq, Category: Eq> {
 ///An ID for each lexeme in a grammar
 pub struct LexemeId(pub(crate) NodeIndex);
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> PartialEq
-    for Lexicon<T, Category>
-{
-    //Super inefficient but we can leave it for now
+impl<T: Eq, Category: Eq> PartialEq for Lexicon<T, Category> {
     fn eq(&self, other: &Self) -> bool {
-        let lexemes = self.lexemes().unwrap();
-        for other_l in other.lexemes().unwrap() {
-            if !lexemes.contains(&other_l) {
-                return false;
-            }
-        }
-        true
+        self.root == other.root
+            && self.leaves == other.leaves
+            && self.graph.node_weights().eq(other.graph.node_weights())
+            && self.graph.edge_weights().eq(other.graph.edge_weights())
     }
 }
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Eq
-    for Lexicon<T, Category>
-{
-}
+impl<T: Eq, Category: Eq> Eq for Lexicon<T, Category> {}
 impl<T, Category> Lexicon<T, Category>
 where
     T: Eq + std::fmt::Debug + Clone + Display,
@@ -692,7 +683,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         &self.leaves
     }
 
-    ///Returns all leaves with their sibling nodes (e.g. lexemes that are identical except for
+    ///Returns all leaves with their sibling nodes (e.g. exemes that are identical except for
     ///their lemma)
     pub fn sibling_leaves(&self) -> Vec<Vec<LexemeId>> {
         let mut leaves = self.leaves.clone();

@@ -14,7 +14,7 @@ use simple_semantics::language::Expr;
 ///A lexicon that is paired with semantic interpretations for its leaf nodes.
 ///
 ///Each leaf must have a semantic interpretation defined as a [`RootedLambdaPool<Expr>`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
     lexicon: Lexicon<T, Category>,
     semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,

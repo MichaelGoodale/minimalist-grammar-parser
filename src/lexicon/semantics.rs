@@ -370,9 +370,9 @@ mod test {
         let lexical = [
             "everyone::d -k -q::lambda <a,t> P (every(x, all_a, P(x)))",
             "someone::d -k -q::lambda <a,t> P (some(x, all_a, P(x)))",
-            "likes::d= V -v::lambda a x (lambda a y (some_e(e, all_e, AgentOf(y, e)&pe_likes(e)&PatientOf(x, e))))",
-            "::v= +v +k +q t::lambda t x (x)",
-            "::V= +k d= +q v::lambda <a,t> p (p)",
+            "likes::d= V::lambda a x (lambda a y (some_e(e, all_e, AgentOf(y, e)&pe_likes(e)&PatientOf(x, e))))",
+            "::v<= +k +q t::lambda t x (x)",
+            "::V<= +k d= +q v::lambda <a,t> p (p)",
         ];
 
         let lexicon = lexical.join("\n");
@@ -385,10 +385,14 @@ mod test {
             .map_err(|e| e.inner_into::<String>())?
             .take(10)
         {
-            let mut s = PhonContent::try_flatten(s)?.join(" ");
+            let mut s = PhonContent::flatten(s).join(" ");
+            println!("{s:?}");
             for interpretation in rules
                 .to_interpretation(&lex)
-                .map(|(pool, _)| pool.into_pool().unwrap().to_string())
+                .map(|(pool, _)| {
+                    println!("{pool}");
+                    pool.into_pool().unwrap().to_string()
+                })
                 .unique()
             {
                 s.push('\n');
@@ -397,22 +401,25 @@ mod test {
             println!("{s}");
             v.push(s);
         }
-        assert_eq!(
-            vec![
-                "everyone likes someone\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
-                "everyone likes everyone\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
+        for (a, b) in vec![
+                "someone likes someone\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
                 "someone likes everyone\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
-                "someone likes someone\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))"
-            ],
-            v
-        );
+                "everyone likes everyone\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
+                "everyone likes someone\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
+            ].into_iter().zip(v) {
+            assert_eq!(a,b)
+        }
 
         #[cfg(feature = "pretty")]
         {
             let (_, _, rules) = lex
                 .lexicon
                 .parse(
-                    &PhonContent::from(["everyone", "likes", "someone"]),
+                    &[
+                        PhonContent::Normal("everyone"),
+                        PhonContent::Affixed(vec!["likes"]),
+                        PhonContent::Normal("someone"),
+                    ],
                     "t",
                     &config,
                 )
@@ -426,7 +433,7 @@ mod test {
             println!("{latex}");
             assert_eq!(
                 latex,
-                "\\begin{forest}[\\semder{t}{\\textsc{ApplyFromStorage}} [$t$, name=tracet0] [\\semder{+q t}{\\textsc{UpdateTrace}} [$t$, name=tracet1] [\\semder{+k +q t}{\\textsc{Id}} [$t$, name=tracet3] [\\semder{+v +k +q t}{\\textsc{FA}} [\\lex{v= +v +k +q t}{$\\epsilon$}{\\textsc{LexicalEntry}}] [\\semder{v}{\\textsc{ApplyFromStorage}} [$t$, name=tracet2] [\\semder{+q v}{\\textsc{Store}} [\\semder{d= +q v}{\\textsc{UpdateTrace}} [$t$, name=tracet4] [\\semder{+k d= +q v}{\\textsc{FA}} [\\lex{V= +k d= +q v}{$\\epsilon$}{\\textsc{LexicalEntry}}] [\\semder{V -v}{\\textsc{Store}} [\\lex{d= V -v}{likes}{\\textsc{LexicalEntry}}] [\\lex{d -k -q}{someone}{\\textsc{LexicalEntry}}]]]] [\\lex{d -k -q}{everyone}{\\textsc{LexicalEntry}}]]]]]]]\\end{forest}"
+                "\\begin{forest}[\\semder{t}{\\textsc{ApplyFromStorage}} [$t$, name=tracet0] [\\semder{+q t}{\\textsc{UpdateTrace}} [$t$, name=tracet1] [\\semder{+k +q t}{\\textsc{FA}} [\\lex{v<= +k +q t}{likes-$\\epsilon$-$\\epsilon$}{\\textsc{LexicalEntry}}] [\\semder{v}{\\textsc{ApplyFromStorage}} [$t$, name=tracet2] [\\semder{+q v}{\\textsc{Store}} [\\semder{d= +q v}{\\textsc{UpdateTrace}} [$t$, name=tracet3] [\\semder{+k d= +q v}{\\textsc{FA}} [\\lex{V<= +k d= +q v}{$\\epsilon$}{\\textsc{LexicalEntry}}] [\\semder{V}{\\textsc{Store}} [\\lex{d= V}{$\\epsilon$}{\\textsc{LexicalEntry}}] [\\lex{d -k -q}{someone}{\\textsc{LexicalEntry}}]]]] [\\lex{d -k -q}{everyone}{\\textsc{LexicalEntry}}]]]]]]\\end{forest}"
             );
 
             history = history.into_rich(&lex, &rules);
@@ -434,7 +441,7 @@ mod test {
             println!("{latex}");
             assert_eq!(
                 latex,
-                "\\begin{forest}[\\semder{t}{\\texttt{every(x, all\\_a, some(y, all\\_a, some\\_e(z, all\\_e, AgentOf(x, z) \\& pe\\_likes(z) \\& PatientOf(y, z))))}} [$t$, name=tracet0] [\\semder{+q t}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(0\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [$t$, name=tracet1] [\\semder{+k +q t}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(1\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [$t$, name=tracet3] [\\semder{+v +k +q t}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(1\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [\\lex{v= +v +k +q t}{$\\epsilon$}{\\texttt{{$\\lambda_{t}$}phi phi}}] [\\semder{v}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(1\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [$t$, name=tracet2] [\\semder{+q v}{\\texttt{some\\_e(x, all\\_e, AgentOf(1\\#a, x) \\& pe\\_likes(x) \\& PatientOf(2\\#a, x))}} [\\semder{d= +q v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(2\\#a, y))}} [$t$, name=tracet4] [\\semder{+k d= +q v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(4\\#a, y))}} [\\lex{V= +k d= +q v}{$\\epsilon$}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P P}}] [\\semder{V -v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(4\\#a, y))}} [\\lex{d= V -v}{likes}{\\texttt{{$\\lambda_{a}$}x {$\\lambda_{a}$}y some\\_e(z, all\\_e, AgentOf(y, z) \\& pe\\_likes(z) \\& PatientOf(x, z))}}] [\\lex{d -k -q}{someone}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P some(x, all\\_a, P(x))}}]]]] [\\lex{d -k -q}{everyone}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P every(x, all\\_a, P(x))}}]]]]]]]\\end{forest}"
+                "\\begin{forest}[\\semder{t}{\\texttt{every(x, all\\_a, some(y, all\\_a, some\\_e(z, all\\_e, AgentOf(x, z) \\& pe\\_likes(z) \\& PatientOf(y, z))))}} [$t$, name=tracet0] [\\semder{+q t}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(0\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [$t$, name=tracet1] [\\semder{+k +q t}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(1\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [\\lex{v<= +k +q t}{likes-$\\epsilon$-$\\epsilon$}{\\texttt{{$\\lambda_{t}$}phi phi}}] [\\semder{v}{\\texttt{some(x, all\\_a, some\\_e(y, all\\_e, AgentOf(1\\#a, y) \\& pe\\_likes(y) \\& PatientOf(x, y)))}} [$t$, name=tracet2] [\\semder{+q v}{\\texttt{some\\_e(x, all\\_e, AgentOf(1\\#a, x) \\& pe\\_likes(x) \\& PatientOf(2\\#a, x))}} [\\semder{d= +q v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(2\\#a, y))}} [$t$, name=tracet3] [\\semder{+k d= +q v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(3\\#a, y))}} [\\lex{V<= +k d= +q v}{$\\epsilon$}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P P}}] [\\semder{V}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(x, y) \\& pe\\_likes(y) \\& PatientOf(3\\#a, y))}} [\\lex{d= V}{$\\epsilon$}{\\texttt{{$\\lambda_{a}$}x {$\\lambda_{a}$}y some\\_e(z, all\\_e, AgentOf(y, z) \\& pe\\_likes(z) \\& PatientOf(x, z))}}] [\\lex{d -k -q}{someone}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P some(x, all\\_a, P(x))}}]]]] [\\lex{d -k -q}{everyone}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P every(x, all\\_a, P(x))}}]]]]]]\\end{forest}"
             );
         }
         Ok(())
@@ -474,6 +481,45 @@ John::0 -1::a_1";
             let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
             assert_eq!(pool.to_string(), "pa_man(a_john)");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn complicated_intransitives() -> anyhow::Result<()> {
+        let grammar = "runs::=ag V::lambda e x pe_runs(x)\n::d= ag -ag::lambda a x lambda e y AgentOf(x,y)\nJohn::d::a_John\n::V= v::lambda <e,t> P P\n::v= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))";
+
+        let lexicon = SemanticLexicon::parse(grammar)?;
+        for (_, _, r) in lexicon.lexicon.parse(
+            &PhonContent::from(["John", "runs"]),
+            "t",
+            &ParsingConfig::default(),
+        )? {
+            println!("{r:?}");
+
+            let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
+            assert_eq!(
+                pool.to_string(),
+                "some_e(x, pe_runs(x), AgentOf(a_John, x))"
+            );
+        }
+
+        /*
+        let grammar = "saw::=pat =ag V::lambda e x pe_runs(x)\n::d= ag -ag::lambda a x lambda e y AgentOf(x,y)\n::d= pat -pat::lambda a x lambda e y PatientOf(x,y)\nJohn::d::a_John\nMary::d::a_Mary\n::V<= +pat v::lambda <e,t> P P\n::v<= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))";
+
+        let lexicon = SemanticLexicon::parse(grammar)?;
+        for (_, _, r) in lexicon.lexicon.parse(
+            &PhonContent::from(["John", "saw", "Mary"]),
+            "t",
+            &ParsingConfig::default(),
+        )? {
+            println!("{r:?}");
+
+            let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
+            assert_eq!(
+                pool.to_string(),
+                "some_e(x, pe_runs(x), AgentOf(a_John, x))"
+            );
+        }*/
         Ok(())
     }
 }

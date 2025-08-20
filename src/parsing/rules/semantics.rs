@@ -19,8 +19,10 @@ use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 pub enum SemanticRule {
     ///Apply one function to another.
     FunctionalApplication,
-    ///Store a meaning for later
+    ///Store a meaning for later, leaving behind a free variable as in QR.
     Store,
+    ///Store a meaning only.
+    OnlyStore,
     ///Apply the identity function
     Identity,
     ///Retrieve something from storage and apply it.
@@ -41,6 +43,7 @@ impl std::fmt::Display for SemanticRule {
             match self {
                 SemanticRule::FunctionalApplication => "FA",
                 SemanticRule::Store => "Store",
+                SemanticRule::OnlyStore => "OnlyStore",
                 SemanticRule::Identity => "Id",
                 SemanticRule::ApplyFromStorage => "ApplyFromStorage",
                 SemanticRule::UpdateTrace => "UpdateTrace",
@@ -195,16 +198,18 @@ impl Display for SemanticState<'_> {
 ///and all present movers)
 pub struct SemanticState<'src> {
     expr: RootedLambdaPool<'src, Expr<'src>>,
-    movers: BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>,
+    movers: BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, Option<LambdaType>)>,
 }
 
 #[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Movers<'a, 'src>(&'a BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, LambdaType)>);
+struct Movers<'a, 'src>(
+    &'a BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, Option<LambdaType>)>,
+);
 
 #[cfg(feature = "pretty")]
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Mover<'a, 'src>(&'a (RootedLambdaPool<'src, Expr<'src>>, LambdaType));
+struct Mover<'a, 'src>(&'a (RootedLambdaPool<'src, Expr<'src>>, Option<LambdaType>));
 
 #[cfg(feature = "pretty")]
 impl Serialize for Mover<'_, '_> {
@@ -215,7 +220,9 @@ impl Serialize for Mover<'_, '_> {
         let mut s = serializer.serialize_struct("Mover", 3)?;
         s.serialize_field("expr", self.0.0.to_string().as_str())?;
         s.serialize_field("tokens", &self.0.0)?;
-        s.serialize_field("type", self.0.1.to_string().as_str())?;
+        if let Some(t) = self.0.1.as_ref() {
+            s.serialize_field("type", t.to_string().as_str())?;
+        }
 
         s.end()
     }
@@ -405,6 +412,23 @@ where
         })
     }
 
+    fn only_store(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+        trace_id: TraceId,
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
+        let (mut alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+        alpha.movers.extend(beta.movers);
+        alpha.movers.insert(trace_id, (beta.expr.clone(), None));
+        Some((
+            alpha,
+            self.history_node(rule_id, SemanticRule::Store, Some(alpha_id), Some(beta_id)),
+        ))
+    }
+
     fn store(
         &mut self,
         rule_id: RuleIndex,
@@ -418,7 +442,7 @@ where
             alpha.movers.extend(beta.movers);
             alpha
                 .movers
-                .insert(trace_id, (beta.expr.clone(), trace_type));
+                .insert(trace_id, (beta.expr.clone(), Some(trace_type)));
             Some((
                 alpha,
                 self.history_node(rule_id, SemanticRule::Store, Some(alpha_id), Some(beta_id)),
@@ -441,14 +465,16 @@ where
                 .movers
                 .insert(trace_id, (stored_value, stored_type.clone()));
 
-            alpha
-                .expr
-                .lambda_abstract_free_variable(old_trace_id.0.into(), stored_type, true)
-                .unwrap();
-            alpha
-                .expr
-                .apply_new_free_variable(trace_id.0.into())
-                .unwrap();
+            if let Some(stored_type) = stored_type {
+                alpha
+                    .expr
+                    .lambda_abstract_free_variable(old_trace_id.0.into(), stored_type, true)
+                    .unwrap();
+                alpha
+                    .expr
+                    .apply_new_free_variable(trace_id.0.into())
+                    .unwrap();
+            }
         }
         (
             alpha,
@@ -464,10 +490,12 @@ where
     ) -> ApplyFromStorageResult<(SemanticState<'src>, HistoryId)> {
         let (mut alpha, alpha_id) = child;
         if let Some((stored_value, stored_type)) = alpha.movers.remove(&trace_id) {
-            alpha
-                .expr
-                .lambda_abstract_free_variable(trace_id.0.into(), stored_type, false)
-                .unwrap();
+            if let Some(stored_type) = stored_type {
+                alpha
+                    .expr
+                    .lambda_abstract_free_variable(trace_id.0.into(), stored_type, true)
+                    .unwrap();
+            }
             let SemanticState { expr, movers } = alpha;
             match expr.merge(stored_value).map(|expr| {
                 (
@@ -537,6 +565,15 @@ where
                         self.store(rule_id, child, complement, *trace_id)
                     })
                     .collect::<Vec<_>>();
+
+                new_states.extend(
+                    product
+                        .clone()
+                        .filter_map(|(child, complement)| {
+                            self.only_store(rule_id, child, complement, *trace_id)
+                        })
+                        .collect::<Vec<_>>(),
+                );
 
                 new_states.extend(product.filter_map(|(child, complement)| {
                     self.functional_application(rule_id, child, complement)
@@ -630,6 +667,11 @@ where
                 self.functional_application(rule_id, child, complement)
             }
             SemanticRule::Store => {
+                let child = get_child(0);
+                let complement = get_child(1);
+                self.store(rule_id, child, complement, trace_id.unwrap())
+            }
+            SemanticRule::OnlyStore => {
                 let child = get_child(0);
                 let complement = get_child(1);
                 self.store(rule_id, child, complement, trace_id.unwrap())

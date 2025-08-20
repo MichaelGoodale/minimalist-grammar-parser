@@ -1049,7 +1049,9 @@ impl<'a> From<Vec<Rich<'a, char>>> for LexiconParsingError<'a> {
 
 impl LexicalEntry<&str, &str> {
     ///Parses a single lexical entry and returns it as a [`LexicalEntry`].
-    pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>, LexiconParsingError> {
+    pub fn parse<'a>(
+        s: &'a str,
+    ) -> Result<LexicalEntry<&'a str, &'a str>, LexiconParsingError<'a>> {
         entry_parser::<extra::Err<Rich<char>>>()
             .parse(s)
             .into_result()

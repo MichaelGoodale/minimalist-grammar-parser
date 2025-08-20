@@ -425,7 +425,12 @@ where
         alpha.movers.insert(trace_id, (beta.expr.clone(), None));
         Some((
             alpha,
-            self.history_node(rule_id, SemanticRule::Store, Some(alpha_id), Some(beta_id)),
+            self.history_node(
+                rule_id,
+                SemanticRule::OnlyStore,
+                Some(alpha_id),
+                Some(beta_id),
+            ),
         ))
     }
 
@@ -674,7 +679,7 @@ where
             SemanticRule::OnlyStore => {
                 let child = get_child(0);
                 let complement = get_child(1);
-                self.store(rule_id, child, complement, trace_id.unwrap())
+                self.only_store(rule_id, child, complement, trace_id.unwrap())
             }
             SemanticRule::Identity => {
                 let child = get_child(0);

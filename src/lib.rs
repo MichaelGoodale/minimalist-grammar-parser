@@ -386,10 +386,10 @@ where
         if self.buffer.is_empty() {
             while let Some(mut beam) = self.parse_heap.pop() {
                 #[cfg(not(target_arch = "wasm32"))]
-                if let Some(max_time) = self.config.max_time {
-                    if max_time < self.start_time.unwrap().elapsed() {
-                        return None;
-                    }
+                if let Some(max_time) = self.config.max_time
+                    && max_time < self.start_time.unwrap().elapsed()
+                {
+                    return None;
                 }
 
                 if let Some(moment) = beam.pop_moment() {
@@ -402,13 +402,12 @@ where
                     );
                 } else if let Some((mut good_parses, p, rules)) =
                     ParseScan::yield_good_parse(beam, &self.parse_heap.rule_arena)
+                    && let Some(next_sentence) = good_parses.next()
                 {
-                    if let Some(next_sentence) = good_parses.next() {
-                        self.buffer
-                            .extend(good_parses.map(|x| (p, x, rules.clone())));
-                        let next = Some((p, next_sentence, rules));
-                        return next;
-                    }
+                    self.buffer
+                        .extend(good_parses.map(|x| (p, x, rules.clone())));
+                    let next = Some((p, next_sentence, rules));
+                    return next;
                 }
             }
         } else {

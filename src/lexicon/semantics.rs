@@ -492,7 +492,8 @@ John::0 -1::a_1";
         )? {
             println!("{r:?}");
 
-            let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
+            let (pool, h) = r.to_interpretation(&lexicon).next().unwrap();
+            h.into_rich(&lexicon, &r);
             assert_eq!(
                 pool.to_string(),
                 "some_e(x, pe_runs(x), AgentOf(a_John, x))"

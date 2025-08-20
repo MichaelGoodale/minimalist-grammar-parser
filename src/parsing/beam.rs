@@ -383,11 +383,11 @@ where
         let mut parse_heap = ParseHeap::new(BeamWrapper::new(cont, cat), config, cat);
 
         while let Some(mut beam) = parse_heap.pop() {
-            if let Some(word) = beam.beam.final_char.as_ref() {
-                if valid_chars.contains(word) {
-                    //We don't care since there's already a successful parse with that character.
-                    continue;
-                }
+            if let Some(word) = beam.beam.final_char.as_ref()
+                && valid_chars.contains(word)
+            {
+                //We don't care since there's already a successful parse with that character.
+                continue;
             }
 
             if let Some(moment) = beam.pop_moment() {

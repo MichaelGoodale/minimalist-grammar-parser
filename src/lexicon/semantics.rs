@@ -499,16 +499,22 @@ John::0 -1::a_1";
                 "some_e(x, pe_runs(x), AgentOf(a_John, x))"
             );
         }
+        let grammar =  ["saw::=pat =ag V::lambda e x pe_runs(x)",
+  "::d= pat -p::lambda a x lambda e y PatientOf(x,y)",
+  "::d= ag -a::lambda a x lambda e y AgentOf(x,y)",
+  "John::d::a_John",
+  "Mary::d::a_Mary",
+  "::V<= +p v::lambda <e,t> P lambda <e,t> Q  lambda <<e,t>, <<e,t>, t>> G lambda <e,t> Z G(P, lambda e x Q(x) & Z(x))",
+  "::v<= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))"].join("\n");
 
-        /*
-        let grammar = "saw::=pat =ag V::lambda e x pe_runs(x)\n::d= ag -ag::lambda a x lambda e y AgentOf(x,y)\n::d= pat -pat::lambda a x lambda e y PatientOf(x,y)\nJohn::d::a_John\nMary::d::a_Mary\n::V<= +pat v::lambda <e,t> P P\n::v<= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))";
+        let lexicon = SemanticLexicon::parse(grammar.as_str())?;
+        let s = PhonContent::from(["John", "saw", "Mary"]);
 
-        let lexicon = SemanticLexicon::parse(grammar)?;
-        for (_, _, r) in lexicon.lexicon.parse(
-            &PhonContent::from(["John", "saw", "Mary"]),
-            "t",
-            &ParsingConfig::default(),
-        )? {
+        for (_, _, r) in lexicon
+            .lexicon
+            .parse(&s, "t", &ParsingConfig::default())
+            .unwrap()
+        {
             println!("{r:?}");
 
             let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
@@ -516,7 +522,7 @@ John::0 -1::a_1";
                 pool.to_string(),
                 "some_e(x, pe_runs(x), AgentOf(a_John, x))"
             );
-        }*/
+        }
         Ok(())
     }
 }

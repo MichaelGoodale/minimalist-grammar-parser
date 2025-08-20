@@ -326,14 +326,18 @@ type ParserOutput<'a, T> = (LogProb<f64>, &'a [PhonContent<T>], RulePool);
 type GeneratorOutput<T> = (LogProb<f64>, Vec<PhonContent<T>>, RulePool);
 
 ///An iterator constructed by [`Lexicon::fuzzy_parse`]
-pub struct FuzzyParser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug>
-{
+pub struct FuzzyParser<
+    'a,
+    'b,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+> {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<T, FuzzyScan<'a, T>>,
+    parse_heap: ParseHeap<T, FuzzyScan<'b, T>>,
     config: &'a ParsingConfig,
 }
 
-impl<T, Category> Iterator for FuzzyParser<'_, T, Category>
+impl<T, Category> Iterator for FuzzyParser<'_, '_, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug + Hash,
@@ -360,22 +364,22 @@ where
 }
 
 ///An iterator constructed by [`Lexicon::parse`] and [`Lexicon::parse_multiple`]
-pub struct Parser<'a, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
+pub struct Parser<'a, 'b, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone + std::fmt::Debug> {
     lexicon: &'a Lexicon<T, Category>,
-    parse_heap: ParseHeap<T, ParseScan<'a, T>>,
+    parse_heap: ParseHeap<T, ParseScan<'b, T>>,
 
     #[cfg(not(target_arch = "wasm32"))]
     start_time: Option<Instant>,
     config: &'a ParsingConfig,
-    buffer: Vec<ParserOutput<'a, T>>,
+    buffer: Vec<ParserOutput<'b, T>>,
 }
 
-impl<'a, T, Category> Iterator for Parser<'a, T, Category>
+impl<'a, 'b, T, Category> Iterator for Parser<'a, 'b, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
 {
-    type Item = ParserOutput<'a, T>;
+    type Item = ParserOutput<'b, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         #[cfg(not(target_arch = "wasm32"))]
@@ -466,12 +470,12 @@ where
     ///
     ///Returns an iterator, [`Parser`] which has items of type `(`[`LogProb<f64>`]`, &'a [T],
     ///`[`RulePool`]`)`
-    pub fn parse<'a, 'b: 'a>(
+    pub fn parse<'a, 'b>(
         &'a self,
         s: &'b [PhonContent<T>],
         category: Category,
-        config: &'b ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>, ParsingError<Category>> {
+        config: &'a ParsingConfig,
+    ) -> Result<Parser<'a, 'b, T, Category>, ParsingError<Category>> {
         let cat = self.find_category(&category)?;
 
         let beam = BeamWrapper::new(
@@ -492,12 +496,12 @@ where
     }
 
     ///Functions like [`Lexicon::parse`] but parsing multiple grammars at once.
-    pub fn parse_multiple<'a, 'b: 'a, U>(
+    pub fn parse_multiple<'a, 'b, U>(
         &'a self,
         sentences: &'b [U],
         category: Category,
         config: &'a ParsingConfig,
-    ) -> Result<Parser<'a, T, Category>, ParsingError<Category>>
+    ) -> Result<Parser<'a, 'b, T, Category>, ParsingError<Category>>
     where
         U: AsRef<[PhonContent<T>]>,
     {
@@ -521,12 +525,12 @@ where
 
     ///Functions like [`Lexicon::parse`] or [`Lexicon::generate`] but will return parses that are
     ///close to the provided sentences, but are not necessarily the same.
-    pub fn fuzzy_parse<'a, U>(
+    pub fn fuzzy_parse<'a, 'b, U>(
         &'a self,
-        sentences: &'a [U],
+        sentences: &'b [U],
         category: Category,
         config: &'a ParsingConfig,
-    ) -> Result<FuzzyParser<'a, T, Category>, ParsingError<Category>>
+    ) -> Result<FuzzyParser<'a, 'b, T, Category>, ParsingError<Category>>
     where
         U: AsRef<[PhonContent<T>]>,
     {

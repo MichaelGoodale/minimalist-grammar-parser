@@ -110,9 +110,9 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> ParseScan<'a, T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FuzzyScan<'a, T> {
+pub(crate) struct FuzzyScan<'b, T> {
     pub generated_sentences: Vec<PhonContent<T>>,
-    pub sentence_guides: Vec<(&'a [PhonContent<T>], usize)>,
+    pub sentence_guides: Vec<(&'b [PhonContent<T>], usize)>,
 }
 
 impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {

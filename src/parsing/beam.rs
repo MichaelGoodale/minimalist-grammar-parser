@@ -56,12 +56,24 @@ where
         }
 
         self.sentence.retain_mut(|(sentence, position)| {
-            if let Some(PhonContent::Affixed(string)) = sentence.get(*position) {
-                if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
-                    *position += 1;
-                    true
-                } else {
-                    false
+            if let Some(s) = sentence.get(*position) {
+                match s {
+                    PhonContent::Normal(s) => {
+                        if heads.len() == 1 && heads.first().unwrap() == &s {
+                            *position += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    PhonContent::Affixed(string) => {
+                        if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
+                            *position += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    }
                 }
             } else {
                 false
@@ -149,28 +161,39 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
-        let heads_vec: Vec<_> = heads.inorder().into_iter().cloned().collect();
-        if !heads_vec.is_empty() {
-            self.generated_sentences
-                .push(PhonContent::Affixed(heads_vec));
-        }
+        let mut heads: Vec<_> = heads.inorder().into_iter().cloned().collect();
         self.sentence_guides.retain_mut(|(sentence, position)| {
-            if let Some(PhonContent::Affixed(string)) = sentence.get(*position) {
-                if heads
-                    .inorder()
-                    .iter()
-                    .zip(string.iter())
-                    .all(|(a, b)| *a == b)
-                {
-                    *position += 1;
-                    true
-                } else {
-                    false
+            if let Some(s) = sentence.get(*position) {
+                match s {
+                    PhonContent::Normal(s) => {
+                        if heads.len() == 1 && heads.first().unwrap() == s {
+                            *position += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    PhonContent::Affixed(string) => {
+                        if heads.iter().zip(string.iter()).all(|(a, b)| a == b) {
+                            *position += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    }
                 }
             } else {
                 false
             }
         });
+        if !heads.is_empty() {
+            if heads.len() == 1 {
+                self.generated_sentences
+                    .push(PhonContent::Normal(heads.pop().unwrap()));
+            } else {
+                self.generated_sentences.push(PhonContent::Affixed(heads));
+            }
+        }
         true
     }
 }
@@ -193,9 +216,14 @@ where
     }
 
     fn multiscan(&mut self, heads: &FilledHeadTree<T>) -> bool {
-        let heads_vec: Vec<_> = heads.inorder().into_iter().cloned().collect();
-        if !heads_vec.is_empty() {
-            self.sentence.push(PhonContent::Affixed(heads_vec));
+        let mut heads: Vec<_> = heads.inorder().into_iter().cloned().collect();
+        if !heads.is_empty() {
+            if heads.len() == 1 {
+                self.sentence
+                    .push(PhonContent::Normal(heads.pop().unwrap()));
+            } else {
+                self.sentence.push(PhonContent::Affixed(heads));
+            }
         }
         true
     }
@@ -258,12 +286,24 @@ where
             return true;
         }
 
-        if let Some(PhonContent::Affixed(string)) = self.prefix.get(self.position) {
-            if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
-                self.position += 1;
-                true
-            } else {
-                false
+        if let Some(s) = self.prefix.get(self.position) {
+            match s {
+                PhonContent::Normal(s) => {
+                    if heads.len() == 1 && heads.first().unwrap() == &s {
+                        self.position += 1;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                PhonContent::Affixed(string) => {
+                    if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
+                        self.position += 1;
+                        true
+                    } else {
+                        false
+                    }
+                }
             }
         } else if self.position == self.prefix.len() {
             self.final_char = Some(Continuation::AffixedWord(
@@ -416,11 +456,7 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings
-            .into_iter()
-            .map(|s| PhonContent::new(s))
-            .zip(continuations)
-        {
+        for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
             let cont = lex.valid_continuations("C", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
@@ -440,11 +476,7 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings
-            .into_iter()
-            .map(|s| PhonContent::new(s))
-            .zip(continuations)
-        {
+        for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
@@ -467,11 +499,7 @@ mod test {
         .into_iter()
         .map(|x| x.into_iter().collect());
 
-        for (s, valid) in strings
-            .into_iter()
-            .map(|s| PhonContent::new(s))
-            .zip(continuations)
-        {
+        for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }

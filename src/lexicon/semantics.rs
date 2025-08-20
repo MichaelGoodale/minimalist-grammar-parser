@@ -415,11 +415,7 @@ mod test {
             let (_, _, rules) = lex
                 .lexicon
                 .parse(
-                    &[
-                        PhonContent::Normal("everyone"),
-                        PhonContent::Affixed(vec!["likes"]),
-                        PhonContent::Normal("someone"),
-                    ],
+                    &PhonContent::from(["everyone", "likes", "someone"]),
                     "t",
                     &config,
                 )

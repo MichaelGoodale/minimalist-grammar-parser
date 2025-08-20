@@ -500,11 +500,11 @@ John::0 -1::a_1";
             );
         }
         let grammar =  ["saw::=pat =ag V::lambda e x pe_runs(x)",
-  "::d= pat -p::lambda a x lambda e y PatientOf(x,y)",
-  "::d= ag -a::lambda a x lambda e y AgentOf(x,y)",
+  "::d= pat -pat::lambda a x lambda e y PatientOf(x,y)",
+  "::d= ag -ag::lambda a x lambda e y AgentOf(x,y)",
   "John::d::a_John",
   "Mary::d::a_Mary",
-  "::V<= +p v::lambda <e,t> P lambda <e,t> Q  lambda <<e,t>, <<e,t>, t>> G lambda <e,t> Z G(P, lambda e x Q(x) & Z(x))",
+  "::V<= +pat v::lambda <e,t> P lambda <e,t> Q  lambda <<e,t>, <<e,t>, t>> G lambda <e,t> Z G(P, lambda e x Q(x) & Z(x))",
   "::v<= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))"].join("\n");
 
         let lexicon = SemanticLexicon::parse(grammar.as_str())?;
@@ -520,7 +520,7 @@ John::0 -1::a_1";
             let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
             assert_eq!(
                 pool.to_string(),
-                "some_e(x, pe_runs(x), AgentOf(a_John, x))"
+                "some_e(x, pe_runs(x), PatientOf(a_Mary, x) & AgentOf(a_John, x))"
             );
         }
         Ok(())

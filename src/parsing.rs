@@ -517,6 +517,7 @@ fn unmerge<
             child: child_node,
             child_id,
             complement_id,
+            affix: head_info != HeadMovement::Inherit, //This means we're in an affix merge
         },
         moment.tree.id,
     );

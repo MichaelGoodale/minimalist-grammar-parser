@@ -23,7 +23,7 @@ lazy_static! {
 #[test]
 fn simple_scan() -> Result<()> {
     let v = vec![SimpleLexicalEntry::parse("hello::h")?];
-    let lexicon = Lexicon::new(v);
+    let lexicon = Lexicon::new(v, false);
     let s: Vec<_> = PhonContent::new(vec!["hello"]);
     lexicon.parse(&s, "h", &CONFIG)?.next().unwrap();
     Ok(())
@@ -37,7 +37,7 @@ fn simple_merge() -> Result<()> {
         SimpleLexicalEntry::parse("drinks::d= =d v")?,
         SimpleLexicalEntry::parse("beer::n")?,
     ];
-    let lexicon = Lexicon::new(v);
+    let lexicon = Lexicon::new(v, false);
     lexicon
         .parse(&PhonContent::from(["the", "man"]), "d", &CONFIG)?
         .next()
@@ -153,7 +153,7 @@ fn moving_parse() -> anyhow::Result<()> {
             }
             true
         });
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::new(v, false);
 
         assert!(
             lex.parse(&PhonContent::new(bad_sentence), "C", &CONFIG)?
@@ -376,12 +376,15 @@ f::+g c";
 
 #[test]
 fn capped_beams() -> Result<()> {
-    let lexicon = Lexicon::new(vec![
-        LexicalEntry::parse("a::=b c")?,
-        LexicalEntry::parse("a::=d c")?,
-        LexicalEntry::parse("b::=c b")?,
-        LexicalEntry::parse("d::=c d")?,
-    ]);
+    let lexicon = Lexicon::new(
+        vec![
+            LexicalEntry::parse("a::=b c")?,
+            LexicalEntry::parse("a::=d c")?,
+            LexicalEntry::parse("b::=c b")?,
+            LexicalEntry::parse("d::=c d")?,
+        ],
+        false,
+    );
     let max_beams = 12;
     let g: Vec<_> = lexicon
         .generate(
@@ -413,6 +416,7 @@ fn simple_movement() -> Result<()> {
             .into_iter()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
     );
     let v: Vec<_> = lexicon
         .generate("t", &CONFIG)?
@@ -447,6 +451,7 @@ fn proper_distributions() -> Result<()> {
             .into_iter()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        true,
     );
     let v = vec![
         (-LN_2, PhonContent::new(vec!["a"])),
@@ -546,6 +551,7 @@ fn simple_head_movement() -> Result<()> {
             .into_iter()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
     );
     let v: Vec<String> = lexicon
         .generate("t", &CONFIG)?
@@ -594,6 +600,7 @@ fn empty_head_movement() -> Result<()> {
             .into_iter()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
     );
     let v: Vec<Vec<PhonContent<&str>>> = lexicon
         .generate("d", &CONFIG)?
@@ -621,6 +628,7 @@ fn head_movement_checks() -> Result<()> {
             .into_iter()
             .map(SimpleLexicalEntry::parse)
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
     );
 
     let v: Vec<String> = lexicon

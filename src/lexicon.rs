@@ -147,7 +147,7 @@ fn grammar_parser<'src>()
         .allow_leading()
         .allow_trailing()
         .collect::<Vec<_>>()
-        .map(Lexicon::new)
+        .map(|x| Lexicon::new(x, true))
         .then_ignore(end())
 }
 
@@ -254,6 +254,12 @@ pub(crate) enum FeatureOrLemma<T: Eq, Category: Eq> {
     Lemma(Option<T>),
     Feature(Feature<Category>),
     Complement(Category, Direction),
+}
+
+impl<T: Eq, C: Eq> FeatureOrLemma<T, C> {
+    fn is_lemma(&self) -> bool {
+        matches!(self, FeatureOrLemma::Lemma(_))
+    }
 }
 
 #[cfg(feature = "sampling")]
@@ -785,14 +791,22 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     }
 
     ///Create a new grammar from a [`Vec`] of [`LexicalEntry`]
-    pub fn new(items: Vec<LexicalEntry<T, Category>>) -> Self {
+    pub fn new(items: Vec<LexicalEntry<T, Category>>, collapse_lemmas: bool) -> Self {
         let n_items = items.len();
-        Self::new_with_weights(items, std::iter::repeat_n(1.0, n_items).collect())
+        Self::new_with_weights(
+            items,
+            std::iter::repeat_n(1.0, n_items).collect(),
+            collapse_lemmas,
+        )
     }
 
     ///Create a new grammar from a [`Vec`] of [`LexicalEntry`] where lexical entries are weighted
     ///in probability
-    pub fn new_with_weights(items: Vec<LexicalEntry<T, Category>>, weights: Vec<f64>) -> Self {
+    pub fn new_with_weights(
+        items: Vec<LexicalEntry<T, Category>>,
+        weights: Vec<f64>,
+        collapse_lemmas: bool,
+    ) -> Self {
         let mut graph = StableDiGraph::new();
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
@@ -804,10 +818,11 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             for feature in lexeme.into_iter().rev() {
                 //We go down the feature list and add nodes and edges corresponding to features
                 //If they exist already, we just follow the path until we have to start adding.
-                node_index = if let Some((nx, edge_index)) = graph
-                    .edges_directed(node_index, petgraph::Direction::Outgoing)
-                    .find(|x| graph[x.target()] == feature)
-                    .map(|x| (x.target(), x.id()))
+                node_index = if (!feature.is_lemma() || collapse_lemmas)
+                    && let Some((nx, edge_index)) = graph
+                        .edges_directed(node_index, petgraph::Direction::Outgoing)
+                        .find(|x| graph[x.target()] == feature)
+                        .map(|x| (x.target(), x.id()))
                 {
                     graph[edge_index] += weight;
                     nx
@@ -1307,7 +1322,7 @@ mod tests {
                     || strings.contains(&format!("{}", lex).replace('ε', "").as_str())
             )
         }
-        let lex_2 = Lexicon::new(lex.lexemes().unwrap());
+        let lex_2 = Lexicon::new(lex.lexemes().unwrap(), false);
         assert_eq!(lex, lex_2);
         assert_eq!(
             format!("{}", Dot::new(&lex.graph)),

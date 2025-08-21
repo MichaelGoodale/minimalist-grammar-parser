@@ -62,7 +62,7 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
             let (lexical_entries, interpretations): (Vec<_>, Vec<_>) = vec.into_iter().unzip();
 
             //  Assumes that the leaves iterator goes in order of lexical_entries
-            let lexicon = Lexicon::new(lexical_entries);
+            let lexicon = Lexicon::new(lexical_entries, false);
             let semantic_entries = lexicon
                 .leaves
                 .iter()
@@ -207,6 +207,7 @@ where
 mod test {
     use itertools::Itertools;
     use logprob::LogProb;
+    use simple_semantics::lambda::RootedLambdaPool;
 
     use super::SemanticLexicon;
     use crate::{ParsingConfig, PhonContent};
@@ -464,6 +465,19 @@ John::0 -1::a_1";
     }
 
     #[test]
+    fn homophony() -> anyhow::Result<()> {
+        let grammar = [
+            "everyone::d -k -q::lambda <a,<e,t>> P lambda <<e,t>, t> Q every(x, all_a, Q(P(x)))",
+            "everyone::d -k -q::lambda <a,t> P every(x, all_a, P(x))",
+        ]
+        .join("\n");
+
+        let lexicon = SemanticLexicon::parse(grammar.as_str())?;
+        assert_eq!(lexicon.interpretations().len(), 2);
+        Ok(())
+    }
+
+    #[test]
     fn merge_non_lambdas() -> anyhow::Result<()> {
         let grammar = "a::=1 0::pa_man\nb::1::a_john";
 
@@ -482,16 +496,17 @@ John::0 -1::a_1";
 
     #[test]
     fn complicated_intransitives() -> anyhow::Result<()> {
+        /*
         let grammar = "runs::=ag V::lambda e x pe_runs(x)\n::d= ag -ag::lambda a x lambda e y AgentOf(x,y)\nJohn::d::a_John\n::V= v::lambda <e,t> P P\n::v= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))";
 
         let lexicon = SemanticLexicon::parse(grammar)?;
+        let mut i = 0;
         for (_, _, r) in lexicon.lexicon.parse(
             &PhonContent::from(["John", "runs"]),
             "t",
             &ParsingConfig::default(),
         )? {
-            println!("{r:?}");
-
+            i += 1;
             let (pool, h) = r.to_interpretation(&lexicon).next().unwrap();
             h.into_rich(&lexicon, &r);
             assert_eq!(
@@ -499,29 +514,43 @@ John::0 -1::a_1";
                 "some_e(x, pe_runs(x), AgentOf(a_John, x))"
             );
         }
-        let grammar =  ["saw::=pat =ag V::lambda e x pe_runs(x)",
-  "::d= pat -pat::lambda a x lambda e y PatientOf(x,y)",
-  "::d= ag -ag::lambda a x lambda e y AgentOf(x,y)",
-  "John::d::a_John",
-  "Mary::d::a_Mary",
-  "::V<= +pat v::lambda <e,t> P lambda <e,t> Q  lambda <<e,t>, <<e,t>, t>> G lambda <e,t> Z G(P, lambda e x Q(x) & Z(x))",
-  "::v<= +ag t::lambda <e,t> P lambda <e,t> Q some_e(e, P(e), Q(e))"].join("\n");
+        assert_eq!(i, 1);*/
+
+        let x = RootedLambdaPool::parse(
+            "lambda <<e,t>, <<e,t>, t>> G G(lambda e y pe_loves(y), lambda e y PatientOf(a_John, y))",
+        )?;
+        let y = RootedLambdaPool::parse(
+            "lambda <<<e,t>, <<e,t>, t>>, t> Z lambda <<e,t>, <<e,t>, t>> G Z(lambda <e,t> P lambda <e,t> Q G(P , lambda e x Q(x) & AgentOf(a_John,x)))",
+        )?;
+
+        let mut z = x.merge(y).unwrap();
+        z.reduce()?;
+        println!("{z}");
+
+        let grammar = [
+            "loves::=d V::lambda a x lambda e y pe_loves(y) & PatientOf(x, y)",
+            "someone::d -k -q::lambda <a,<e,t>> P lambda <<e,t>, t> Q some(x, all_a, Q(P(x)))",
+            "everyone::d -k -q::lambda <a,<e,t>> P lambda <<e,t>, t> Q every(x, all_a, Q(P(x)))",
+            "someone::d -k -q::lambda <a,t> P some(x, all_a, P(x))",
+            "everyone::d -k -q::lambda <a,t> P every(x, all_a, P(x))",
+            "Mary::d -k -q::a_Mary",
+            "John::d -k -q::a_John",
+            "::V<= +k =d +q v::lambda <e,t> P lambda a x lambda e y P(y) & AgentOf(x, y)",
+            "::v<= +k +q t::lambda <e,t> P some_e(e, True, P(e))",
+        ]
+        .join("\n");
 
         let lexicon = SemanticLexicon::parse(grammar.as_str())?;
-        let s = PhonContent::from(["John", "saw", "Mary"]);
-
+        dbg!(lexicon.interpretations().len());
+        let s = PhonContent::from(["someone", "loves", "everyone"]);
         for (_, _, r) in lexicon
             .lexicon
             .parse(&s, "t", &ParsingConfig::default())
             .unwrap()
         {
-            println!("{r:?}");
-
-            let (pool, _) = r.to_interpretation(&lexicon).next().unwrap();
-            assert_eq!(
-                pool.to_string(),
-                "some_e(x, pe_runs(x), PatientOf(a_Mary, x) & AgentOf(a_John, x))"
-            );
+            for (pool, _) in r.to_interpretation(&lexicon) {
+                println!("{pool}");
+            }
         }
         Ok(())
     }

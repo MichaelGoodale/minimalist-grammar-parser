@@ -59,6 +59,7 @@ pub(crate) enum Rule {
         child: NodeIndex,
         child_id: RuleIndex,
         complement_id: RuleIndex,
+        affix: bool,
     },
     UnmergeFromMover {
         child: NodeIndex,

@@ -1,10 +1,13 @@
 //! This module defines the basic semantic rules which allow for semantic derivations.
 use std::{collections::BTreeMap, fmt::Display};
 
-use crate::lexicon::{LexemeId, SemanticLexicon};
+use crate::{
+    lexicon::{LexemeId, SemanticLexicon},
+    parsing::rules::StolenType,
+};
 use itertools::Itertools;
 use simple_semantics::{
-    lambda::{RootedLambdaPool, types::LambdaType},
+    lambda::{FreeVar, RootedLambdaPool, types::LambdaType},
     language::Expr,
 };
 
@@ -19,6 +22,10 @@ use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 pub enum SemanticRule {
     ///Apply one function to another.
     FunctionalApplication,
+    ///Store an affix for later, leaving behind a free variable as in QR.
+    StoreAffix,
+    ///Retrieve from the affix store
+    ApplyFromAffixStorage,
     ///Store a meaning for later, leaving behind a free variable as in QR.
     Store,
     ///Store a meaning only.
@@ -43,9 +50,11 @@ impl std::fmt::Display for SemanticRule {
             match self {
                 SemanticRule::FunctionalApplication => "FA",
                 SemanticRule::Store => "Store",
+                SemanticRule::StoreAffix => "StoreAffix",
                 SemanticRule::OnlyStore => "OnlyStore",
                 SemanticRule::Identity => "Id",
                 SemanticRule::ApplyFromStorage => "ApplyFromStorage",
+                SemanticRule::ApplyFromAffixStorage => "ApplyFromAffixStorage",
                 SemanticRule::UpdateTrace => "UpdateTrace",
                 SemanticRule::Trace => "Trace",
                 SemanticRule::Scan(_) => "LexicalEntry",
@@ -199,6 +208,7 @@ impl Display for SemanticState<'_> {
 pub struct SemanticState<'src> {
     expr: RootedLambdaPool<'src, Expr<'src>>,
     movers: BTreeMap<TraceId, (RootedLambdaPool<'src, Expr<'src>>, Option<LambdaType>)>,
+    affix: Option<LambdaType>,
 }
 
 #[cfg(feature = "pretty")]
@@ -262,6 +272,7 @@ impl<'src> SemanticState<'src> {
         SemanticState {
             expr: alpha,
             movers: BTreeMap::default(),
+            affix: None,
         }
     }
 
@@ -274,18 +285,22 @@ impl<'src> SemanticState<'src> {
         let SemanticState {
             expr: alpha,
             movers: mut alpha_movers,
-            ..
+            affix,
         } = alpha;
         let SemanticState {
             expr: beta,
             movers: beta_movers,
-            ..
+            affix: beta_affix,
         } = beta;
-        if let Some(alpha) = alpha.merge(beta) {
+
+        if beta_affix.is_none()
+            && let Some(alpha) = alpha.merge(beta)
+        {
             alpha_movers.extend(beta_movers);
             Some(SemanticState {
                 expr: alpha,
                 movers: alpha_movers,
+                affix,
             })
         } else {
             None
@@ -434,6 +449,108 @@ where
         ))
     }
 
+    fn store_affix(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
+        let (mut alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+
+        let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
+        if overlapping_traces || alpha.affix.is_some() {
+            return None;
+        }
+
+        if let Ok(trace_type) = alpha.expr.apply_new_free_variable(FreeVar::Named("affix"))
+            && beta
+                .affix
+                .as_ref()
+                .map(|x| x == &trace_type)
+                .unwrap_or(true)
+        {
+            let SemanticState {
+                expr: alpha,
+                movers: mut alpha_movers,
+                ..
+            } = alpha;
+            let SemanticState {
+                expr: mut beta,
+                movers: beta_movers,
+                affix: beta_affix,
+            } = beta;
+            alpha_movers.extend(beta_movers);
+
+            if beta_affix.is_none() {
+                let Ok(beta_trace) = beta.apply_new_free_variable(FreeVar::Named("affix")) else {
+                    return None;
+                };
+                if beta_trace != trace_type {
+                    return None;
+                }
+            }
+
+            alpha.merge(beta).map(|alpha| {
+                (
+                    SemanticState {
+                        expr: alpha,
+                        movers: alpha_movers,
+                        affix: Some(trace_type),
+                    },
+                    self.history_node(
+                        rule_id,
+                        SemanticRule::StoreAffix,
+                        Some(alpha_id),
+                        Some(beta_id),
+                    ),
+                )
+            })
+        } else {
+            None
+        }
+    }
+
+    fn apply_affix(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
+        let (mut alpha, alpha_id) = child;
+        let (mut beta, beta_id) = complement;
+        if alpha.affix.is_none()
+            && let Some(stored_type) = beta.affix.take()
+        {
+            beta.expr
+                .lambda_abstract_free_variable(FreeVar::Named("affix"), stored_type, true)
+                .unwrap();
+            alpha.movers.extend(beta.movers);
+            let SemanticState {
+                expr,
+                movers,
+                affix,
+            } = alpha;
+            expr.merge(beta.expr).map(|expr| {
+                (
+                    SemanticState {
+                        expr,
+                        movers,
+                        affix,
+                    },
+                    self.history_node(
+                        rule_id,
+                        SemanticRule::ApplyFromAffixStorage,
+                        Some(alpha_id),
+                        Some(beta_id),
+                    ),
+                )
+            })
+        } else {
+            None
+        }
+    }
+
     fn store(
         &mut self,
         rule_id: RuleIndex,
@@ -501,10 +618,18 @@ where
                     .lambda_abstract_free_variable(trace_id.0.into(), stored_type, true)
                     .unwrap();
             }
-            let SemanticState { expr, movers } = alpha;
+            let SemanticState {
+                expr,
+                movers,
+                affix,
+            } = alpha;
             match expr.merge(stored_value).map(|expr| {
                 (
-                    SemanticState { expr, movers },
+                    SemanticState {
+                        expr,
+                        movers,
+                        affix,
+                    },
                     self.history_node(
                         rule_id,
                         SemanticRule::ApplyFromStorage,
@@ -542,18 +667,42 @@ where
             Rule::Unmerge {
                 child_id,
                 complement_id,
+                head,
                 ..
             } => {
                 let complements = self.get_previous_rules(*complement_id);
                 let children = self.get_previous_rules(*child_id);
 
-                children
-                    .into_iter()
-                    .cartesian_product(complements)
-                    .filter_map(|(child, complement)| {
-                        self.functional_application(rule_id, child, complement)
-                    })
-                    .collect()
+                let combos = children.into_iter().cartesian_product(complements);
+
+                match head {
+                    StolenType::Normal => combos
+                        .filter_map(|(child, complement)| {
+                            self.functional_application(rule_id, child, complement)
+                        })
+                        .collect(),
+                    StolenType::Stolen => {
+                        let mut regular: Vec<_> = combos
+                            .clone()
+                            .filter_map(|(child, complement)| {
+                                self.functional_application(rule_id, child, complement)
+                            })
+                            .collect();
+
+                        regular.extend(combos.filter_map(|(child, complement)| {
+                            self.store_affix(rule_id, child, complement)
+                        }));
+
+                        regular
+                    }
+
+                    StolenType::Stealer => combos
+                        .filter_map(|(child, complement)| match complement.0.affix.as_ref() {
+                            Some(_) => self.apply_affix(rule_id, child, complement),
+                            None => self.functional_application(rule_id, child, complement),
+                        })
+                        .collect(),
+                }
             }
             Rule::UnmergeFromMover {
                 child_id,
@@ -714,6 +863,16 @@ where
                     SemanticState::new(self.lexicon.interpretation(node).clone()),
                     HistoryId(0),
                 ))
+            }
+            SemanticRule::StoreAffix => {
+                let child = get_child(0);
+                let complement = get_child(1);
+                self.store_affix(rule_id, child, complement)
+            }
+            SemanticRule::ApplyFromAffixStorage => {
+                let child = get_child(0);
+                let complement = get_child(1);
+                self.apply_affix(rule_id, child, complement)
             }
         };
 

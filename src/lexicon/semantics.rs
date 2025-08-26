@@ -529,13 +529,11 @@ John::0 -1::a_1";
 
         let grammar = [
             "loves::=d V::lambda a x lambda e y pe_loves(y) & PatientOf(x, y)",
-            "someone::d -k -q::lambda <a,<e,t>> P lambda <<e,t>, t> Q some(x, all_a, Q(P(x)))",
-            "everyone::d -k -q::lambda <a,<e,t>> P lambda <<e,t>, t> Q every(x, all_a, Q(P(x)))",
             "someone::d -k -q::lambda <a,t> P some(x, all_a, P(x))",
             "everyone::d -k -q::lambda <a,t> P every(x, all_a, P(x))",
             "Mary::d -k -q::a_Mary",
             "John::d -k -q::a_John",
-            "::V<= +k =d +q v::lambda <e,t> P lambda a x lambda e y P(y) & AgentOf(x, y)",
+            "::V<= +k =d +q v::lambda e y lambda t phi lambda a x phi & AgentOf(x, y)",
             "::v<= +k +q t::lambda <e,t> P some_e(e, True, P(e))",
         ]
         .join("\n");
@@ -552,6 +550,7 @@ John::0 -1::a_1";
                 println!("{pool}");
             }
         }
+        panic!();
         Ok(())
     }
 }

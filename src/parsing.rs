@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
-use crate::parsing::rules::StolenInfo;
+use crate::parsing::rules::{StolenInfo, StolenType};
 use crate::parsing::trees::{GornIterator, StolenHead};
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
@@ -517,7 +517,11 @@ fn unmerge<
             child: child_node,
             child_id,
             complement_id,
-            affix: head_info != HeadMovement::Inherit, //This means we're in an affix merge
+            head: match child_head {
+                Some(StolenHead::Stealer(_)) => StolenType::Stealer,
+                Some(StolenHead::StolenHead(..)) => StolenType::Stolen,
+                None => StolenType::Normal,
+            },
         },
         moment.tree.id,
     );

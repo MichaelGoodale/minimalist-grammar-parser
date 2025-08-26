@@ -45,6 +45,13 @@ pub(crate) enum StolenInfo {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub(crate) enum StolenType {
+    Normal,
+    Stolen,
+    Stealer,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum Rule {
     Start {
         node: NodeIndex,
@@ -59,7 +66,7 @@ pub(crate) enum Rule {
         child: NodeIndex,
         child_id: RuleIndex,
         complement_id: RuleIndex,
-        affix: bool,
+        head: StolenType,
     },
     UnmergeFromMover {
         child: NodeIndex,

@@ -476,20 +476,11 @@ where
                 ..
             } = alpha;
             let SemanticState {
-                expr: mut beta,
+                expr: beta,
                 movers: beta_movers,
-                affix: beta_affix,
+                ..
             } = beta;
             alpha_movers.extend(beta_movers);
-
-            if beta_affix.is_none() {
-                let Ok(beta_trace) = beta.apply_new_free_variable(FreeVar::Named("affix")) else {
-                    return None;
-                };
-                if beta_trace != trace_type {
-                    return None;
-                }
-            }
 
             alpha.merge(beta).map(|alpha| {
                 (
@@ -879,7 +870,6 @@ where
         let s = history.get_mut(rule_id.0).unwrap();
         let state = &mut s.1;
 
-        //TODO: this paniced in some downstream code, see if you can find out why.
         let mut value = value.unwrap().0;
         value.expr.reduce().unwrap();
 

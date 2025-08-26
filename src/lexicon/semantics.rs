@@ -533,14 +533,14 @@ John::0 -1::a_1";
             "everyone::d -k -q::lambda <a,t> P every(x, all_a, P(x))",
             "Mary::d -k -q::a_Mary",
             "John::d -k -q::a_John",
-            "::V<= +k =d +q v::lambda e y lambda t phi lambda a x phi & AgentOf(x, y)",
+            "::V<= +k =d +q v::lambda <<e,t>, t> G lambda <e,t> P lambda a x G(lambda e y AgentOf(x, y) & P(y))",
             "::v<= +k +q t::lambda <e,t> P some_e(e, True, P(e))",
         ]
         .join("\n");
 
         let lexicon = SemanticLexicon::parse(grammar.as_str())?;
         dbg!(lexicon.interpretations().len());
-        let s = PhonContent::from(["someone", "loves", "everyone"]);
+        let s = PhonContent::from(["everyone", "loves", "someone"]);
         for (_, _, r) in lexicon
             .lexicon
             .parse(&s, "t", &ParsingConfig::default())
@@ -550,7 +550,6 @@ John::0 -1::a_1";
                 println!("{pool}");
             }
         }
-        panic!();
         Ok(())
     }
 }

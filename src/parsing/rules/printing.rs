@@ -965,7 +965,7 @@ mod test {
             println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
                 rules.to_tree(&lex).to_latex(),
-                "\\begin{forest}[\\der{T} [\\der{T -l}, name=nodet0 [\\der{T -l}, name=nodet2 [\\plainlex{T -r -l}{$\\epsilon$}] [\\der{+l T -l} [$t$, name=tracet3] [\\plainlex{=A +l T -l}{a}]]] [\\der{+l T -l} [$t$, name=tracet1] [\\plainlex{=B +l T -l}{b}]]] [\\der{+l T} [\\der{B -r}, name=nodet1 [\\der{A -r}, name=nodet3 [$t$, name=tracet5] [\\der{+r A -r} [$t$, name=tracet4] [\\plainlex{=T +r A -r}{a}]]] [\\der{+r B -r} [$t$, name=tracet2] [\\plainlex{=T +r B -r}{b}]]] [\\der{+r +l T} [$t$, name=tracet0] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
+                "\\begin{forest}[\\der{T} [\\der{T -l}, name=nodet0 [\\der{T -l}, name=nodet2 [\\plainlex{T -r -l}{$\\epsilon$}] [\\der{+l T -l} [$t$, name=tracet3] [\\plainlex{=A +l T -l}{a}]]] [\\der{+l T -l} [$t$, name=tracet1] [\\plainlex{=B +l T -l}{b}]]] [\\der{+l T} [\\der{B -r}, name=nodet1 [\\der{A -r}, name=nodet3 [$t$, name=tracet4] [\\der{+r A -r} [$t$, name=tracet5] [\\plainlex{=T +r A -r}{a}]]] [\\der{+r B -r} [$t$, name=tracet2] [\\plainlex{=T +r B -r}{b}]]] [\\der{+r +l T} [$t$, name=tracet0] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
             );
         }
         Ok(())

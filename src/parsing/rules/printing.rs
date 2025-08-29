@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use petgraph::Direction::Incoming;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
@@ -56,6 +57,23 @@ impl std::fmt::Display for MGEdge {
     }
 }
 
+/// Reorganises <(a,b), (b,c), (c,d), (e, f)> to <<a,b,c,d>, <e,f>>
+/// Can't handle orders like <(a,b), (c,d), (b,c)> so we have to sort beforehand
+fn organise_movements<T: PartialEq + Copy>(v: &[(T, T)]) -> Vec<Vec<T>> {
+    let mut threads: Vec<Vec<T>> = vec![];
+    for (start, end) in v {
+        if let Some(x) = threads
+            .iter_mut()
+            .find(|x| x.last().map(|x| x == start).unwrap_or(false))
+        {
+            x.push(*end);
+        } else {
+            threads.push(vec![*start, *end]);
+        }
+    }
+    threads
+}
+
 impl RulePool {
     #[allow(clippy::type_complexity)]
     fn to_graph<T, C>(
@@ -87,18 +105,21 @@ impl RulePool {
 
         //Complicated code to add edges between traces and their origins as well as for canceling
         //the features of movers.
-        let movements = trace_h
+        let mut movements = trace_h
             .into_iter()
-            .filter_map(|(_, x)| {
+            .filter_map(|(t, x)| {
                 if let (Some(unmove_origin_rule), Some(trace_node)) = x {
-                    Some((*rule_h.get(&unmove_origin_rule).unwrap(), trace_node))
+                    Some((t, trace_node, *rule_h.get(&unmove_origin_rule).unwrap()))
                 } else {
                     None
                 }
             })
             .collect_vec();
 
-        for (_trace_origin, trace_node) in movements.iter() {
+        movements.sort_by_key(|(x, _, _)| *x);
+        let movements: Vec<_> = movements.into_iter().map(|(_, x, y)| (x, y)).collect();
+
+        for (trace_node, _trace_origin) in movements.iter() {
             let trace_id = match g.node_weight(*trace_node).unwrap() {
                 MgNode::Trace { trace, .. } => *trace,
                 _ => panic!("trace_node must be a MgNode::Trace!"),
@@ -125,10 +146,29 @@ impl RulePool {
                 MgNode::Trace { .. } => (),
             };
         }
+        let movements = organise_movements(&movements);
 
-        for (trace_origin, trace_node) in movements.into_iter() {
-            g.add_edge(trace_origin, trace_node, MGEdge::Move);
+        for traces in movements.into_iter() {
+            let origin = *traces.first().unwrap();
+            let dest = *traces.last().unwrap();
+            let parent = |x: NodeIndex| {
+                g.edges_directed(x, Incoming)
+                    .map(|x| (x.source(), x.id()))
+                    .next()
+                    .unwrap()
+            };
+            let (p_origin, e1) = parent(origin);
+            let (p_dest, e2) = parent(dest);
+            let w = g.remove_edge(e1).unwrap();
+            g.add_edge(p_origin, dest, w);
+            let w = g.remove_edge(e2).unwrap();
+            g.add_edge(p_dest, origin, w);
+
+            for x in traces.windows(2) {
+                g.add_edge(*x.first().unwrap(), *x.last().unwrap(), MGEdge::Move);
+            }
         }
+
         (g, root, nodes_h)
     }
 
@@ -226,6 +266,7 @@ struct TreeNode<'a, T, C: Eq + Display> {
     #[cfg(not(feature = "semantics"))]
     data: PhantomData<&'a ()>,
 }
+
 impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
     fn to_latex(&self) -> String {
         match &self.node {
@@ -869,7 +910,7 @@ mod test {
             println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
                 rules.to_tree(&lex).to_latex(),
-                "\\begin{forest}[\\der{C} [$t$, name=tracet0] [\\der{+W C} [\\plainlex{V= +W C}{$\\epsilon$}] [\\der{V} [\\der{D} [\\plainlex{N= D}{the}] [\\plainlex{N}{queen}]] [\\der{=D V} [\\plainlex{D= =D V}{prefers}] [\\der{D -W}, name=nodet0 [\\plainlex{N= D -W}{which}] [\\plainlex{N}{wine}]]]]]]\\end{forest}"
+                "\\begin{forest}[\\der{C} [\\der{D -W}, name=nodet0 [\\plainlex{N= D -W}{which}] [\\plainlex{N}{wine}]] [\\der{+W C} [\\plainlex{V= +W C}{$\\epsilon$}] [\\der{V} [\\der{D} [\\plainlex{N= D}{the}] [\\plainlex{N}{queen}]] [\\der{=D V} [\\plainlex{D= =D V}{prefers}] [$t$, name=tracet0]]]]]\\end{forest}"
             );
         }
         Ok(())
@@ -899,7 +940,7 @@ mod test {
             println!("{}", rules.to_tree(&lex).to_latex());
             assert_eq!(
                 rules.to_tree(&lex).to_latex(),
-                "\\begin{forest}[\\der{T} [$t$, name=tracet0] [\\der{+l T} [$t$, name=tracet1] [\\der{+r +l T} [\\der{T -l}, name=nodet0 [$t$, name=tracet2] [\\der{+l T -l} [\\der{B -r}, name=nodet1 [$t$, name=tracet3] [\\der{+r B -r} [\\der{T -l}, name=nodet2 [$t$, name=tracet4] [\\der{+l T -l} [\\der{A -r}, name=nodet3 [$t$, name=tracet5] [\\der{+r A -r} [\\plainlex{T -r -l}{$\\epsilon$}] [\\plainlex{=T +r A -r}{a}]]] [\\plainlex{=A +l T -l}{a}]]] [\\plainlex{=T +r B -r}{b}]]] [\\plainlex{=B +l T -l}{b}]]] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
+                "\\begin{forest}[\\der{T} [\\der{T -l}, name=nodet0 [\\der{T -l}, name=nodet2 [\\plainlex{T -r -l}{$\\epsilon$}] [\\der{+l T -l} [$t$, name=tracet3] [\\plainlex{=A +l T -l}{a}]]] [\\der{+l T -l} [$t$, name=tracet1] [\\plainlex{=B +l T -l}{b}]]] [\\der{+l T} [\\der{B -r}, name=nodet1 [\\der{A -r}, name=nodet3 [$t$, name=tracet5] [\\der{+r A -r} [$t$, name=tracet4] [\\plainlex{=T +r A -r}{a}]]] [\\der{+r B -r} [$t$, name=tracet2] [\\plainlex{=T +r B -r}{b}]]] [\\der{+r +l T} [$t$, name=tracet0] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
             );
         }
         Ok(())

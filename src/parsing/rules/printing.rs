@@ -151,6 +151,12 @@ impl RulePool {
         for traces in movements.into_iter() {
             let origin = *traces.first().unwrap();
             let dest = *traces.last().unwrap();
+
+            let (origin_node, dest_node) = g.index_twice_mut(origin, dest);
+            let origin_t = origin_node.destination_trace_mut().unwrap();
+            let dest_t = dest_node.start_trace_mut().unwrap();
+            std::mem::swap(origin_t, dest_t);
+
             let parent = |x: NodeIndex| {
                 g.edges_directed(x, Incoming)
                     .map(|x| (x.source(), x.id()))
@@ -321,7 +327,10 @@ impl<'a, T: Display, C: Eq + Display> TreeNode<'a, T, C> {
                 }
                 format!("\\plainlex{{{features}}}{{{lemma}}}")
             }
-            MgNode::Trace { trace, .. } => format!("$t$, name=trace{trace}"),
+            MgNode::Trace { trace, new_trace } => match new_trace {
+                Some(trace) => format!("$t$, name=trace{trace}"),
+                None => format!("$t$, name=trace{trace}"),
+            },
         }
     }
 }
@@ -606,6 +615,22 @@ impl<T, C: Eq + Display> MgNode<T, C> {
         match self {
             MgNode::Trace { trace, .. } => Ok(*trace),
             MgNode::Node { .. } | MgNode::Leaf { .. } => Err(PrintError::NotATrace),
+        }
+    }
+
+    fn start_trace_mut(&mut self) -> Option<&mut TraceId> {
+        match self {
+            MgNode::Node { trace, .. } => trace.as_mut(),
+            MgNode::Leaf { trace, .. } => trace.as_mut(),
+            MgNode::Trace { new_trace, .. } => new_trace.as_mut(),
+        }
+    }
+
+    fn destination_trace_mut(&mut self) -> Option<&mut TraceId> {
+        if let MgNode::Trace { trace, .. } = self {
+            Some(trace)
+        } else {
+            None
         }
     }
 

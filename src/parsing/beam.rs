@@ -67,7 +67,9 @@ where
                         }
                     }
                     PhonContent::Affixed(string) => {
-                        if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
+                        if heads.len() == string.len()
+                            && heads.iter().zip(string.iter()).all(|(a, b)| *a == b)
+                        {
                             *position += 1;
                             true
                         } else {
@@ -174,7 +176,9 @@ where
                         }
                     }
                     PhonContent::Affixed(string) => {
-                        if heads.iter().zip(string.iter()).all(|(a, b)| a == b) {
+                        if heads.len() == string.len()
+                            && heads.iter().zip(string.iter()).all(|(a, b)| a == b)
+                        {
                             *position += 1;
                             true
                         } else {
@@ -260,8 +264,10 @@ where
     fn scan(&mut self, word: &Option<T>) -> bool {
         match word {
             Some(word) => {
-                if let Some(PhonContent::Normal(string)) = self.prefix.get(self.position) {
-                    if word == string {
+                if let Some(string) = self.prefix.get(self.position) {
+                    if let PhonContent::Normal(string) = string
+                        && string == word
+                    {
                         self.position += 1;
                         true
                     } else {
@@ -297,7 +303,9 @@ where
                     }
                 }
                 PhonContent::Affixed(string) => {
-                    if heads.iter().zip(string.iter()).all(|(a, b)| *a == b) {
+                    if heads.len() == string.len()
+                        && heads.iter().zip(string.iter()).all(|(a, b)| *a == b)
+                    {
                         self.position += 1;
                         true
                     } else {
@@ -402,7 +410,6 @@ where
 
 #[cfg(test)]
 mod test {
-
     use crate::{
         ParsingConfig, PhonContent,
         grammars::{DYCK_LANGUAGE, STABLER2011},
@@ -503,6 +510,119 @@ mod test {
             let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
+
+        let lexicon = "::T<= +q Q
+what::d[in] -subj3 -q -wh
+what::d[in] -acc -wh
+who::d[an] -subj3 -q -wh
+who::d[an] -acc -wh
+::T<= +q +wh Q
+::q -q
+does::V= q= +subj3 T
+do::V= q= +subj2 T
+do::V= q= +subj1 T
+did::V= q= +subj3 T
+did::V= q= +subj2 T
+did::V= q= +subj1 T
+::q -q
+to::theme[an]= p
+talk::p= v
+see::d[an]= +acc v
+see::d[in]= +acc v
+devour::d[in]= +acc v
+want::d[in]= +acc v
+run::v
+you::d[an] -subj2
+you::d[an] -acc
+I::d[an] -subj1
+me::d[an] -acc
+he::d[an] -subj3
+him::d[an] -acc
+she::d[an] -subj3
+her::d[an] -acc
+::d[an]= +theme theme[an]
+that::C= +r +rel[in] d[in] -acc
+that::C= +r +rel[in] d[in] -subj3
+who::C= +r +rel[an] d[an] -acc
+who::C= +r +rel[an] d[an] -subj3
+::=>v =d[an] V
+man::N[an]
+woman::N[an]
+cake::N[in]
+John::d[an] -subj3
+John::d[an] -acc
+Mary::d[an] -subj3
+Mary::d[an] -acc
+the::N[in]= d[in] -theme
+the::N[in]= d[in] -subj3
+the::N[in]= d[in] -acc
+the::N[in]= d[in] -acc -rel[in]
+the::N[in]= d[in] -subj3 -rel[in]
+the::N[an]= d[an] -theme
+the::N[an]= d[an] -subj3
+the::N[an]= d[an] -acc
+the::N[an]= d[an] -acc -rel[an]
+the::N[an]= d[an] -subj3 -rel[an]
+a::N[in]= d[in] -theme
+a::N[in]= d[in] -subj3
+a::N[in]= d[in] -acc
+a::N[in]= d[in] -acc -rel[in]
+a::N[in]= d[in] -subj3 -rel[in]
+a::N[an]= d[an] -theme
+a::N[an]= d[an] -subj3
+a::N[an]= d[an] -acc
+a::N[an]= d[an] -acc -rel[an]
+a::N[an]= d[an] -subj3 -rel[an]
+can::V= +subj3 T
+can::V= +subj2 T
+can::V= +subj1 T
+can::V= q= +subj3 T
+can::V= q= +subj2 T
+can::V= q= +subj1 T
+can::V= r= +subj3 T
+can::V= r= +subj2 T
+can::V= r= +subj1 T
+am::prog= +subj1 T
+are::prog= +subj2 T
+is::prog= +subj3 T
+am::prog= q= +subj1 T
+are::prog= q= +subj2 T
+is::prog= q= +subj3 T
+am::prog= r= +subj1 T
+are::prog= r= +subj2 T
+is::prog= r= +subj3 T
+ing::=>V prog
+PAST::=>V +subj3 t
+PAST::=>V +subj2 t
+PAST::=>V +subj1 t
+::T= C
+::t= T
+::t= r= T
+::r -r
+3PRES::=>V +subj3 t
+2PRES::=>V +subj2 t
+1PRES::=>V +subj1 t
+";
+
+        let lexicon = Lexicon::from_string(lexicon)?;
+        assert_eq!(
+            lexicon.valid_continuations(
+                "C",
+                &[
+                    PhonContent::Normal("I"),
+                    PhonContent::Normal("can"),
+                    PhonContent::Normal("see"),
+                    PhonContent::Normal("a"),
+                    PhonContent::Normal("woman"),
+                    PhonContent::Normal("who"),
+                    PhonContent::Normal("a"),
+                    PhonContent::Normal("man"),
+                    PhonContent::Affixed(vec!["see", "3PRES"]),
+                ],
+                &ParsingConfig::empty().with_max_steps(50)
+            )?,
+            [Continuation::EndOfSentence].into_iter().collect()
+        );
         Ok(())
     }
 }

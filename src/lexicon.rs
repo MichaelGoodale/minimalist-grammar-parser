@@ -313,6 +313,27 @@ impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
         &self.features
     }
 
+    ///Change the type of a [`LexicalEntry`]
+    pub fn remap<'lex, T2: Eq, C2: Eq>(
+        &'lex self,
+        lemma_map: impl Fn(&'lex T) -> T2,
+        category_map: impl Fn(&'lex Category) -> C2,
+    ) -> LexicalEntry<T2, C2> {
+        let lemma = self.lemma.as_ref().map(lemma_map);
+        let features = self
+            .features
+            .iter()
+            .map(|x| match x {
+                Feature::Category(c) => Feature::Category(category_map(c)),
+                Feature::Selector(c, direction) => Feature::Selector(category_map(c), *direction),
+                Feature::Affix(c, direction) => Feature::Affix(category_map(c), *direction),
+                Feature::Licensor(c) => Feature::Licensor(category_map(c)),
+                Feature::Licensee(c) => Feature::Licensee(category_map(c)),
+            })
+            .collect();
+        LexicalEntry { lemma, features }
+    }
+
     ///Gets the category of a lexical entry
     pub fn category(&self) -> &Category {
         let mut cat = None;

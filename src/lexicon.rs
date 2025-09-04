@@ -728,6 +728,13 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         result
     }
 
+    ///Gets each lexical entry along with its ID.
+    pub fn lexemes_and_ids(
+        &self,
+    ) -> Result<impl Iterator<Item = (LexemeId, LexicalEntry<T, Category>)>, LexiconError> {
+        Ok(self.leaves().iter().copied().zip(self.lexemes()?))
+    }
+
     ///Turns a lexicon into a `Vec<LexicalEntry<T, Category>>` which can be useful for printing or
     ///investigating individual lexical entries.
     pub fn lexemes(&self) -> Result<Vec<LexicalEntry<T, Category>>, LexiconError> {

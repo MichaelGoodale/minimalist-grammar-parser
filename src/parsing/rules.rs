@@ -1,4 +1,5 @@
 //! Defines helper functions which allow one to record the structure of a parse.
+use ahash::HashSet;
 use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
 
@@ -235,5 +236,69 @@ impl RulePool {
                 None
             }
         })
+    }
+
+    ///Records the maximum number of moving pieces stored in memory at a single time.
+    pub fn max_memory_load(&self) -> usize {
+        let mut max = 0;
+        let mut memory = HashSet::default();
+        for rule in &self.0 {
+            match rule {
+                Rule::UnmoveTrace(trace_id) => {
+                    memory.insert(*trace_id);
+                    if memory.len() > max {
+                        max = memory.len();
+                    }
+                }
+                Rule::UnmergeFromMover { trace_id, .. }
+                | Rule::UnmoveFromMover { trace_id, .. } => {
+                    memory.remove(trace_id);
+                }
+                _ => (),
+            }
+        }
+        max
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{Lexicon, PhonContent};
+
+    #[test]
+    fn memory_load() -> anyhow::Result<()> {
+        let grammar = Lexicon::from_string("a::b= c= +a +e C\nb::b -a\nc::c -e")?;
+
+        let (_, _, rules) = grammar
+            .parse(
+                &[
+                    PhonContent::Normal("c"),
+                    PhonContent::Normal("b"),
+                    PhonContent::Normal("a"),
+                ],
+                "C",
+                &crate::ParsingConfig::default(),
+            )?
+            .next()
+            .unwrap();
+
+        assert_eq!(rules.max_memory_load(), 2);
+        let grammar = Lexicon::from_string("a::b= +a c= +e C\nb::b -a\nc::c -e")?;
+
+        let (_, _, rules) = grammar
+            .parse(
+                &[
+                    PhonContent::Normal("c"),
+                    PhonContent::Normal("b"),
+                    PhonContent::Normal("a"),
+                ],
+                "C",
+                &crate::ParsingConfig::default(),
+            )?
+            .next()
+            .unwrap();
+
+        assert_eq!(rules.max_memory_load(), 1);
+        Ok(())
     }
 }

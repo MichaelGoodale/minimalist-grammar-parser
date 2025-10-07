@@ -184,6 +184,12 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
     }
 }
 
+impl<T: Eq, C: Eq> From<SemanticLexicon<'_, T, C>> for Lexicon<T, C> {
+    fn from(value: SemanticLexicon<'_, T, C>) -> Self {
+        value.lexicon
+    }
+}
+
 impl<T, C> Display for SemanticLexicon<'_, T, C>
 where
     T: Eq + Display + std::fmt::Debug + Clone,

@@ -189,6 +189,11 @@ pub struct RulePool(Vec<Rule>);
 pub mod semantics;
 
 impl RulePool {
+    ///The number of steps in the derivation
+    pub fn n_steps(&self) -> usize {
+        self.0.len()
+    }
+
     #[cfg(any(feature = "pretty", feature = "semantics"))]
     fn get(&self, x: RuleIndex) -> &Rule {
         &self.0[x.0]

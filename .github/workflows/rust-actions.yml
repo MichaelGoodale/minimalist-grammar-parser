@@ -12,3 +12,27 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: cargo test --all-features
       - run: cargo build --no-default-features --features "pretty" --target wasm32-unknown-unknown
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo docs --all-features
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "target/docs"
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      pages: write
+    needs: docs
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

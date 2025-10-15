@@ -18,7 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc --all-features
+      - run: cargo doc --all-features --no-deps
+      - name: Add redirect
+        run: echo '<meta http-equiv="refresh" content="0;url=minimalist_grammar_parser/index.html">' > target/doc/index.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

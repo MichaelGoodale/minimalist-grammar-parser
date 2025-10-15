@@ -1,6 +1,6 @@
 //! Module which defines helper functions to calculate the MDL of MGs according to Ermolaeva, 2021
 //!
-//! - Ermolaeva, M. (2021). Learning Syntax via Decomposition [The University of Chicago]. https://doi.org/10.6082/uchicago.3015
+//! - Ermolaeva, M. (2021). Learning Syntax via Decomposition [The University of Chicago]. <https://doi.org/10.6082/uchicago.3015>
 
 use super::{Feature, FeatureOrLemma, Lexicon, LexiconError};
 use ahash::AHashSet;
@@ -8,9 +8,9 @@ use std::hash::Hash;
 
 ///Defines the cost of a type of lemma
 pub trait SymbolCost: Sized {
-    ///This is the length of a member where each sub-unit has [``n_phonemes``] possible encodings.
+    ///This is the length of a member where each sub-unit has `n_phonemes` possible encodings.
     /// # Example
-    /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``mdl_score``].
+    /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``Lexicon::mdl_score``].
     /// The string, abcabc should have symbol_cost 6.
     fn symbol_cost(x: &Option<Self>) -> u16;
 }

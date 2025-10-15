@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo docs --all-features
+      - run: cargo doc --all-features
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

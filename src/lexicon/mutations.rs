@@ -353,7 +353,7 @@ where
         fix_weights(&mut self.graph);
     }
 
-    ///Combines two lexicons and returns a vector of the leaves from `other` as [`NodeDetails`] consisting
+    ///Combines two lexicons and returns a vector of the leaves from `other` as [`LexemeDetails`] consisting
     ///of the index of the old leaves in `other` and their new index in the `self`.
     pub fn unify(&mut self, other: &Self) -> Vec<LexemeDetails> {
         let mut new_leaves = vec![];

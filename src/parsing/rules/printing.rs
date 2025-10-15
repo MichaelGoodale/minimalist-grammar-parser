@@ -205,7 +205,7 @@ impl RulePool {
         Tree::new_semantic(&g, root)
     }
 
-    ///Converts a [`RulePool`] to a [`Tree`]
+    ///Converts a [`RulePool`] to a [`Tree<'a, T, C>`] using its [`Lexicon<T,C>`].
     pub fn to_tree<'a, T, C>(&'a self, lex: &Lexicon<T, C>) -> Tree<'a, T, C>
     where
         T: Eq + std::fmt::Debug + std::clone::Clone + std::fmt::Display + Serialize + 'a,

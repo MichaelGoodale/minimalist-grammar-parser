@@ -1,5 +1,7 @@
 # Minimalist Grammar Parser
 
+[**Documentation**](https://michaelgoodale.com/minimalist-grammar-parser/minimalist_grammar_parser/index.html)
+
 This repo defines a number of structs and methods to parse and generate Minimalist Grammars
 (MGs) from Stabler (1997). Specifically, it implements a variety of the MG algorithm adapted
 from Stabler (2011) and Stabler (2013)

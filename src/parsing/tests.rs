@@ -6,16 +6,38 @@ use petgraph::graph::NodeIndex;
 use thin_vec::thin_vec;
 
 #[test]
+fn infix_order() -> Result<()> {
+    let a: GornIndex = [Direction::Left].into();
+    let b: GornIndex = [Direction::Left, Direction::Left, Direction::Right].into();
+    let c: GornIndex = [Direction::Left, Direction::Right].into();
+    let d: GornIndex = [Direction::Left, Direction::Left, Direction::Right].into();
+    let e: GornIndex = [].into();
+    let f: GornIndex = [Direction::Right].into();
+
+    let mut list = [a, b, c, d, e, f];
+    list.sort_by(GornIndex::infix_order);
+
+    assert_eq!(list, [b, d, a, c, e, f]);
+    Ok(())
+}
+
+#[test]
 fn index_order() -> Result<()> {
     let a: GornIndex = [Direction::Left, Direction::Left, Direction::Left].into();
     let b: GornIndex = [Direction::Left, Direction::Left, Direction::Right].into();
     assert!(a < b);
+    assert!(!a.is_parent_of(b));
+    assert!(!b.is_parent_of(a));
 
     let b: GornIndex = [Direction::Left, Direction::Left].into();
+    assert!(b.is_parent_of(a));
+    assert!(!a.is_parent_of(b));
 
     assert!(b < a);
     let b: GornIndex = [Direction::Right].into();
     assert!(a < b);
+    assert!(!a.is_parent_of(b));
+    assert!(!b.is_parent_of(a));
 
     let a = ParseMoment::new(
         FutureTree {

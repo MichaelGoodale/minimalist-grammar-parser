@@ -654,6 +654,11 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
         self.graph.node_weight(nx)
     }
 
+    ///Climb up a node over all of its features
+    pub(crate) fn node_to_features<'a>(&'a self, nx: NodeIndex) -> Climber<'a, T, Category> {
+        Climber { lex: self, pos: nx }
+    }
+
     ///Climb up a lexeme over all of its features
     pub fn leaf_to_features<'a>(&'a self, lexeme: LexemeId) -> Option<Climber<'a, T, Category>> {
         if !matches!(

@@ -1,5 +1,6 @@
-use std::borrow::Borrow;
+use std::{borrow::Borrow, cmp::Ordering};
 
+use chumsky::combinator::Or;
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
@@ -122,6 +123,39 @@ impl GornIndex {
         v.index.set(v.size, d.into());
         v.size += 1;
         v
+    }
+
+    pub fn is_parent_of(&self, x: GornIndex) -> bool {
+        self.size < x.size && (self.into_iter().zip(x).all(|(x, y)| x == y))
+    }
+
+    pub(crate) fn infix_order(x: &GornIndex, y: &GornIndex) -> Ordering {
+        for (a, b) in (*x).into_iter().zip(*y) {
+            match (a, b) {
+                (Direction::Left, Direction::Right) => return Ordering::Less,
+                (Direction::Right, Direction::Left) => return Ordering::Greater,
+                _ => (),
+            };
+        }
+        match x.size.cmp(&y.size) {
+            Ordering::Less => {
+                if y.index[x.size] {
+                    // if x is a prefix of y and ys first new direction is RIGHT
+                    // then it goes right
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+            Ordering::Greater => {
+                if x.index[y.size] {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            }
+            Ordering::Equal => Ordering::Equal,
+        }
     }
 }
 

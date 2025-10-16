@@ -640,7 +640,7 @@ where
     ) {
         let rule = *self.rules.get(rule_id);
         let semantic_rule = history.get(rule_id.0).unwrap().0;
-        let children: Vec<_> = self.rules.children(rule_id).collect();
+        let children: Vec<_> = self.rules.get(rule_id).children().collect();
 
         for child in children.iter() {
             self.redo_history(*child, history);

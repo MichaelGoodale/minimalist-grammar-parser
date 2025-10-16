@@ -7,6 +7,9 @@ use std::{fmt::Debug, hash::Hash};
 mod printing;
 
 #[cfg(feature = "pretty")]
+mod novel_printing;
+
+#[cfg(feature = "pretty")]
 pub use printing::{MGEdge, MgNode};
 
 use crate::lexicon::LexemeId;
@@ -79,6 +82,41 @@ pub(crate) enum Rule {
         destination_id: RuleIndex,
         trace_id: TraceId,
     },
+}
+
+impl Rule {
+    #[cfg(feature = "semantics")]
+    fn children(&self) -> impl DoubleEndedIterator<Item = RuleIndex> {
+        match self {
+            Rule::Start { child, .. } => [Some(*child), None],
+            Rule::UnmoveTrace(_) | Rule::Scan { .. } => [None, None],
+            Rule::Unmove {
+                child_id: a,
+                stored_id: b,
+            }
+            | Rule::Unmerge {
+                child_id: a,
+                complement_id: b,
+                ..
+            }
+            | Rule::UnmergeFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            }
+            | Rule::UnmoveFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            } => [Some(*a), Some(*b)],
+        }
+        .into_iter()
+        .flatten()
+    }
+
+    fn is_scan(&self) -> bool {
+        matches!(self, Rule::Scan { .. })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -189,19 +227,13 @@ pub struct RulePool(Vec<Rule>);
 pub mod semantics;
 
 impl RulePool {
-    ///The number of steps in the derivation
-    pub fn n_steps(&self) -> usize {
-        self.0.len()
-    }
-
-    #[cfg(any(feature = "pretty", feature = "semantics"))]
-    fn get(&self, x: RuleIndex) -> &Rule {
-        &self.0[x.0]
-    }
-
-    #[cfg(feature = "semantics")]
-    fn children(&self, x: RuleIndex) -> impl Iterator<Item = RuleIndex> {
-        match self.get(x) {
+    #[cfg(feature = "pretty")]
+    pub(crate) fn complement_last(
+        &self,
+        x: RuleIndex,
+    ) -> impl DoubleEndedIterator<Item = RuleIndex> {
+        let x = self.get(x);
+        match x {
             Rule::Start { child, .. } => [Some(*child), None],
             Rule::UnmoveTrace(_) | Rule::Scan { .. } => [None, None],
             Rule::Unmove {
@@ -222,10 +254,25 @@ impl RulePool {
                 child_id: a,
                 stored_id: b,
                 ..
-            } => [Some(*a), Some(*b)],
+            } => match (self.get(*a).is_scan(), self.get(*b).is_scan()) {
+                (true, false) => [Some(*a), Some(*b)],
+                (false, true) => [Some(*b), Some(*a)],
+                (false, false) => [Some(*b), Some(*a)],
+                (true, true) => [Some(*b), Some(*a)],
+            },
         }
         .into_iter()
         .flatten()
+    }
+
+    ///The number of steps in the derivation
+    pub fn n_steps(&self) -> usize {
+        self.0.len()
+    }
+
+    #[cfg(any(feature = "pretty", feature = "semantics"))]
+    fn get(&self, x: RuleIndex) -> &Rule {
+        &self.0[x.0]
     }
 
     fn iter(&self) -> impl Iterator<Item = &Rule> {

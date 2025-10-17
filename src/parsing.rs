@@ -408,6 +408,7 @@ fn unmerge_from_mover<
     beam: &BeamWrapper<T, B>,
     cat: &Category,
     child_node: NodeIndex,
+    dir: Direction,
     child_prob: LogProb<f64>,
 ) -> bool {
     let mut new_beam = false;
@@ -451,6 +452,7 @@ fn unmerge_from_mover<
                             stored_id,
                             trace_id,
                             destination_id: mover.id,
+                            dir,
                         },
                         moment.tree.id,
                     );
@@ -517,6 +519,7 @@ fn unmerge<
             child: child_node,
             child_id,
             complement_id,
+            dir,
             affix: head_info != HeadMovement::Inherit, //This means we're in an affix merge
         },
         moment.tree.id,
@@ -731,6 +734,7 @@ pub(crate) fn expand<
                         &beam,
                         cat,
                         child_node,
+                        *dir,
                         p + config.move_prob,
                     ) {
                         p += config.dont_move_prob

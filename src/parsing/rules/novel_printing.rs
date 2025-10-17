@@ -493,7 +493,7 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
         for child in self
             .rules
             .get(rule)
-            .children()
+            .children_directed()
             .map(|rule| self.tree_at(rule, max_order))
         {
             storage.add_from(child.storage());
@@ -549,8 +549,6 @@ mod test {
             }
         }
         println!("{lex}");
-
-        panic!();
         Ok(())
     }
 }

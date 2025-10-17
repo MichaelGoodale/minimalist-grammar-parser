@@ -8,7 +8,7 @@ mod novel_printing;
 #[cfg(feature = "pretty")]
 mod serialization;
 
-use crate::lexicon::LexemeId;
+use crate::{Direction, lexicon::LexemeId};
 
 use super::trees::GornIndex;
 
@@ -59,6 +59,7 @@ pub(crate) enum Rule {
         child: NodeIndex,
         child_id: RuleIndex,
         complement_id: RuleIndex,
+        dir: Direction,
         affix: bool,
     },
     UnmergeFromMover {
@@ -66,6 +67,7 @@ pub(crate) enum Rule {
         child_id: RuleIndex,
         stored_id: RuleIndex,
         destination_id: RuleIndex,
+        dir: Direction,
         trace_id: TraceId,
     },
     Unmove {
@@ -81,7 +83,41 @@ pub(crate) enum Rule {
 }
 
 impl Rule {
-    #[cfg(feature = "semantics")]
+    #[cfg(any(feature = "semantics", feature = "pretty"))]
+    fn children_directed(&self) -> impl DoubleEndedIterator<Item = RuleIndex> {
+        match self {
+            Rule::Start { child, .. } => [Some(*child), None],
+            Rule::UnmoveTrace(_) | Rule::Scan { .. } => [None, None],
+            Rule::Unmove {
+                child_id: a,
+                stored_id: b,
+            }
+            | Rule::UnmoveFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            } => [Some(*b), Some(*a)],
+            Rule::Unmerge {
+                child_id: a,
+                complement_id: b,
+                dir,
+                ..
+            }
+            | Rule::UnmergeFromMover {
+                child_id: a,
+                stored_id: b,
+                dir,
+                ..
+            } => match dir {
+                Direction::Left => [Some(*b), Some(*a)],
+                Direction::Right => [Some(*a), Some(*b)],
+            },
+        }
+        .into_iter()
+        .flatten()
+    }
+
+    #[cfg(any(feature = "semantics", feature = "pretty"))]
     fn children(&self) -> impl DoubleEndedIterator<Item = RuleIndex> {
         match self {
             Rule::Start { child, .. } => [Some(*child), None],
@@ -90,17 +126,17 @@ impl Rule {
                 child_id: a,
                 stored_id: b,
             }
+            | Rule::UnmoveFromMover {
+                child_id: a,
+                stored_id: b,
+                ..
+            }
             | Rule::Unmerge {
                 child_id: a,
                 complement_id: b,
                 ..
             }
             | Rule::UnmergeFromMover {
-                child_id: a,
-                stored_id: b,
-                ..
-            }
-            | Rule::UnmoveFromMover {
                 child_id: a,
                 stored_id: b,
                 ..

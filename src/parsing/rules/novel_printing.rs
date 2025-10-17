@@ -1,23 +1,20 @@
-use std::cmp::Ordering;
+use std::default;
 use std::fmt::{Debug, Display};
 
 use ahash::HashMap;
+use petgraph::graph::NodeIndex;
 use serde::Serialize;
 
+use super::serialization::Tree;
 use super::{Rule, RuleIndex};
-use crate::lexicon::{Feature, FeatureOrLemma, LexemeId};
+use crate::lexicon::{Feature, LexemeId};
 use crate::parsing::rules::{StolenInfo, TraceId};
 use crate::parsing::trees::GornIndex;
-use crate::{Direction, Lexicon, RulePool};
-
-struct FlatTree {
-    rules: RulePool,
-    order: Vec<RuleIndex>,
-}
+use crate::{Lexicon, RulePool};
 
 ///A representation of a node in a derivation for export.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
-enum MgNode<T, C: Eq + Display> {
+pub enum MgNode<T, C: Eq + Display> {
     ///A dummy node for the root.
     Start,
     ///A normal node in the derivation
@@ -41,11 +38,14 @@ enum MgNode<T, C: Eq + Display> {
 
 ///Representation of a lemma for display or printing
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
-enum Lemma<T> {
+pub enum Lemma<T> {
     ///A normal lemma
     Single(Option<T>),
     ///A head created by affixing multiple heads.
-    Multi(Vec<Option<T>>),
+    Multi {
+        heads: Vec<Option<T>>,
+        original_head: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -94,6 +94,18 @@ impl RulePool {
                     }
                 }
             }
+        }
+    }
+}
+
+impl Rule {
+    fn node(&self) -> Option<NodeIndex> {
+        match self {
+            Rule::UnmoveTrace(..) | Rule::Unmove { .. } | Rule::UnmoveFromMover { .. } => None,
+            Rule::Scan { lexeme, .. } => Some(lexeme.0),
+            Rule::Start { node: child, .. }
+            | Rule::UnmergeFromMover { child, .. }
+            | Rule::Unmerge { child, .. } => Some(*child),
         }
     }
 }
@@ -153,28 +165,49 @@ impl LemmaLookup {
                     .expect("Missing word in lexicon!")
                     .clone(),
             ),
-            KeyValue::Stealer(target_rule) => Lemma::Multi(
-                self.v
+            KeyValue::Stealer(target_rule) => {
+                let mut original_head = 0;
+                let heads = self
+                    .v
                     .get(target_rule)
                     .expect("Bad lemma lookup")
                     .iter()
-                    .map(|(_, x, _)| lex.leaf_to_lemma(*x).unwrap().clone())
-                    .collect(),
-            ),
-            KeyValue::Stolen(target_rule, gorn_index) => Lemma::Multi(
-                self.v
-                    .get(target_rule)
-                    .expect("Bad lemma lookup")
-                    .iter()
-                    .filter_map(|(g, x, _)| {
-                        if g == gorn_index || gorn_index.is_parent_of(*g) {
-                            Some(lex.leaf_to_lemma(*x).unwrap().clone())
-                        } else {
-                            None
+                    .enumerate()
+                    .map(|(i, (_, x, r))| {
+                        if r == rule_index {
+                            original_head = i;
                         }
+                        lex.leaf_to_lemma(*x).unwrap().clone()
                     })
-                    .collect(),
-            ),
+                    .collect();
+
+                Lemma::Multi {
+                    heads,
+                    original_head,
+                }
+            }
+            KeyValue::Stolen(target_rule, gorn_index) => {
+                let mut original_head = 0;
+                let heads = self
+                    .v
+                    .get(target_rule)
+                    .expect("Bad lemma lookup")
+                    .iter()
+                    .filter(|(g, _, _)| g == gorn_index || gorn_index.is_parent_of(*g))
+                    .enumerate()
+                    .map(|(i, (_, x, r))| {
+                        if r == rule_index {
+                            original_head = i;
+                        }
+                        lex.leaf_to_lemma(*x).unwrap().clone()
+                    })
+                    .collect();
+
+                Lemma::Multi {
+                    heads,
+                    original_head,
+                }
+            }
         }
     }
 
@@ -190,20 +223,154 @@ impl LemmaLookup {
             })
             .for_each(|(rule_index, stolen, lexeme)| affixes.add(rule_index, stolen, lexeme));
         affixes.organize();
-        dbg!(&affixes);
         affixes
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct TraceHistory {
+    source: RuleIndex,
+    destination: RuleIndex,
+}
+
+fn set_trace_destinations(trace_origins: &mut Vec<TraceHistory>, i: RuleIndex, rules: &RulePool) {
+    match rules.get(i) {
+        Rule::UnmergeFromMover {
+            stored_id,
+            destination_id,
+            trace_id,
+            ..
+        }
+        | Rule::UnmoveFromMover {
+            stored_id,
+            destination_id,
+            trace_id,
+            ..
+        } => {
+            trace_origins.push(TraceHistory {
+                source: *stored_id,
+                destination: *destination_id,
+            });
+        }
+        _ => (),
+    }
+}
+
+/// Reorganises <(a,b), (b,c), (c,d), (e, f)> to <<a,b,c,d>, <e,f>>
+/// Can't handle orders like <(a,b), (c,d), (b,c)> so we have to sort beforehand
+fn organise_movements(mut v: Vec<TraceHistory>) -> Vec<Vec<RuleIndex>> {
+    v.sort_by_key(|x| std::cmp::Reverse((x.source.0, x.destination.0)));
+    let mut threads: Vec<Vec<RuleIndex>> = vec![];
+    for TraceHistory {
+        source,
+        destination,
+    } in v
+    {
+        if let Some(x) = threads
+            .iter_mut()
+            .find(|x| x.last().map(|x| *x == source).unwrap_or(false))
+        {
+            x.push(destination);
+        } else {
+            threads.push(vec![source, destination]);
+        }
+    }
+    threads
+}
+
+struct MovementHelper<C> {
+    trace_origins: Vec<Vec<RuleIndex>>,
+    movement_features: Vec<Vec<C>>,
+    movement_ids: HashMap<RuleIndex, (usize, usize)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Storage<C> {
+    h: HashMap<usize, Vec<C>>,
+}
+impl<C> Default for Storage<C> {
+    fn default() -> Self {
+        Self {
+            h: Default::default(),
+        }
+    }
+}
+
+impl<C: Clone> Storage<C> {
+    fn update_storage(&mut self, r: RuleIndex, m: &MovementHelper<C>) {
+        if let Some((s_id, f_id)) = m.movement_ids.get(&r) {
+            let features = &m.movement_features[*s_id];
+            self.h
+                .insert(*s_id, features.iter().skip(*f_id).cloned().collect());
+        };
+    }
+
+    fn union(&mut self, other: Storage<C>) {
+        self.h.extend(other.h);
+    }
+}
+
+fn movement_helpers<T: Eq, C: Eq + Clone>(
+    trace_origins: Vec<TraceHistory>,
+    rules: &RulePool,
+    lex: &Lexicon<T, C>,
+) -> MovementHelper<C> {
+    let trace_origins = organise_movements(trace_origins);
+    let movement_features = trace_origins
+        .iter()
+        .map(|x| {
+            lex.node_to_features(rules.get(*x.first().unwrap()).node().unwrap())
+                .skip(1) //skip category where merge happened
+                .map(|x| x.into_inner())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let mut movement_ids = HashMap::default();
+    rules.iter().enumerate().for_each(|(i, r)| match r {
+        Rule::Start { .. } | Rule::UnmoveTrace(_) | Rule::Scan { .. } | Rule::Unmerge { .. } => (),
+        Rule::UnmergeFromMover { stored_id, .. }
+        | Rule::Unmove { stored_id, .. }
+        | Rule::UnmoveFromMover { stored_id, .. } => {
+            let i = RuleIndex(i);
+            movement_ids.insert(
+                i,
+                trace_origins
+                    .iter()
+                    .enumerate()
+                    .find_map(|(movement_id, v)| {
+                        v.iter()
+                            .position(|x| x == stored_id)
+                            .map(|feature_id| (movement_id, feature_id))
+                    })
+                    .unwrap(),
+            );
+        }
+    });
+
+    MovementHelper {
+        trace_origins,
+        movement_features,
+        movement_ids,
+    }
+}
+
 impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T, C> {
-    fn check_tree(&self, rules: RulePool) {
+    fn check_tree(&self, rules: RulePool) -> Derivation<T, C> {
         let mut stack = vec![DepthRuleOrder::Todo(RuleIndex(0))];
         let mut order = vec![];
         let lemma_lookup = LemmaLookup::new(&rules);
+        let mut trace_origins = Vec::default();
 
         let nodes: Vec<_> = (0..rules.0.len())
-            .map(|i| rules.get_node(self, RuleIndex(i), &lemma_lookup))
+            .map(|i| {
+                let i = RuleIndex(i);
+                set_trace_destinations(&mut trace_origins, i, &rules);
+                rules.get_node(self, i, &lemma_lookup)
+            })
             .collect();
+
+        let movement = movement_helpers(trace_origins, &rules, self);
 
         while let Some(x) = stack.pop() {
             match x {
@@ -214,25 +381,118 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
                 DepthRuleOrder::Done(rule_index) => order.push(rule_index),
             }
         }
-        println!("{:?}", order);
-        for o in order {
-            //println!("{:?}", rules.get(o));
-            println!("{:?}", nodes[o.0]);
+        let Some(RuleIndex(0)) = order.pop() else {
+            panic!("Malformed rules!")
+        };
+
+        for o in order.iter() {
+            println!("{:?} {o:?}", nodes[o.0]);
         }
+
+        Derivation {
+            order,
+            nodes,
+            rules,
+            movement,
+        }
+    }
+}
+
+struct Derivation<T, C: Eq + Display> {
+    order: Vec<RuleIndex>,
+    rules: RulePool,
+    nodes: Vec<MgNode<T, C>>,
+    movement: MovementHelper<C>,
+}
+
+impl<T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<T, C> {
+    fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'static, T, C>> {
+        (0..self.order.len()).map(|x| self.tree_at(self.order[x], x).0)
+    }
+
+    fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> (Tree<'static, T, C>, Storage<C>) {
+        //Handles moving nodes up or down depending on the position in the derivation
+        if let Some(movement) = self
+            .movement
+            .trace_origins
+            .iter()
+            .find(|x| x.contains(&rule))
+        {
+            let valid_rules = &self.order[..max_order];
+
+            let n = movement
+                .iter()
+                .enumerate()
+                .find_map(|(i, rule)| {
+                    if !valid_rules.contains(rule) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(movement.len());
+
+            if n != 0 {
+                let pos = (movement.iter().position(|x| *x == rule).unwrap() + 1) % n;
+                rule = movement[pos]
+            }
+        };
+
+        let node = self.nodes[rule.0].clone();
+        let mut children = vec![];
+        let mut movers = Storage::default();
+        for (child, new_movers) in self
+            .rules
+            .get(rule)
+            .children()
+            .map(|rule| self.tree_at(rule, max_order))
+        {
+            children.push(child);
+            movers.union(new_movers);
+        }
+        movers.update_storage(rule, &self.movement);
+
+        println!("{node:?} {movers:?}");
+
+        (Tree::new(node, children), movers)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{Lexicon, ParsingConfig, PhonContent};
+    use crate::{Lexicon, ParsingConfig};
 
     #[test]
     fn output_tree() -> anyhow::Result<()> {
-        let lex = Lexicon::from_string("C::=>a b= +y c\nA::d<= a\nB::b -y\nD::d")?;
-        for (_, x, r) in lex.generate("c", &ParsingConfig::default()).unwrap() {
-            println!("{x:?}");
+        let grammar = [
+            "John::d -k -q",
+            "Mary::d -k -q",
+            "some::n= d -k -q",
+            "vase::n",
+            "dance::V",
+            "see::d= +k V",
+            "break::d= V",
+            "fall::d= v",
+            "::=>V v",
+            "::=>v =d +k voice",
+            "s::=>voice +q t",
+            "::=>V +q agrO",
+            "::=>V +k +q agrO",
+            "::=>agrO v",
+            "::=>v +k voice",
+        ]
+        .join("\n");
 
-            lex.check_tree(r);
+        let lex =
+            Lexicon::from_string(grammar.as_str()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        for (_, x, r) in lex
+            .generate("t", &ParsingConfig::default())
+            .unwrap()
+            .take(2)
+        {
+            for tree in lex.check_tree(r).trees() {
+                dbg!(tree);
+            }
         }
         println!("{lex}");
 

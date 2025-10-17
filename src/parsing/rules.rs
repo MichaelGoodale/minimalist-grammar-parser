@@ -8,6 +8,8 @@ mod printing;
 
 #[cfg(feature = "pretty")]
 mod novel_printing;
+#[cfg(feature = "pretty")]
+mod serialization;
 
 #[cfg(feature = "pretty")]
 pub use printing::{MGEdge, MgNode};

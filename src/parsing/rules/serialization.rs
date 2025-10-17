@@ -143,7 +143,7 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
                 }
                 format!("\\plainlex{{{features}}}{{{lemma}}}")
             }
-            MgNode::Trace { trace } => format!("$t_{trace}$"),
+            MgNode::Trace { trace } => format!("$t_{}$", trace.0),
         }
     }
 }

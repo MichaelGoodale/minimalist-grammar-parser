@@ -103,9 +103,12 @@ impl RulePool {
 }
 
 impl Rule {
-    fn node(&self) -> Option<NodeIndex> {
+    fn node(&self, rules: &RulePool) -> Option<NodeIndex> {
         match self {
-            Rule::UnmoveTrace(..) | Rule::Unmove { .. } | Rule::UnmoveFromMover { .. } => None,
+            Rule::UnmoveTrace(..) => None,
+            Rule::Unmove { child_id, .. } | Rule::UnmoveFromMover { child_id, .. } => {
+                rules.get(*child_id).node(rules)
+            }
             Rule::Scan { lexeme, .. } => Some(lexeme.0),
             Rule::Start { node: child, .. }
             | Rule::UnmergeFromMover { child, .. }
@@ -337,7 +340,8 @@ fn movement_helpers<T: Eq, C: Eq + Clone>(
     let movement_features = trace_origins
         .iter()
         .map(|x| {
-            lex.node_to_features(rules.get(*x.first().unwrap()).node().unwrap())
+            dbg!(x.iter().map(|x| rules.get(*x)).collect::<Vec<_>>());
+            lex.node_to_features(rules.get(*x.first().unwrap()).node(rules).unwrap())
                 .skip(1) //skip category where merge happened
                 .map(|x| x.into_inner())
                 .collect::<Vec<_>>()
@@ -515,6 +519,10 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
 #[cfg(test)]
 mod test {
     use crate::{Lexicon, ParsingConfig};
+    use logprob::LogProb;
+
+    use crate::PhonContent;
+    use crate::grammars::{COPY_LANGUAGE, STABLER2011};
 
     #[test]
     fn output_tree() -> anyhow::Result<()> {
@@ -549,6 +557,70 @@ mod test {
             }
         }
         println!("{lex}");
+        Ok(())
+    }
+
+    #[test]
+    fn to_graph() -> anyhow::Result<()> {
+        let lex = Lexicon::from_string(STABLER2011)?;
+        let config = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        for sentence in vec!["which wine the queen prefers"].into_iter() {
+            let (_, _, rules) = lex
+                .parse(
+                    &sentence
+                        .split(' ')
+                        .map(PhonContent::Normal)
+                        .collect::<Vec<_>>(),
+                    "C",
+                    &config,
+                )?
+                .next()
+                .unwrap();
+            let latex = lex.derivation(rules).tree().latex();
+
+            println!("{}", latex);
+            assert_eq!(
+                latex,
+                "\\begin{forest}[\\der{C} [\\der{D -W} [\\plainlex{N= D -W}{which}] [\\plainlex{N}{wine}]] [\\der{+W C} [\\plainlex{V= +W C}{$\\epsilon$}] [\\der{V} [\\der{D} [\\plainlex{N= D}{the}] [\\plainlex{N}{queen}]] [\\der{=D V} [\\plainlex{D= =D V}{prefers}] [$t_0$]]]]]\\end{forest}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn double_movement_graph() -> anyhow::Result<()> {
+        let lex = Lexicon::from_string(COPY_LANGUAGE)?;
+        let config = ParsingConfig::new(
+            LogProb::new(-256.0).unwrap(),
+            LogProb::from_raw_prob(0.5).unwrap(),
+            100,
+            1000,
+        );
+        for sentence in vec!["a b a b"].into_iter() {
+            let (_, _, rules) = lex
+                .parse(
+                    &sentence
+                        .split(' ')
+                        .map(PhonContent::Normal)
+                        .collect::<Vec<_>>(),
+                    "T",
+                    &config,
+                )?
+                .next()
+                .unwrap();
+            let latex = lex.derivation(rules).tree().latex();
+
+            println!("{}", latex);
+            assert_eq!(
+                latex,
+                "\\begin{forest}[\\der{T} [\\der{T -l} [\\der{T -l} [\\plainlex{T -r -l}{$\\epsilon$}] [\\der{+l T -l} [$t_3$] [\\plainlex{=A +l T -l}{a}]]] [\\der{+l T -l} [$t_1$] [\\plainlex{=B +l T -l}{b}]]] [\\der{+l T} [\\der{B -r} [\\der{A -r} [$t_4$] [\\der{+r A -r} [$t_5$] [\\plainlex{=T +r A -r}{a}]]] [\\der{+r B -r} [$t_2$] [\\plainlex{=T +r B -r}{b}]]] [\\der{+r +l T} [$t_0$] [\\plainlex{=T +r +l T}{$\\epsilon$}]]]]\\end{forest}"
+            );
+        }
         Ok(())
     }
 }

@@ -240,7 +240,10 @@ mod test {
 
         #[cfg(feature = "pretty")]
         {
-            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
+            let latex = semantic
+                .derivation(rules.clone(), history.clone())
+                .tree()
+                .latex();
             println!("{latex}");
             assert_eq!(
                 latex,
@@ -248,7 +251,7 @@ mod test {
             );
 
             history = history.into_rich(&semantic, &rules);
-            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
+            let latex = semantic.derivation(rules.clone(), history).tree().latex();
             println!("{latex}");
             assert_eq!(
                 latex,
@@ -297,7 +300,10 @@ mod test {
         );
         #[cfg(feature = "pretty")]
         {
-            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
+            let latex = semantic
+                .derivation(rules.clone(), history.clone())
+                .tree()
+                .latex();
 
             println!("{latex}");
             assert_eq!(
@@ -306,16 +312,14 @@ mod test {
             );
 
             history = history.into_rich(&semantic, &rules);
-            let latex = rules.to_semantic_tree(&semantic, &history).to_latex();
+            let tree = semantic.derivation(rules, history).tree();
+            let latex = tree.latex();
             println!("{latex}");
             assert_eq!(
                 latex,
                 "\\begin{forest}[\\semder{c}{\\texttt{some\\_e(x, all\\_e, AgentOf(a\\_m, x) \\& PatientOf(a\\_j, x) \\& pe\\_likes(x))}} [\\semder{v}{\\texttt{some\\_e(x, all\\_e, AgentOf(a\\_m, x) \\& PatientOf(a\\_j, x) \\& pe\\_likes(x))}} [\\lex{d}{john}{\\texttt{a\\_j}}] [\\semder{=d v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(a\\_m, y) \\& PatientOf(x, y) \\& pe\\_likes(y))}} [\\lex{c= =d v}{knows}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P {$\\lambda_{a}$}x P(x)}}] [\\semder{c}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(a\\_m, y) \\& PatientOf(x, y) \\& pe\\_likes(y))}} [\\lex{d -wh}{who}{\\texttt{{$\\lambda_{\\left\\langle a,t\\right\\rangle }$}P P}}] [\\semder{+wh c}{\\texttt{some\\_e(x, all\\_e, AgentOf(a\\_m, x) \\& PatientOf(0\\#a, x) \\& pe\\_likes(x))}} [\\lex{v= +wh c}{$\\epsilon$}{\\texttt{{$\\lambda_{t}$}phi phi}}] [\\semder{v}{\\texttt{some\\_e(x, all\\_e, AgentOf(a\\_m, x) \\& PatientOf(0\\#a, x) \\& pe\\_likes(x))}} [$t$, name=tracet0] [\\semder{=d v}{\\texttt{{$\\lambda_{a}$}x some\\_e(y, all\\_e, AgentOf(a\\_m, y) \\& PatientOf(x, y) \\& pe\\_likes(y))}} [\\lex{d= =d v}{likes}{\\texttt{{$\\lambda_{a}$}x {$\\lambda_{a}$}y some\\_e(z, all\\_e, AgentOf(x, z) \\& PatientOf(y, z) \\& pe\\_likes(z))}}] [\\lex{d}{mary}{\\texttt{a\\_m}}]]]]]]] [\\lex{=v c}{$\\epsilon$}{\\texttt{{$\\lambda_{t}$}phi phi}}]]\\end{forest}"
             );
-
-            let typst = serde_json::to_string(&rules.to_tree(semantic.lexicon()))?;
-            println!("{typst}");
-            let typst = serde_json::to_string(&rules.to_semantic_tree(&semantic, &history))?;
+            let typst = serde_json::to_string(&tree)?;
             println!("{typst}");
             assert_eq!(
                 typst,
@@ -431,7 +435,10 @@ mod test {
                 .unwrap();
 
             let (_, mut history) = rules.to_interpretation(&lex).next().unwrap();
-            let latex = rules.to_semantic_tree(&lex, &history).to_latex();
+            let latex = lex
+                .derivation(rules.clone(), history.clone())
+                .tree()
+                .latex();
 
             println!("{latex}");
             assert_eq!(
@@ -440,7 +447,7 @@ mod test {
             );
 
             history = history.into_rich(&lex, &rules);
-            let latex = rules.to_semantic_tree(&lex, &history).to_latex();
+            let latex = lex.derivation(rules, history).tree().latex();
             println!("{latex}");
             assert_eq!(
                 latex,

@@ -1,5 +1,8 @@
-use std::default;
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
+
+#[cfg(not(feature = "semantics"))]
+use std::marker::PhantomData;
 
 use ahash::HashMap;
 use petgraph::graph::NodeIndex;
@@ -7,7 +10,8 @@ use serde::Serialize;
 
 use super::serialization::Tree;
 use super::{Rule, RuleIndex};
-use crate::lexicon::{Feature, LexemeId};
+use crate::lexicon::{Feature, LexemeId, SemanticLexicon};
+use crate::parsing::rules::semantics::SemanticHistory;
 use crate::parsing::rules::{StolenInfo, TraceId};
 use crate::parsing::trees::GornIndex;
 use crate::{Lexicon, RulePool};
@@ -238,13 +242,11 @@ fn set_trace_destinations(trace_origins: &mut Vec<TraceHistory>, i: RuleIndex, r
         Rule::UnmergeFromMover {
             stored_id,
             destination_id,
-            trace_id,
             ..
         }
         | Rule::UnmoveFromMover {
             stored_id,
             destination_id,
-            trace_id,
             ..
         } => {
             trace_origins.push(TraceHistory {
@@ -278,16 +280,18 @@ fn organise_movements(mut v: Vec<TraceHistory>) -> Vec<Vec<RuleIndex>> {
     threads
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct MovementHelper<C> {
     trace_origins: Vec<Vec<RuleIndex>>,
     movement_features: Vec<Vec<C>>,
     movement_ids: HashMap<RuleIndex, (usize, usize)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Storage<C> {
-    h: HashMap<usize, Vec<C>>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Storage<C> {
+    h: BTreeMap<usize, Vec<C>>,
 }
+
 impl<C> Default for Storage<C> {
     fn default() -> Self {
         Self {
@@ -305,8 +309,22 @@ impl<C: Clone> Storage<C> {
         };
     }
 
-    fn union(&mut self, other: Storage<C>) {
-        self.h.extend(other.h);
+    fn add_from(&mut self, other: &Storage<C>) {
+        self.h.extend(other.h.iter().map(|(a, b)| (*a, b.clone())));
+    }
+}
+
+impl<C> Storage<C> {
+    pub fn values(&self) -> std::collections::btree_map::Values<'_, usize, Vec<C>> {
+        self.h.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.h.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.h.is_empty()
     }
 }
 
@@ -356,7 +374,7 @@ fn movement_helpers<T: Eq, C: Eq + Clone>(
 }
 
 impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T, C> {
-    fn check_tree(&self, rules: RulePool) -> Derivation<T, C> {
+    pub fn derivation(&self, rules: RulePool) -> Derivation<'static, T, C> {
         let mut stack = vec![DepthRuleOrder::Todo(RuleIndex(0))];
         let mut order = vec![];
         let lemma_lookup = LemmaLookup::new(&rules);
@@ -385,32 +403,63 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
             panic!("Malformed rules!")
         };
 
-        for o in order.iter() {
-            println!("{:?} {o:?}", nodes[o.0]);
-        }
-
         Derivation {
             order,
             nodes,
             rules,
             movement,
+            #[cfg(feature = "semantics")]
+            semantics: None,
+            #[cfg(not(feature = "semantics"))]
+            semantics: PhantomData,
         }
     }
 }
 
-struct Derivation<T, C: Eq + Display> {
+#[cfg(feature = "semantics")]
+impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
+    SemanticLexicon<'src, T, C>
+{
+    pub fn derivation(&self, rules: RulePool, h: SemanticHistory<'src>) -> Derivation<'src, T, C> {
+        let Derivation {
+            order,
+            rules,
+            nodes,
+            movement,
+            semantics: _,
+        } = self.lexicon().derivation(rules);
+        Derivation {
+            order,
+            rules,
+            nodes,
+            movement,
+            semantics: Some(h),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Derivation<'src, T, C: Eq + Display> {
     order: Vec<RuleIndex>,
     rules: RulePool,
     nodes: Vec<MgNode<T, C>>,
     movement: MovementHelper<C>,
+    #[cfg(feature = "semantics")]
+    semantics: Option<SemanticHistory<'src>>,
+    #[cfg(not(feature = "semantics"))]
+    data: PhantomData<&'src ()>,
 }
 
-impl<T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<T, C> {
-    fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'static, T, C>> {
-        (0..self.order.len()).map(|x| self.tree_at(self.order[x], x).0)
+impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T, C> {
+    pub fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'src, T, C>> {
+        (0..self.order.len()).map(|x| self.tree_at(self.order[x], x))
     }
 
-    fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> (Tree<'static, T, C>, Storage<C>) {
+    pub fn tree(&self) -> Tree<'src, T, C> {
+        self.tree_at(*self.order.last().unwrap(), self.order.len() - 1)
+    }
+
+    fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> Tree<'src, T, C> {
         //Handles moving nodes up or down depending on the position in the derivation
         if let Some(movement) = self
             .movement
@@ -440,21 +489,26 @@ impl<T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<T, C> {
 
         let node = self.nodes[rule.0].clone();
         let mut children = vec![];
-        let mut movers = Storage::default();
-        for (child, new_movers) in self
+        let mut storage = Storage::default();
+        for child in self
             .rules
             .get(rule)
             .children()
             .map(|rule| self.tree_at(rule, max_order))
         {
+            storage.add_from(child.storage());
             children.push(child);
-            movers.union(new_movers);
         }
-        movers.update_storage(rule, &self.movement);
+        storage.update_storage(rule, &self.movement);
 
-        println!("{node:?} {movers:?}");
-
-        (Tree::new(node, children), movers)
+        #[cfg(feature = "semantics")]
+        if let Some(semantics) = &self.semantics {
+            Tree::new_with_semantics(node, semantics.semantic_node(rule), storage, children)
+        } else {
+            Tree::new(node, storage, children)
+        }
+        #[cfg(not(feature = "semantics"))]
+        Tree::new(node, storage, children)
     }
 }
 
@@ -490,7 +544,7 @@ mod test {
             .unwrap()
             .take(2)
         {
-            for tree in lex.check_tree(r).trees() {
+            for tree in lex.derivation(r).trees() {
                 dbg!(tree);
             }
         }

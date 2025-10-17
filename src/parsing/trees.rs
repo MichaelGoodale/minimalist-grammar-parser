@@ -1,6 +1,5 @@
 use std::{borrow::Borrow, cmp::Ordering};
 
-use chumsky::combinator::Or;
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;

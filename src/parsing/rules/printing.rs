@@ -493,15 +493,6 @@ where
     }
 }
 
-impl Serialize for TraceId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
 #[derive(Debug, Serialize, Clone, PartialEq, Eq, Hash)]
 pub struct Mover<C: Eq + Display> {
     trace_id: TraceId,

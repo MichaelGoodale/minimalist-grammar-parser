@@ -311,8 +311,12 @@ impl<C: Clone> Storage<C> {
     fn update_storage(&mut self, r: RuleIndex, m: &MovementHelper<C>) {
         if let Some((s_id, f_id)) = m.movement_ids.get(&r) {
             let features = &m.movement_features[*s_id];
-            self.h
-                .insert(*s_id, features.iter().skip(*f_id).cloned().collect());
+            let value = features.iter().skip(*f_id).cloned().collect::<Vec<_>>();
+            if value.is_empty() {
+                self.h.remove(s_id);
+            } else {
+                self.h.insert(*s_id, value);
+            }
         };
     }
 

@@ -24,6 +24,7 @@ use regex::Regex;
 #[cfg(feature = "semantics")]
 use super::semantics::SemanticNode;
 
+///A structured tree representation of a parse.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Tree<'src, T, C: Eq + Display> {
     node: TreeNode<'src, T, C>,
@@ -31,6 +32,7 @@ pub struct Tree<'src, T, C: Eq + Display> {
 }
 
 impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
+    ///Get a parse as a [petgraph](https://crates.io/crates/petgraph) DiGraph
     pub fn petgraph(&self) -> (DiGraph<TreeNode<'src, T, C>, Direction>, NodeIndex) {
         let mut g = DiGraph::new();
         let root = g.add_node(self.node.clone());
@@ -82,11 +84,13 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
         }
     }
 
+    ///The storage of the tree at the end (will be empty if the tree is complete)
     pub fn storage(&self) -> &Storage<C> {
         &self.node.storage
     }
 }
 impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
+    ///The representation of the tree as a LaTeX forest tree. Requires using [the following commands in the preamble](https://github.com/MichaelGoodale/python-mg/blob/master/latex-commands.tex)
     pub fn latex(&self) -> String {
         format!("\\begin{{forest}}{}\\end{{forest}}", self.latex_inner())
     }
@@ -102,6 +106,9 @@ impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
     }
 }
 
+///A node inside of a [`Tree`] which contains information about the features of a current lexical
+///entry, anything in storage as well as its semantic information, if the semantics feature is
+///enabled.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TreeNode<'src, T, C: Eq + Display> {
     node: MgNode<T, C>,

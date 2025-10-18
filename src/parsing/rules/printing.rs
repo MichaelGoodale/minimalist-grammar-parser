@@ -455,6 +455,8 @@ impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
     }
 }
 
+///A representation of all of the steps in the derivation of a parse.
+///This can be used to generate a [`Tree`] of any step of the parse.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Derivation<'src, T, C: Eq + Display> {
     order: Vec<RuleIndex>,
@@ -468,10 +470,12 @@ pub struct Derivation<'src, T, C: Eq + Display> {
 }
 
 impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T, C> {
+    ///Get all possible [`Tree`]s in bottom-up order of a parse.
     pub fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'src, T, C>> {
         (0..self.order.len()).map(|x| self.tree_at(self.order[x], x))
     }
 
+    ///Get a [`Tree`] representation of the final parse.
     pub fn tree(&self) -> Tree<'src, T, C> {
         self.tree_at(*self.order.last().unwrap(), self.order.len() - 1)
     }

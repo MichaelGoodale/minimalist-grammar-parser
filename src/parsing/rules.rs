@@ -8,6 +8,11 @@ mod printing;
 #[cfg(feature = "pretty")]
 mod serialization;
 
+#[cfg(feature = "pretty")]
+pub use printing::Derivation;
+#[cfg(feature = "pretty")]
+pub use serialization::{Tree, TreeNode};
+
 use crate::{Direction, lexicon::LexemeId};
 
 use super::trees::GornIndex;

@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use itertools::Itertools;
-use petgraph::graph::DiGraph;
+use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{
     Serialize,
     ser::{SerializeSeq, SerializeStructVariant},
@@ -31,7 +31,7 @@ pub struct Tree<'src, T, C: Eq + Display> {
 }
 
 impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
-    pub fn petgraph(&self) -> DiGraph<TreeNode<'src, T, C>, Direction> {
+    pub fn petgraph(&self) -> (DiGraph<TreeNode<'src, T, C>, Direction>, NodeIndex) {
         let mut g = DiGraph::new();
         let root = g.add_node(self.node.clone());
         let mut stack: VecDeque<_> = self
@@ -53,7 +53,7 @@ impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
             );
             stack.extend(tree.children.iter().enumerate().map(|(i, x)| (i, x, node)));
         }
-        g
+        (g, root)
     }
 }
 
@@ -369,7 +369,7 @@ mod test {
             .next()
             .unwrap();
 
-        let g = lex.derivation(r).tree().petgraph();
+        let (g, _root) = lex.derivation(r).tree().petgraph();
 
         assert_eq!(
             format!("{:?}", Dot::new(&g)),

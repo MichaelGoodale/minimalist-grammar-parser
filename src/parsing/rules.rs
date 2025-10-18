@@ -4,7 +4,7 @@ use petgraph::graph::NodeIndex;
 use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "pretty")]
-mod novel_printing;
+mod printing;
 #[cfg(feature = "pretty")]
 mod serialization;
 
@@ -117,7 +117,7 @@ impl Rule {
         .flatten()
     }
 
-    #[cfg(any(feature = "semantics", feature = "pretty"))]
+    #[cfg(feature = "semantics")]
     fn children(&self) -> impl DoubleEndedIterator<Item = RuleIndex> {
         match self {
             Rule::Start { child, .. } => [Some(*child), None],

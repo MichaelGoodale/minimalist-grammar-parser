@@ -2,16 +2,21 @@ use crate::{
     lexicon::Feature,
     parsing::rules::{
         TraceId,
-        novel_printing::{Lemma, MgNode, Storage},
+        printing::{Lemma, MgNode, Storage},
     },
 };
 use itertools::Itertools;
-use regex::Regex;
 use serde::{
     Serialize,
     ser::{SerializeSeq, SerializeStructVariant},
 };
 use std::fmt::{Debug, Display};
+
+#[cfg(not(feature = "semantics"))]
+use std::marker::PhantomData;
+
+#[cfg(feature = "semantics")]
+use regex::Regex;
 
 #[cfg(feature = "semantics")]
 use super::semantics::SemanticNode;
@@ -34,6 +39,7 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
         }
     }
 
+    #[cfg(feature = "semantics")]
     pub(crate) fn new_with_semantics(
         node: MgNode<T, C>,
         semantic_node: Option<SemanticNode<'src>>,
@@ -76,7 +82,7 @@ struct TreeNode<'src, T, C: Eq + Display> {
     semantics: Option<SemanticNode<'src>>,
 
     #[cfg(not(feature = "semantics"))]
-    data: PhantomData<&'src ()>,
+    semantics: PhantomData<&'src ()>,
 }
 
 impl<T: Display> Lemma<T> {
@@ -158,7 +164,7 @@ impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
             semantics: None,
 
             #[cfg(not(feature = "semantics"))]
-            data: PhantomData,
+            semantics: PhantomData,
         }
     }
 

@@ -1,19 +1,23 @@
 use crate::{
     Direction,
     lexicon::Feature,
-    parsing::rules::{
-        TraceId,
-        printing::{Lemma, MgNode, Storage},
+    parsing::{
+        RuleIndex,
+        rules::{
+            Derivation, TraceId,
+            printing::{Lemma, MgNode, Storage},
+        },
     },
 };
+use ahash::HashMap;
 use itertools::Itertools;
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{
     Serialize,
     ser::{SerializeSeq, SerializeStructVariant},
 };
-use std::collections::VecDeque;
 use std::fmt::{Debug, Display};
+use std::{collections::VecDeque, hash::Hash};
 
 #[cfg(not(feature = "semantics"))]
 use std::marker::PhantomData;
@@ -31,11 +35,32 @@ pub struct Tree<'src, T, C: Eq + Display> {
     children: Vec<Tree<'src, T, C>>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
+pub enum TreeEdge {
+    Merge(Direction),
+    Move,
+}
+
+impl Display for TreeEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TreeEdge::Merge(Direction::Left) => write!(f, "Merge(Left)"),
+            TreeEdge::Merge(Direction::Right) => write!(f, "Merge(Right)"),
+            TreeEdge::Move => write!(f, "Move"),
+        }
+    }
+}
+
 impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
     ///Get a parse as a [petgraph](https://crates.io/crates/petgraph) DiGraph
-    pub fn petgraph(&self) -> (DiGraph<TreeNode<'src, T, C>, Direction>, NodeIndex) {
+    pub fn petgraph(
+        &self,
+        d: &Derivation<'src, T, C>,
+    ) -> (DiGraph<TreeNode<'src, T, C>, TreeEdge>, NodeIndex) {
+        let mut h = HashMap::default();
         let mut g = DiGraph::new();
         let root = g.add_node(self.node.clone());
+        h.insert(self.node.rule, root);
         let mut stack: VecDeque<_> = self
             .children
             .iter()
@@ -44,17 +69,28 @@ impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
             .collect();
         while let Some((pos, tree, par)) = stack.pop_front() {
             let node = g.add_node(tree.node.clone());
+            h.insert(tree.node.rule, node);
             g.add_edge(
                 par,
                 node,
                 match pos {
-                    0 => Direction::Left,
-                    1 => Direction::Right,
+                    0 => TreeEdge::Merge(Direction::Left),
+                    1 => TreeEdge::Merge(Direction::Right),
                     _ => panic!("The library should only have binary branching!"),
                 },
             );
             stack.extend(tree.children.iter().enumerate().map(|(i, x)| (i, x, node)));
         }
+        for x in d.movement.trace_origins.iter() {
+            let mut x = x.clone();
+            x.rotate_right(1);
+            for (src, dst) in x.iter().tuple_windows::<(_, _)>() {
+                let src = *h.get(src).unwrap();
+                let dst = *h.get(dst).unwrap();
+                g.add_edge(src, dst, TreeEdge::Move);
+            }
+        }
+
         (g, root)
     }
 }
@@ -64,9 +100,10 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
         node: MgNode<T, C>,
         storage: Storage<C>,
         children: Vec<Tree<'src, T, C>>,
+        rule: RuleIndex,
     ) -> Self {
         Tree {
-            node: TreeNode::new(node, storage),
+            node: TreeNode::new(node, storage, rule),
             children,
         }
     }
@@ -77,9 +114,10 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
         semantic_node: Option<SemanticNode<'src>>,
         storage: Storage<C>,
         children: Vec<Tree<'src, T, C>>,
+        rule: RuleIndex,
     ) -> Self {
         Tree {
-            node: TreeNode::new_semantics(node, storage, semantic_node),
+            node: TreeNode::new_semantics(node, storage, semantic_node, rule),
             children,
         }
     }
@@ -112,6 +150,7 @@ impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TreeNode<'src, T, C: Eq + Display> {
     node: MgNode<T, C>,
+    rule: RuleIndex,
 
     storage: Storage<C>,
 
@@ -120,6 +159,36 @@ pub struct TreeNode<'src, T, C: Eq + Display> {
 
     #[cfg(not(feature = "semantics"))]
     semantics: PhantomData<&'src ()>,
+}
+
+impl<'src, T: Display, C: Eq + Display> Display for TreeNode<'src, T, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.node {
+            MgNode::Start => {
+                write!(f, "Start")?;
+            }
+            MgNode::Node { features } => {
+                write!(f, "{}", features.iter().join(" "))?;
+                #[cfg(feature = "semantics")]
+                if let Some(SemanticNode::Rich(_, Some(state))) = &self.semantics {
+                    write!(f, "::{state}")?;
+                }
+            }
+
+            MgNode::Leaf { lemma, features } => {
+                write!(f, "{}::{}", lemma, features.iter().join(" "))?;
+
+                #[cfg(feature = "semantics")]
+                if let Some(SemanticNode::Rich(_, Some(state))) = &self.semantics {
+                    write!(f, "::{state}")?;
+                }
+            }
+            MgNode::Trace { trace } => {
+                write!(f, "{trace}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<T: Display> Lemma<T> {
@@ -192,9 +261,10 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
 }
 
 impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
-    fn new(node: MgNode<T, C>, storage: Storage<C>) -> TreeNode<'static, T, C> {
+    fn new(node: MgNode<T, C>, storage: Storage<C>, rule: RuleIndex) -> TreeNode<'static, T, C> {
         TreeNode {
             node,
+            rule,
             storage,
 
             #[cfg(feature = "semantics")]
@@ -210,9 +280,11 @@ impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
         node: MgNode<T, C>,
         storage: Storage<C>,
         semantics: Option<SemanticNode<'src>>,
+        rule: RuleIndex,
     ) -> Self {
         TreeNode {
             node,
+            rule,
             storage,
             semantics,
         }
@@ -365,22 +437,29 @@ impl Serialize for TraceId {
 #[cfg(test)]
 mod test {
     use crate::grammars::STABLER2011;
-    use crate::{Lexicon, ParsingConfig};
+    use crate::{Lexicon, ParsingConfig, PhonContent};
     use petgraph::dot::Dot;
 
     #[test]
     fn petgraph() -> anyhow::Result<()> {
         let lex = Lexicon::from_string(STABLER2011)?;
         let (_, _, r) = lex
-            .generate("C", &ParsingConfig::default())?
+            .parse(
+                &PhonContent::from(["which", "queen", "the", "king", "prefers"]),
+                "C",
+                &ParsingConfig::default(),
+            )?
             .next()
             .unwrap();
 
-        let (g, _root) = lex.derivation(r).tree().petgraph();
+        let d = lex.derivation(r);
+        let (g, _root) = d.tree().petgraph(&d);
 
+        let s = format!("{}", Dot::new(&g));
+        println!("{s}");
         assert_eq!(
-            format!("{:?}", Dot::new(&g)),
-            "digraph {\n    0 [ label = \"TreeNode { node: Node { features: [Category(\\\"C\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    1 [ label = \"TreeNode { node: Leaf { lemma: Single(None), features: [Selector(\\\"V\\\", Right), Category(\\\"C\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    2 [ label = \"TreeNode { node: Node { features: [Category(\\\"V\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    3 [ label = \"TreeNode { node: Node { features: [Category(\\\"D\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    4 [ label = \"TreeNode { node: Node { features: [Selector(\\\"D\\\", Left), Category(\\\"V\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    5 [ label = \"TreeNode { node: Leaf { lemma: Single(Some(\\\"the\\\")), features: [Selector(\\\"N\\\", Right), Category(\\\"D\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    6 [ label = \"TreeNode { node: Leaf { lemma: Single(Some(\\\"king\\\")), features: [Category(\\\"N\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    7 [ label = \"TreeNode { node: Leaf { lemma: Single(Some(\\\"prefers\\\")), features: [Selector(\\\"D\\\", Right), Selector(\\\"D\\\", Left), Category(\\\"V\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    8 [ label = \"TreeNode { node: Node { features: [Category(\\\"D\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    9 [ label = \"TreeNode { node: Leaf { lemma: Single(Some(\\\"the\\\")), features: [Selector(\\\"N\\\", Right), Category(\\\"D\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    10 [ label = \"TreeNode { node: Leaf { lemma: Single(Some(\\\"beer\\\")), features: [Category(\\\"N\\\")] }, storage: Storage { h: {} }, semantics: None }\" ]\n    0 -> 1 [ label = \"Left\" ]\n    0 -> 2 [ label = \"Right\" ]\n    2 -> 3 [ label = \"Left\" ]\n    2 -> 4 [ label = \"Right\" ]\n    3 -> 5 [ label = \"Left\" ]\n    3 -> 6 [ label = \"Right\" ]\n    4 -> 7 [ label = \"Left\" ]\n    4 -> 8 [ label = \"Right\" ]\n    8 -> 9 [ label = \"Left\" ]\n    8 -> 10 [ label = \"Right\" ]\n}\n"
+            s,
+            "digraph {\n    0 [ label = \"C\" ]\n    1 [ label = \"D -W\" ]\n    2 [ label = \"+W C\" ]\n    3 [ label = \"which::N= D -W\" ]\n    4 [ label = \"queen::N\" ]\n    5 [ label = \"ε::V= +W C\" ]\n    6 [ label = \"V\" ]\n    7 [ label = \"D\" ]\n    8 [ label = \"=D V\" ]\n    9 [ label = \"the::N= D\" ]\n    10 [ label = \"king::N\" ]\n    11 [ label = \"prefers::D= =D V\" ]\n    12 [ label = \"t0\" ]\n    0 -> 1 [ label = \"Merge(Left)\" ]\n    0 -> 2 [ label = \"Merge(Right)\" ]\n    1 -> 3 [ label = \"Merge(Left)\" ]\n    1 -> 4 [ label = \"Merge(Right)\" ]\n    2 -> 5 [ label = \"Merge(Left)\" ]\n    2 -> 6 [ label = \"Merge(Right)\" ]\n    6 -> 7 [ label = \"Merge(Left)\" ]\n    6 -> 8 [ label = \"Merge(Right)\" ]\n    7 -> 9 [ label = \"Merge(Left)\" ]\n    7 -> 10 [ label = \"Merge(Right)\" ]\n    8 -> 11 [ label = \"Merge(Left)\" ]\n    8 -> 12 [ label = \"Merge(Right)\" ]\n    12 -> 1 [ label = \"Move\" ]\n}\n"
         );
         Ok(())
     }

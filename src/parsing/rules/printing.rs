@@ -10,6 +10,7 @@ use crate::lexicon::SemanticLexicon;
 use crate::parsing::rules::semantics::SemanticHistory;
 
 use ahash::HashMap;
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use serde::Serialize;
 
@@ -19,6 +20,10 @@ use crate::lexicon::{Feature, LexemeId};
 use crate::parsing::rules::{StolenInfo, TraceId};
 use crate::parsing::trees::GornIndex;
 use crate::{Lexicon, RulePool};
+
+//TODO:Indicate whether a head has been moved in a given point in a derivation.
+//TODO: Helper functions for TreeNode
+//TODO: Window function for derivation
 
 ///A representation of a node in a derivation for export.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
@@ -54,6 +59,27 @@ pub enum Lemma<T> {
         heads: Vec<Option<T>>,
         original_head: usize,
     },
+}
+
+impl<T: Display> Display for Lemma<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Lemma::Single(Some(x)) => write!(f, "{x}"),
+            Lemma::Single(None) => write!(f, "ε"),
+            Lemma::Multi { heads, .. } => write!(
+                f,
+                "{}",
+                heads
+                    .iter()
+                    .map(|x| x
+                        .as_ref()
+                        .map(|x| x.to_string())
+                        .unwrap_or_else(|| "ε".to_string()))
+                    .collect::<Vec<_>>()
+                    .join("-")
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -288,8 +314,8 @@ fn organise_movements(mut v: Vec<TraceHistory>) -> Vec<Vec<RuleIndex>> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct MovementHelper<C> {
-    trace_origins: Vec<Vec<RuleIndex>>,
+pub(super) struct MovementHelper<C> {
+    pub(crate) trace_origins: Vec<Vec<RuleIndex>>,
     movement_features: Vec<Vec<C>>,
     movement_ids: HashMap<RuleIndex, (usize, usize)>,
 }
@@ -297,6 +323,18 @@ struct MovementHelper<C> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Storage<C> {
     h: BTreeMap<usize, Vec<C>>,
+}
+
+impl<C: Display + Eq> Display for Storage<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{{}}}",
+            self.values()
+                .map(|x| x.iter().map(Feature::Licensee).join(" "))
+                .join(", ")
+        )
+    }
 }
 
 impl<C> Default for Storage<C> {
@@ -462,7 +500,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
     order: Vec<RuleIndex>,
     rules: RulePool,
     nodes: Vec<MgNode<T, C>>,
-    movement: MovementHelper<C>,
+    pub(super) movement: MovementHelper<C>,
     #[cfg(feature = "semantics")]
     semantics: Option<SemanticHistory<'src>>,
     #[cfg(not(feature = "semantics"))]
@@ -524,12 +562,12 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
 
         #[cfg(feature = "semantics")]
         if let Some(semantics) = &self.semantics {
-            Tree::new_with_semantics(node, semantics.semantic_node(rule), storage, children)
+            Tree::new_with_semantics(node, semantics.semantic_node(rule), storage, children, rule)
         } else {
-            Tree::new(node, storage, children)
+            Tree::new(node, storage, children, rule)
         }
         #[cfg(not(feature = "semantics"))]
-        Tree::new(node, storage, children)
+        Tree::new(node, storage, children, rule)
     }
 }
 

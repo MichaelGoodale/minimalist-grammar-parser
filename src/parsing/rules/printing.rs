@@ -386,7 +386,6 @@ fn movement_helpers<T: Eq, C: Eq + Clone>(
     let movement_features = trace_origins
         .iter()
         .map(|x| {
-            dbg!(x.iter().map(|x| rules.get(*x)).collect::<Vec<_>>());
             lex.node_to_features(rules.get(*x.first().unwrap()).node(rules).unwrap())
                 .skip(1) //skip category where merge happened
                 .map(|x| x.into_inner())

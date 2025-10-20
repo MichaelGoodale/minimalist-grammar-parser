@@ -481,8 +481,9 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
                 DepthRuleOrder::Done(rule_index) => {
                     if !matches!(
                         rules.get(rule_index),
-                        Rule::Start { .. } | Rule::Scan { .. }
-                    ) {
+                        Rule::Start { .. } | Rule::Scan { .. } | Rule::UnmoveTrace(_)
+                    ) | windows.is_empty()
+                    {
                         windows.push(order.len());
                     }
 
@@ -697,7 +698,7 @@ mod test {
         println!("{s}");
         assert_eq!(
             s,
-            "[{\"Node\":{\"features\":[\"+k\",\"+q\",\"agrO\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>V\",\"+k\",\"+q\",\"agrO\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null],\"original_head\":1,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}]]]"
+            "[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}]]"
         );
 
         let tree = d.tree();

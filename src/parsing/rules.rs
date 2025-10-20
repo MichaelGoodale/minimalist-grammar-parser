@@ -36,6 +36,12 @@ impl TraceId {
     }
 }
 
+impl From<TraceId> for usize {
+    fn from(value: TraceId) -> Self {
+        value.0
+    }
+}
+
 impl std::fmt::Display for TraceId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "t{}", self.0)

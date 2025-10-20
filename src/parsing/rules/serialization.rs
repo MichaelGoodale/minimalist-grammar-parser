@@ -131,6 +131,7 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
         &self.node.storage
     }
 }
+
 impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
     ///The representation of the tree as a LaTeX forest tree. Requires using [the following commands in the preamble](https://github.com/MichaelGoodale/python-mg/blob/master/latex-commands.tex)
     pub fn latex(&self) -> String {
@@ -210,6 +211,28 @@ impl<T: Display> Lemma<T> {
                 .collect::<Vec<_>>()
                 .join(join),
         }
+    }
+}
+impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
+    ///Checks if this node represents a trace.
+    pub fn is_trace(&self) -> bool {
+        matches!(self.node, MgNode::Trace { .. })
+    }
+
+    ///What's the [`TraceId`] of this node, if it is a trace.
+    pub fn trace_id(&self) -> Option<TraceId> {
+        let MgNode::Trace { trace } = self.node else {
+            return None;
+        };
+        Some(trace)
+    }
+
+    ///Get the [`Lemma`] of this node, if it has one.
+    pub fn lemma(&self) -> Option<&Lemma<T>> {
+        let MgNode::Leaf { lemma, .. } = &self.node else {
+            return None;
+        };
+        Some(lemma)
     }
 }
 

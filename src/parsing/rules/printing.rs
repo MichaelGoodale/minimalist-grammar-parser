@@ -470,13 +470,24 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
             }
         }
 
+        let mut windows = vec![];
+
         while let Some(x) = stack.pop() {
             match x {
                 DepthRuleOrder::Todo(rule_index) => {
                     stack.push(DepthRuleOrder::Done(rule_index));
                     stack.extend(rules.complement_last(rule_index).map(DepthRuleOrder::Todo));
                 }
-                DepthRuleOrder::Done(rule_index) => order.push(rule_index),
+                DepthRuleOrder::Done(rule_index) => {
+                    if !matches!(
+                        rules.get(rule_index),
+                        Rule::Start { .. } | Rule::Scan { .. }
+                    ) {
+                        windows.push(order.len());
+                    }
+
+                    order.push(rule_index)
+                }
             }
         }
         let Some(RuleIndex(0)) = order.pop() else {
@@ -489,6 +500,7 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
             rules,
             movement,
             head_movement,
+            windows,
             #[cfg(feature = "semantics")]
             semantics: None,
             #[cfg(not(feature = "semantics"))]
@@ -511,6 +523,7 @@ impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
             nodes,
             movement,
             head_movement,
+            windows,
             semantics: _,
         } = self.lexicon().derivation(rules);
         Derivation {
@@ -519,6 +532,7 @@ impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
             nodes,
             movement,
             head_movement,
+            windows,
             semantics: Some(h),
         }
     }
@@ -532,6 +546,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
     rules: RulePool,
     nodes: Vec<MgNode<T, C>>,
     head_movement: HashMap<RuleIndex, RuleIndex>,
+    windows: Vec<usize>,
     pub(super) movement: MovementHelper<C>,
     #[cfg(feature = "semantics")]
     semantics: Option<SemanticHistory<'src>>,
@@ -542,7 +557,10 @@ pub struct Derivation<'src, T, C: Eq + Display> {
 impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T, C> {
     ///Get all possible [`Tree`]s in bottom-up order of a parse.
     pub fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'src, T, C>> {
-        (0..self.order.len()).map(|x| self.tree_at(self.order[x], x))
+        (0..self.windows.len()).map(|x| {
+            let o = self.windows[x];
+            self.tree_at(self.order[o], o)
+        })
     }
 
     ///Get a [`Tree`] representation of the final parse.
@@ -552,12 +570,13 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
 
     ///How many trees in the derivation
     pub fn number_of_trees(&self) -> usize {
-        self.order.len()
+        self.windows.len()
     }
 
     ///Get the tree at the nth derivation step
     pub fn nth_tree(&self, n: usize) -> Tree<'src, T, C> {
-        self.tree_at(self.order[n], n)
+        let o = self.windows[n];
+        self.tree_at(self.order[o], o)
     }
 
     fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> Tree<'src, T, C> {
@@ -673,12 +692,12 @@ mod test {
             .next()
             .unwrap();
         let d = lex.derivation(r);
-        let tree = d.nth_tree(3);
+        let tree = d.nth_tree(2);
         let s = serde_json::to_string(&tree)?;
         println!("{s}");
         assert_eq!(
             s,
-            "{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":false}}}}"
+            "[{\"Node\":{\"features\":[\"+k\",\"+q\",\"agrO\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>V\",\"+k\",\"+q\",\"agrO\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null],\"original_head\":1,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}]]]"
         );
 
         let tree = d.tree();

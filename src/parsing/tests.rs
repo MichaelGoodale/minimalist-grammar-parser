@@ -26,18 +26,18 @@ fn index_order() -> Result<()> {
     let a: GornIndex = [Direction::Left, Direction::Left, Direction::Left].into();
     let b: GornIndex = [Direction::Left, Direction::Left, Direction::Right].into();
     assert!(a < b);
-    assert!(!a.is_parent_of(b));
-    assert!(!b.is_parent_of(a));
+    assert!(!a.is_ancestor_of(b));
+    assert!(!b.is_ancestor_of(a));
 
     let b: GornIndex = [Direction::Left, Direction::Left].into();
-    assert!(b.is_parent_of(a));
-    assert!(!a.is_parent_of(b));
+    assert!(b.is_ancestor_of(a));
+    assert!(!a.is_ancestor_of(b));
 
     assert!(b < a);
     let b: GornIndex = [Direction::Right].into();
     assert!(a < b);
-    assert!(!a.is_parent_of(b));
-    assert!(!b.is_parent_of(a));
+    assert!(!a.is_ancestor_of(b));
+    assert!(!b.is_ancestor_of(a));
 
     let a = ParseMoment::new(
         FutureTree {

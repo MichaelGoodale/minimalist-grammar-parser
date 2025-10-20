@@ -21,8 +21,6 @@ use crate::parsing::rules::{StolenInfo, TraceId};
 use crate::parsing::trees::GornIndex;
 use crate::{Lexicon, RulePool};
 
-//TODO:Indicate whether a head has been moved in a given point in a derivation.
-//TODO: Helper functions for TreeNode
 //TODO: Window function for derivation
 
 ///A representation of a node in a derivation for export.
@@ -58,6 +56,7 @@ pub enum Lemma<T> {
     Multi {
         heads: Vec<Option<T>>,
         original_head: usize,
+        stolen: bool,
     },
 }
 
@@ -221,6 +220,7 @@ impl LemmaLookup {
                 Lemma::Multi {
                     heads,
                     original_head,
+                    stolen: false,
                 }
             }
             KeyValue::Stolen(target_rule, gorn_index) => {
@@ -230,7 +230,7 @@ impl LemmaLookup {
                     .get(target_rule)
                     .expect("Bad lemma lookup")
                     .iter()
-                    .filter(|(g, _, _)| g == gorn_index || gorn_index.is_parent_of(*g))
+                    .filter(|(g, _, _)| g == gorn_index || gorn_index.is_ancestor_of(*g))
                     .enumerate()
                     .map(|(i, (_, x, r))| {
                         if r == rule_index {
@@ -243,6 +243,7 @@ impl LemmaLookup {
                 Lemma::Multi {
                     heads,
                     original_head,
+                    stolen: true,
                 }
             }
         }
@@ -441,6 +442,34 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
 
         let movement = movement_helpers(trace_origins, &rules, self);
 
+        let mut h: HashMap<_, Vec<_>> = HashMap::default();
+        for (target, info) in rules.iter().enumerate().filter_map(|(i, x)| match x {
+            Rule::Scan { stolen, .. } => match stolen {
+                StolenInfo::Normal => None,
+                StolenInfo::Stealer => Some((RuleIndex(i), (GornIndex::default(), RuleIndex(i)))),
+                StolenInfo::Stolen(rule_index, gorn_index) => {
+                    Some((*rule_index, (*gorn_index, RuleIndex(i))))
+                }
+            },
+            _ => None,
+        }) {
+            h.entry(target).or_default().push(info);
+        }
+
+        let mut head_movement: HashMap<RuleIndex, RuleIndex> = HashMap::default();
+        for (target, info) in h {
+            for (gorn, x) in info.iter().filter(|(_, x)| x != &target) {
+                let parent = info.iter().find_map(|(tg_gorn, tgt)| {
+                    if tg_gorn.is_parent_of(*gorn) {
+                        Some(*tgt)
+                    } else {
+                        None
+                    }
+                });
+                head_movement.insert(*x, parent.unwrap());
+            }
+        }
+
         while let Some(x) = stack.pop() {
             match x {
                 DepthRuleOrder::Todo(rule_index) => {
@@ -459,6 +488,7 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
             nodes,
             rules,
             movement,
+            head_movement,
             #[cfg(feature = "semantics")]
             semantics: None,
             #[cfg(not(feature = "semantics"))]
@@ -480,6 +510,7 @@ impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
             rules,
             nodes,
             movement,
+            head_movement,
             semantics: _,
         } = self.lexicon().derivation(rules);
         Derivation {
@@ -487,6 +518,7 @@ impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
             rules,
             nodes,
             movement,
+            head_movement,
             semantics: Some(h),
         }
     }
@@ -499,6 +531,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
     order: Vec<RuleIndex>,
     rules: RulePool,
     nodes: Vec<MgNode<T, C>>,
+    head_movement: HashMap<RuleIndex, RuleIndex>,
     pub(super) movement: MovementHelper<C>,
     #[cfg(feature = "semantics")]
     semantics: Option<SemanticHistory<'src>>,
@@ -517,7 +550,19 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
         self.tree_at(*self.order.last().unwrap(), self.order.len() - 1)
     }
 
+    ///How many trees in the derivation
+    pub fn number_of_trees(&self) -> usize {
+        self.order.len()
+    }
+
+    ///Get the tree at the nth derivation step
+    pub fn nth_tree(&self, n: usize) -> Tree<'src, T, C> {
+        self.tree_at(self.order[n], n)
+    }
+
     fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> Tree<'src, T, C> {
+        let valid_rules = &self.order[..max_order];
+
         //Handles moving nodes up or down depending on the position in the derivation
         if let Some(movement) = self
             .movement
@@ -525,8 +570,6 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
             .iter()
             .find(|x| x.contains(&rule))
         {
-            let valid_rules = &self.order[..max_order];
-
             let n = movement
                 .iter()
                 .enumerate()
@@ -545,7 +588,21 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
             }
         };
 
-        let node = self.nodes[rule.0].clone();
+        //Marks a stolen head as /not/ stolen if the head's destination isn't in the tree here.
+        let mut node = self.nodes[rule.0].clone();
+        if let Some(tgt) = self.head_movement.get(&rule)
+            && !valid_rules.contains(tgt)
+        {
+            let MgNode::Leaf {
+                lemma: Lemma::Multi { stolen, .. },
+                ..
+            } = &mut node
+            else {
+                panic!("self.head_movement must only contain multi-headed lemma leaf nodes");
+            };
+            *stolen = false;
+        }
+
         let mut children = vec![];
         let mut storage = Storage::default();
         for child in self
@@ -579,7 +636,7 @@ mod test {
     use crate::grammars::{COPY_LANGUAGE, STABLER2011};
 
     #[test]
-    fn output_tree() -> anyhow::Result<()> {
+    fn complicated_head_movement() -> anyhow::Result<()> {
         let grammar = [
             "John::d -k -q",
             "Mary::d -k -q",
@@ -590,7 +647,7 @@ mod test {
             "break::d= V",
             "fall::d= v",
             "::=>V v",
-            "::=>v =d +k voice",
+            "::v<= =d +k voice",
             "s::=>voice +q t",
             "::=>V +q agrO",
             "::=>V +k +q agrO",
@@ -601,16 +658,36 @@ mod test {
 
         let lex =
             Lexicon::from_string(grammar.as_str()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        for (_, _, r) in lex
-            .generate("t", &ParsingConfig::default())
+        let (_, _, r) = lex
+            .parse(
+                &[
+                    PhonContent::Normal("John"),
+                    PhonContent::Affixed(vec!["break", "s"]),
+                    PhonContent::Normal("some"),
+                    PhonContent::Normal("vase"),
+                ],
+                "t",
+                &ParsingConfig::default(),
+            )
             .unwrap()
-            .take(2)
-        {
-            for tree in lex.derivation(r).trees() {
-                dbg!(tree);
-            }
-        }
-        println!("{lex}");
+            .next()
+            .unwrap();
+        let d = lex.derivation(r);
+        let tree = d.nth_tree(3);
+        let s = serde_json::to_string(&tree)?;
+        println!("{s}");
+        assert_eq!(
+            s,
+            "{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":false}}}}"
+        );
+
+        let tree = d.tree();
+        let s = serde_json::to_string(&tree)?;
+        println!("{s}");
+        assert_eq!(
+            s,
+            "[{\"Node\":{\"features\":[\"t\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"John\"}}},[{\"Node\":{\"features\":[\"+q\",\"t\"],\"movement\":[[\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>voice\",\"+q\",\"t\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null,\"s\"],\"original_head\":4,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"voice\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":0}},[{\"Node\":{\"features\":[\"+k\",\"voice\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Trace\":{\"trace\":1}},[{\"Node\":{\"features\":[\"=d\",\"+k\",\"voice\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"v<=\",\"=d\",\"+k\",\"voice\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null],\"original_head\":0,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"=>agrO\",\"v\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null,null],\"original_head\":2,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"agrO\"],\"movement\":[]}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}],[{\"Node\":{\"features\":[\"+q\",\"agrO\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":2}},[{\"Node\":{\"features\":[\"+k\",\"+q\",\"agrO\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>V\",\"+k\",\"+q\",\"agrO\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null],\"original_head\":1,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":true}}}},{\"Trace\":{\"trace\":3}}]]]]]]]]]]"
+        );
         Ok(())
     }
 

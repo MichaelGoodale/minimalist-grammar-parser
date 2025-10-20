@@ -124,8 +124,11 @@ impl GornIndex {
         v
     }
 
-    pub fn is_parent_of(&self, x: GornIndex) -> bool {
+    pub fn is_ancestor_of(&self, x: GornIndex) -> bool {
         self.size < x.size && (self.into_iter().zip(x).all(|(x, y)| x == y))
+    }
+    pub fn is_parent_of(&self, x: GornIndex) -> bool {
+        x.size > 0 && self.size == (x.size - 1) && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }
 
     pub(crate) fn infix_order(x: &GornIndex, y: &GornIndex) -> Ordering {

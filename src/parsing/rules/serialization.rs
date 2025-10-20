@@ -35,9 +35,13 @@ pub struct Tree<'src, T, C: Eq + Display> {
     children: Vec<Tree<'src, T, C>>,
 }
 
+///Representation of an edge in a Tree.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum TreeEdge {
+    ///Whether the edge is a merge or not. The [`Direction`] indicates whether to put the child on
+    ///the left or right. If there is one child (e.g. for a lemma), the [`Direction`] will be left.
     Merge(Direction),
+    ///The edge is the result of movement.
     Move,
 }
 

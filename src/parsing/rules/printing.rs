@@ -1,3 +1,4 @@
+use crate::parsing::rules::serialization::TreeWithMovement;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 
@@ -321,6 +322,14 @@ pub(super) struct MovementHelper<C> {
     movement_ids: HashMap<RuleIndex, (usize, usize)>,
 }
 
+impl<C> MovementHelper<C> {
+    fn movements(&self) -> impl Iterator<Item = (RuleIndex, RuleIndex)> {
+        self.trace_origins
+            .iter()
+            .flat_map(|movement| movement.iter().copied().tuple_windows::<(_, _)>())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Storage<C> {
     h: BTreeMap<usize, Vec<C>>,
@@ -456,7 +465,7 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
             h.entry(target).or_default().push(info);
         }
 
-        let mut head_movement: HashMap<RuleIndex, RuleIndex> = HashMap::default();
+        let mut head_movement: BTreeMap<RuleIndex, RuleIndex> = BTreeMap::default();
         for (target, info) in h {
             for (gorn, x) in info.iter().filter(|(_, x)| x != &target) {
                 let parent = info.iter().find_map(|(tg_gorn, tgt)| {
@@ -546,7 +555,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
     order: Vec<RuleIndex>,
     rules: RulePool,
     nodes: Vec<MgNode<T, C>>,
-    head_movement: HashMap<RuleIndex, RuleIndex>,
+    head_movement: BTreeMap<RuleIndex, RuleIndex>,
     windows: Vec<usize>,
     pub(super) movement: MovementHelper<C>,
     #[cfg(feature = "semantics")]
@@ -557,16 +566,16 @@ pub struct Derivation<'src, T, C: Eq + Display> {
 
 impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T, C> {
     ///Get all possible [`Tree`]s in bottom-up order of a parse.
-    pub fn trees(&self) -> impl DoubleEndedIterator<Item = Tree<'src, T, C>> {
+    pub fn trees(&self) -> impl DoubleEndedIterator<Item = TreeWithMovement<'src, T, C>> {
         (0..self.windows.len()).map(|x| {
             let o = self.windows[x];
-            self.tree_at(self.order[o], o)
+            self.tree_and_movement(self.order[o], o)
         })
     }
 
     ///Get a [`Tree`] representation of the final parse.
-    pub fn tree(&self) -> Tree<'src, T, C> {
-        self.tree_at(*self.order.last().unwrap(), self.order.len() - 1)
+    pub fn tree(&self) -> TreeWithMovement<'src, T, C> {
+        self.tree_and_movement(*self.order.last().unwrap(), self.order.len() - 1)
     }
 
     ///How many trees in the derivation
@@ -575,12 +584,31 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
     }
 
     ///Get the tree at the nth derivation step
-    pub fn nth_tree(&self, n: usize) -> Tree<'src, T, C> {
+    pub fn nth_tree(&self, n: usize) -> TreeWithMovement<'src, T, C> {
         let o = self.windows[n];
-        self.tree_at(self.order[o], o)
+        self.tree_and_movement(self.order[o], o)
+    }
+
+    fn tree_and_movement(&self, rule: RuleIndex, max_order: usize) -> TreeWithMovement<'src, T, C> {
+        let valid_rules = &self.order[..max_order];
+        let head_movement = self.head_movement.iter().filter_map(|(x, y)| {
+            if valid_rules.contains(x) && valid_rules.contains(y) {
+                Some((*x, *y))
+            } else {
+                None
+            }
+        });
+        TreeWithMovement::new(
+            self.tree_at(rule, max_order),
+            head_movement,
+            self.movement
+                .movements()
+                .filter(|(a, b)| valid_rules.contains(a) && valid_rules.contains(b)),
+        )
     }
 
     fn tree_at(&self, mut rule: RuleIndex, max_order: usize) -> Tree<'src, T, C> {
+        let og_rule = rule;
         let valid_rules = &self.order[..max_order];
 
         //Handles moving nodes up or down depending on the position in the derivation
@@ -638,12 +666,18 @@ impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T
 
         #[cfg(feature = "semantics")]
         if let Some(semantics) = &self.semantics {
-            Tree::new_with_semantics(node, semantics.semantic_node(rule), storage, children, rule)
+            Tree::new_with_semantics(
+                node,
+                semantics.semantic_node(rule),
+                storage,
+                children,
+                og_rule,
+            )
         } else {
-            Tree::new(node, storage, children, rule)
+            Tree::new(node, storage, children, og_rule)
         }
         #[cfg(not(feature = "semantics"))]
-        Tree::new(node, storage, children, rule)
+        Tree::new(node, storage, children, og_rule)
     }
 }
 
@@ -698,7 +732,7 @@ mod test {
         println!("{s}");
         assert_eq!(
             s,
-            "[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}]]"
+            "{\"tree\":[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}]],\"head_movement\":[],\"phrasal_movement\":[]}"
         );
 
         let tree = d.tree();
@@ -706,7 +740,7 @@ mod test {
         println!("{s}");
         assert_eq!(
             s,
-            "[{\"Node\":{\"features\":[\"t\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"John\"}}},[{\"Node\":{\"features\":[\"+q\",\"t\"],\"movement\":[[\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>voice\",\"+q\",\"t\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null,\"s\"],\"original_head\":4,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"voice\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":0}},[{\"Node\":{\"features\":[\"+k\",\"voice\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Trace\":{\"trace\":1}},[{\"Node\":{\"features\":[\"=d\",\"+k\",\"voice\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"v<=\",\"=d\",\"+k\",\"voice\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null],\"original_head\":0,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"=>agrO\",\"v\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null,null],\"original_head\":2,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"agrO\"],\"movement\":[]}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}],[{\"Node\":{\"features\":[\"+q\",\"agrO\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":2}},[{\"Node\":{\"features\":[\"+k\",\"+q\",\"agrO\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>V\",\"+k\",\"+q\",\"agrO\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null],\"original_head\":1,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":true}}}},{\"Trace\":{\"trace\":3}}]]]]]]]]]]"
+            "{\"tree\":[{\"Node\":{\"features\":[\"t\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"John\"}}},[{\"Node\":{\"features\":[\"+q\",\"t\"],\"movement\":[[\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>voice\",\"+q\",\"t\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null,\"s\"],\"original_head\":4,\"stolen\":false}}}},[{\"Node\":{\"features\":[\"voice\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":0}},[{\"Node\":{\"features\":[\"+k\",\"voice\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Trace\":{\"trace\":1}},[{\"Node\":{\"features\":[\"=d\",\"+k\",\"voice\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"v<=\",\"=d\",\"+k\",\"voice\"],\"lemma\":{\"Multi\":{\"heads\":[null,\"break\",null,null],\"original_head\":0,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"v\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"=>agrO\",\"v\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null,null],\"original_head\":2,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"agrO\"],\"movement\":[]}},[{\"Node\":{\"features\":[\"d\",\"-k\",\"-q\"],\"movement\":[]}},{\"Leaf\":{\"features\":[\"n=\",\"d\",\"-k\",\"-q\"],\"lemma\":{\"Single\":\"some\"}}},{\"Leaf\":{\"features\":[\"n\"],\"lemma\":{\"Single\":\"vase\"}}}],[{\"Node\":{\"features\":[\"+q\",\"agrO\"],\"movement\":[[\"-q\"]]}},{\"Trace\":{\"trace\":2}},[{\"Node\":{\"features\":[\"+k\",\"+q\",\"agrO\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"=>V\",\"+k\",\"+q\",\"agrO\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\",null],\"original_head\":1,\"stolen\":true}}}},[{\"Node\":{\"features\":[\"V\"],\"movement\":[[\"-k\",\"-q\"]]}},{\"Leaf\":{\"features\":[\"d=\",\"V\"],\"lemma\":{\"Multi\":{\"heads\":[\"break\"],\"original_head\":0,\"stolen\":true}}}},{\"Trace\":{\"trace\":3}}]]]]]]]]]],\"head_movement\":[[\"11110\",\"10\"],[\"111110\",\"11110\"],[\"111111110\",\"111110\"],[\"1111111110\",\"111111110\"]],\"phrasal_movement\":[[\"1111111111\",\"11111110\"],[\"11111110\",\"1111110\"],[\"1110\",\"110\"],[\"110\",\"0\"]]}"
         );
         Ok(())
     }

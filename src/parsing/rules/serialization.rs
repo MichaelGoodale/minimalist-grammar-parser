@@ -4,9 +4,10 @@ use crate::{
     parsing::{
         RuleIndex,
         rules::{
-            Derivation, TraceId,
+            TraceId,
             printing::{Lemma, MgNode, Storage},
         },
+        trees::GornIndex,
     },
 };
 use ahash::HashMap;
@@ -14,7 +15,7 @@ use itertools::Itertools;
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{
     Serialize,
-    ser::{SerializeSeq, SerializeStructVariant},
+    ser::{SerializeSeq, SerializeStruct, SerializeStructVariant},
 };
 use std::fmt::{Debug, Display};
 use std::{collections::VecDeque, hash::Hash};
@@ -35,6 +36,102 @@ pub struct Tree<'src, T, C: Eq + Display> {
     children: Vec<Tree<'src, T, C>>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct MovementTrace(Vec<(GornIndex, GornIndex)>);
+
+impl Serialize for MovementTrace {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for (source, tgt) in self.0.iter() {
+            seq.serialize_element(&(source.to_string(), tgt.to_string()))?;
+        }
+        seq.end()
+    }
+}
+
+/// A structured representation of a tree, along with markers for all movement edges.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct TreeWithMovement<'src, T, C: Eq + Display> {
+    tree: Tree<'src, T, C>,
+    head_movement: MovementTrace,
+    phrasal_movement: MovementTrace,
+}
+
+impl<'src, T: Serialize, C: Eq + Display + Clone> Serialize for TreeWithMovement<'src, T, C> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_struct("Tree", 2)?;
+
+        seq.serialize_field("tree", &self.tree)?;
+        seq.serialize_field("head_movement", &self.head_movement)?;
+        seq.serialize_field("phrasal_movement", &self.phrasal_movement)?;
+
+        seq.end()
+    }
+}
+impl<'src, T: Display, C: Eq + Display + Clone> TreeWithMovement<'src, T, C> {
+    ///The representation of the tree as a LaTeX forest tree. Requires using [the following commands in the preamble](https://github.com/MichaelGoodale/python-mg/blob/master/latex-commands.tex)
+    pub fn latex(&self) -> String {
+        format!(
+            "\\begin{{forest}}{}\\end{{forest}}",
+            self.tree.latex_inner()
+        )
+    }
+}
+
+impl<'src, T, C: Eq + Display + Clone> TreeWithMovement<'src, T, C> {
+    ///Get the tree, itself
+    pub fn tree(&self) -> &Tree<'src, T, C> {
+        &self.tree
+    }
+
+    ///Get the tree, itself
+    pub fn head_movement(&self) -> &[(GornIndex, GornIndex)] {
+        &self.head_movement.0
+    }
+
+    ///Get the tree, itself
+    pub fn phrasal_movement(&self) -> &[(GornIndex, GornIndex)] {
+        &self.head_movement.0
+    }
+
+    pub(crate) fn new(
+        tree: Tree<'src, T, C>,
+        head_movement: impl Iterator<Item = (RuleIndex, RuleIndex)>,
+        phrasal_movement: impl Iterator<Item = (RuleIndex, RuleIndex)>,
+    ) -> Self {
+        let look_up = tree.gorn_address();
+        TreeWithMovement {
+            tree,
+            head_movement: MovementTrace(
+                head_movement
+                    .map(|(a, b)| {
+                        (
+                            look_up.get(&a).copied().unwrap(),
+                            look_up.get(&b).copied().unwrap(),
+                        )
+                    })
+                    .collect(),
+            ),
+            phrasal_movement: MovementTrace(
+                phrasal_movement
+                    .map(|(a, b)| {
+                        (
+                            look_up.get(&a).copied().unwrap(),
+                            look_up.get(&b).copied().unwrap(),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
 ///Representation of an edge in a Tree.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum TreeEdge {
@@ -43,6 +140,8 @@ pub enum TreeEdge {
     Merge(Direction),
     ///The edge is the result of movement.
     Move,
+    ///The edge is the result of head movement.
+    MoveHead,
 }
 
 impl Display for TreeEdge {
@@ -51,55 +150,87 @@ impl Display for TreeEdge {
             TreeEdge::Merge(Direction::Left) => write!(f, "Merge(Left)"),
             TreeEdge::Merge(Direction::Right) => write!(f, "Merge(Right)"),
             TreeEdge::Move => write!(f, "Move"),
+            TreeEdge::MoveHead => write!(f, "MoveHead"),
         }
     }
 }
 
-impl<'src, T: Clone, C: Clone + Eq + Display> Tree<'src, T, C> {
+impl<'src, T: Debug + Clone, C: Debug + Clone + Eq + Display> TreeWithMovement<'src, T, C> {
     ///Get a parse as a [petgraph](https://crates.io/crates/petgraph) DiGraph
-    pub fn petgraph(
-        &self,
-        d: &Derivation<'src, T, C>,
-    ) -> (DiGraph<TreeNode<'src, T, C>, TreeEdge>, NodeIndex) {
-        let mut h = HashMap::default();
+    pub fn petgraph(&self) -> (DiGraph<TreeNode<'src, T, C>, TreeEdge>, NodeIndex) {
         let mut g = DiGraph::new();
-        let root = g.add_node(self.node.clone());
-        h.insert(self.node.rule, root);
+        let root = g.add_node(self.tree.node.clone());
+        let mut h = HashMap::default();
+        h.insert(GornIndex::default(), root);
+
         let mut stack: VecDeque<_> = self
+            .tree
             .children
             .iter()
             .enumerate()
-            .map(|(i, x)| (i, x, root))
-            .collect();
-        while let Some((pos, tree, par)) = stack.pop_front() {
-            let node = g.add_node(tree.node.clone());
-            h.insert(tree.node.rule, node);
-            g.add_edge(
-                par,
-                node,
-                match pos {
-                    0 => TreeEdge::Merge(Direction::Left),
-                    1 => TreeEdge::Merge(Direction::Right),
+            .map(|(i, x)| {
+                let dir = match i {
+                    0 => Direction::Left,
+                    1 => Direction::Right,
                     _ => panic!("The library should only have binary branching!"),
-                },
-            );
-            stack.extend(tree.children.iter().enumerate().map(|(i, x)| (i, x, node)));
+                };
+                (x, root, dir, GornIndex::new(dir))
+            })
+            .collect();
+
+        while let Some((tree, par, dir, gorn)) = stack.pop_front() {
+            let node = g.add_node(tree.node.clone());
+            h.insert(gorn, node);
+            g.add_edge(par, node, TreeEdge::Merge(dir));
+
+            stack.extend(tree.children.iter().enumerate().map(|(i, x)| {
+                let dir = match i {
+                    0 => Direction::Left,
+                    1 => Direction::Right,
+                    _ => panic!("The library should only have binary branching!"),
+                };
+                (x, node, dir, gorn.clone_push(dir))
+            }));
         }
-        for x in d.movement.trace_origins.iter() {
-            let mut x = x.clone();
-            x.rotate_right(1);
-            for (src, dst) in x.iter().tuple_windows::<(_, _)>() {
-                let src = *h.get(src).unwrap();
-                let dst = *h.get(dst).unwrap();
-                g.add_edge(src, dst, TreeEdge::Move);
-            }
+
+        for (a, b) in self.head_movement.0.iter() {
+            g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::MoveHead);
         }
+        for (a, b) in self.phrasal_movement.0.iter() {
+            println!("Weewoo");
+            g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::Move);
+        }
+
+        dbg!(&self.phrasal_movement);
+        dbg!(&self.head_movement);
 
         (g, root)
     }
 }
 
 impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
+    pub(crate) fn gorn_address(&self) -> HashMap<RuleIndex, GornIndex> {
+        let mut h = HashMap::default();
+
+        let mut stack = vec![(self, GornIndex::default())];
+
+        while let Some((tree, gorn)) = stack.pop() {
+            h.insert(tree.node.rule, gorn);
+            stack.extend(tree.children.iter().enumerate().map(|(x, child)| {
+                (
+                    child,
+                    gorn.clone_push(match x {
+                        0 => Direction::Left,
+                        1 => Direction::Right,
+                        _ => panic!("Trees should always be binary!"),
+                    }),
+                )
+            }))
+        }
+
+        h
+    }
+
     pub(crate) fn new(
         node: MgNode<T, C>,
         storage: Storage<C>,
@@ -133,10 +264,6 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
 }
 
 impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
-    ///The representation of the tree as a LaTeX forest tree. Requires using [the following commands in the preamble](https://github.com/MichaelGoodale/python-mg/blob/master/latex-commands.tex)
-    pub fn latex(&self) -> String {
-        format!("\\begin{{forest}}{}\\end{{forest}}", self.latex_inner())
-    }
     fn latex_inner(&self) -> String {
         let node = self.node.latex();
 
@@ -480,7 +607,7 @@ mod test {
             .unwrap();
 
         let d = lex.derivation(r);
-        let (g, _root) = d.tree().petgraph(&d);
+        let (g, _root) = d.tree().petgraph();
 
         let s = format!("{}", Dot::new(&g));
         println!("{s}");

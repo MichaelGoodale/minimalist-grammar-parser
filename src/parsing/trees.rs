@@ -1,5 +1,6 @@
 use std::{borrow::Borrow, cmp::Ordering};
 
+use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
 use crate::Direction;
@@ -14,8 +15,11 @@ type IndexArray = BitArray<[usize; N_CHUNKS as usize], Lsb0>;
 ///A compile time limitation on the maximum number of steps in a derivation (set to 128).
 pub const MAX_STEPS: usize = (usize::BITS * N_CHUNKS) as usize;
 
+///A Gorn Address which marks the path to a node in a tree.
+///For example, [] is root, [1] is the second child and [1,0] is the first child of the second child
+///of the root.
 #[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct GornIndex {
+pub struct GornIndex {
     index: IndexArray,
     size: usize,
 }
@@ -34,6 +38,22 @@ impl std::fmt::Debug for GornIndex {
                     .collect::<Vec<_>>(),
             )
             .finish()
+    }
+}
+
+impl std::fmt::Display for GornIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.index[..self.size]
+                .iter()
+                .map(|x| match *x {
+                    true => "1",
+                    false => "0",
+                })
+                .join("")
+        )
     }
 }
 
@@ -64,7 +84,7 @@ impl Iterator for GornIterator {
 }
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct GornIterator {
+pub struct GornIterator {
     pos: usize,
     gorn: GornIndex,
 }

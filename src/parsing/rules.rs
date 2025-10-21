@@ -17,7 +17,7 @@ use crate::{Direction, lexicon::LexemeId};
 
 use super::trees::GornIndex;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct RuleIndex(usize);
 impl RuleIndex {
     pub fn one() -> Self {

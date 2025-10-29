@@ -363,7 +363,7 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
     fn latex(&self) -> String {
         match &self.node {
             MgNode::Node { features } => {
-                let features = features.iter().map(|x| x.to_string()).join(" ");
+                let features = clean_up_expr(features.iter().map(|x| x.to_string()).join(" "));
 
                 #[cfg(feature = "semantics")]
                 if let Some(meaning) = &self.semantics {
@@ -385,7 +385,7 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
             MgNode::Leaf {
                 lemma, features, ..
             } => {
-                let features = features.iter().map(|x| x.to_string()).join(" ");
+                let features = clean_up_expr(features.iter().map(|x| x.to_string()).join(" "));
                 let lemma = lemma.to_string("$\\epsilon$", "-");
                 #[cfg(feature = "semantics")]
                 if let Some(meaning) = &self.semantics {

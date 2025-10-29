@@ -197,12 +197,8 @@ impl<'src, T: Debug + Clone, C: Debug + Clone + Eq + Display> TreeWithMovement<'
             g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::MoveHead);
         }
         for (a, b) in self.phrasal_movement.0.iter() {
-            println!("Weewoo");
             g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::Move);
         }
-
-        dbg!(&self.phrasal_movement);
-        dbg!(&self.head_movement);
 
         (g, root)
     }

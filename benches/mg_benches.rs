@@ -19,7 +19,7 @@ fn get_grammar() -> Lexicon<&'static str, &'static str> {
         .map(LexicalEntry::parse)
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    Lexicon::new(v)
+    Lexicon::new(v, false)
 }
 
 lazy_static! {
@@ -55,7 +55,7 @@ fn parse_copy_language(bencher: divan::Bencher) {
             .map(LexicalEntry::parse)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::new(v, false);
 
         let mut strings = Vec::<Vec<_>>::new();
         strings.push(vec![]);
@@ -88,7 +88,7 @@ fn parse_copy_language_together(bencher: divan::Bencher) {
             .map(LexicalEntry::parse)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let lex = Lexicon::new(v);
+        let lex = Lexicon::new(v, false);
 
         let mut strings = Vec::<Vec<_>>::new();
         strings.push(vec![]);
@@ -122,7 +122,7 @@ fn generate_copy_language(bencher: divan::Bencher) {
             .map(LexicalEntry::parse)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        Lexicon::new(v)
+        Lexicon::new(v, false)
     };
 
     bencher.bench(|| {
@@ -146,7 +146,7 @@ Mary::0= 0::lambda t phi phi";
 
     //fast grammar is 1000x times faster. literally 1000x.
 
-    let semantics = SemanticLexicon::parse(bad_grammar).unwrap();
+    let semantics = SemanticLexicon::parse(fast_grammar).unwrap();
 
     let config = ParsingConfig::new(
         LogProb::new(-32.0).unwrap(),

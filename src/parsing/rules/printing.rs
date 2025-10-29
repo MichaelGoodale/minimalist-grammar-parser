@@ -61,6 +61,17 @@ pub enum Lemma<T> {
     },
 }
 
+impl<T> Lemma<T> {
+    ///Returns whether the lemma has been stolen by head-movement.
+    pub fn is_stolen(&self) -> bool {
+        if let Lemma::Multi { stolen, .. } = self {
+            *stolen
+        } else {
+            false
+        }
+    }
+}
+
 impl<T: Display> Display for Lemma<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

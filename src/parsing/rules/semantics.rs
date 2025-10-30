@@ -5,7 +5,7 @@ use crate::lexicon::{LexemeId, SemanticLexicon};
 use itertools::Itertools;
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},
-    language::Expr,
+    language::{ConjoiningError, Expr},
 };
 
 use super::{Rule, RuleIndex, RulePool, TraceId};
@@ -19,6 +19,8 @@ use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
 pub enum SemanticRule {
     ///Apply one function to another.
     FunctionalApplication,
+    ///Conjoin two <x,t> functions to a new <x, t> with logical and
+    PredicateModification,
     ///Store a meaning for later, leaving behind a free variable as in QR.
     Store,
     ///Store a meaning only.
@@ -42,6 +44,7 @@ impl std::fmt::Display for SemanticRule {
             "{}",
             match self {
                 SemanticRule::FunctionalApplication => "FA",
+                SemanticRule::PredicateModification => "PM",
                 SemanticRule::Store => "Store",
                 SemanticRule::OnlyStore => "OnlyStore",
                 SemanticRule::Identity => "Id",
@@ -265,6 +268,38 @@ impl<'src> SemanticState<'src> {
         }
     }
 
+    fn predicate_modification(alpha: Self, beta: Self) -> Option<Self> {
+        let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
+        if overlapping_traces {
+            return None;
+        }
+
+        let SemanticState {
+            expr: alpha,
+            movers: mut alpha_movers,
+            ..
+        } = alpha;
+
+        let SemanticState {
+            expr: beta,
+            movers: beta_movers,
+            ..
+        } = beta;
+        let alpha = match alpha.conjoin(beta) {
+            Ok(x) => x,
+            Err(ConjoiningError::ReductionError(e)) => {
+                panic!("Reduction error in predicate_modification {e}")
+            }
+            Err(_) => return None,
+        };
+
+        alpha_movers.extend(beta_movers);
+        Some(SemanticState {
+            expr: alpha,
+            movers: alpha_movers,
+        })
+    }
+
     fn merge(alpha: Self, beta: Self) -> Option<Self> {
         let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
         if overlapping_traces {
@@ -412,6 +447,27 @@ where
         })
     }
 
+    fn predicate_modification(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
+        let (alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+        SemanticState::predicate_modification(alpha, beta).map(|x| {
+            (
+                x,
+                self.history_node(
+                    rule_id,
+                    SemanticRule::FunctionalApplication,
+                    Some(alpha_id),
+                    Some(beta_id),
+                ),
+            )
+        })
+    }
+
     fn only_store(
         &mut self,
         rule_id: RuleIndex,
@@ -547,13 +603,20 @@ where
                 let complements = self.get_previous_rules(*complement_id);
                 let children = self.get_previous_rules(*child_id);
 
-                children
-                    .into_iter()
-                    .cartesian_product(complements)
+                let product = children.into_iter().cartesian_product(complements);
+
+                let mut new_states: Vec<_> = product
+                    .clone()
                     .filter_map(|(child, complement)| {
                         self.functional_application(rule_id, child, complement)
                     })
-                    .collect()
+                    .collect();
+
+                new_states.extend(product.filter_map(|(child, complement)| {
+                    self.predicate_modification(rule_id, child, complement)
+                }));
+
+                new_states
             }
             Rule::UnmergeFromMover {
                 child_id,
@@ -671,6 +734,12 @@ where
 
                 self.functional_application(rule_id, child, complement)
             }
+            SemanticRule::PredicateModification => {
+                let child = get_child(0);
+                let complement = get_child(1);
+
+                self.predicate_modification(rule_id, child, complement)
+            }
             SemanticRule::Store => {
                 let child = get_child(0);
                 let complement = get_child(1);
@@ -747,6 +816,23 @@ mod tests {
             for (x, _h) in r.to_interpretation(&lexicon).take(10) {
                 println!("{x}");
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn predicate_modification() -> anyhow::Result<()> {
+        let lexicon = SemanticLexicon::parse(
+            "tall::n= n::lambda a x pa_tall(x)\nman::n::lambda a x pa_man(x)",
+        )?;
+        for (_, _, r) in lexicon.lexicon().parse(
+            &PhonContent::from(["tall", "man"]),
+            "n",
+            &ParsingConfig::default(),
+        )? {
+            let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
+
+            assert_eq!(x.to_string(), "lambda a x pa_tall(x) & pa_man(x)");
         }
         Ok(())
     }

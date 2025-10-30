@@ -126,6 +126,7 @@ impl From<GornIndex> for Vec<Direction> {
 }
 
 impl GornIndex {
+    ///Take a [`GornIndex`] and add a child with [`Direction`] `d`.
     #[inline]
     pub fn clone_push(&self, d: Direction) -> Self {
         let mut v = *self;
@@ -134,6 +135,8 @@ impl GornIndex {
         v
     }
 
+    ///Create a [`GornIndex`] with one [`Direction`] preset (you can use [`GornIndex::default`] for
+    ///the root).
     pub fn new(d: Direction) -> Self {
         let mut v = GornIndex {
             size: 0,
@@ -144,13 +147,17 @@ impl GornIndex {
         v
     }
 
+    ///How deep in the tree is this [`GornIndex`]
     pub fn depth(&self) -> usize {
         self.size
     }
 
+    ///Is `self` an ancestor of `x` ?
     pub fn is_ancestor_of(&self, x: GornIndex) -> bool {
         self.size < x.size && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }
+
+    ///Is `self` the parent of `x`?
     pub fn is_parent_of(&self, x: GornIndex) -> bool {
         x.size > 0 && self.size == (x.size - 1) && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }

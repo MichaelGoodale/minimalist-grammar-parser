@@ -21,6 +21,8 @@ pub enum SemanticRule {
     FunctionalApplication,
     ///Conjoin two <x,t> functions to a new <x, t> with logical and
     PredicateModification,
+    ///Conjoin a <y, <x,t>> and a <x,t> function to <y,<x,t>>
+    EventIdentification,
     ///Store a meaning for later, leaving behind a free variable as in QR.
     Store,
     ///Store a meaning only.
@@ -45,6 +47,7 @@ impl std::fmt::Display for SemanticRule {
             match self {
                 SemanticRule::FunctionalApplication => "FA",
                 SemanticRule::PredicateModification => "PM",
+                SemanticRule::EventIdentification => "EI",
                 SemanticRule::Store => "Store",
                 SemanticRule::OnlyStore => "OnlyStore",
                 SemanticRule::Identity => "Id",
@@ -267,6 +270,37 @@ impl<'src> SemanticState<'src> {
             movers: BTreeMap::default(),
         }
     }
+    fn event_identification(alpha: Self, beta: Self) -> Option<Self> {
+        let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
+        if overlapping_traces {
+            return None;
+        }
+
+        let SemanticState {
+            expr: alpha,
+            movers: mut alpha_movers,
+            ..
+        } = alpha;
+
+        let SemanticState {
+            expr: beta,
+            movers: beta_movers,
+            ..
+        } = beta;
+        let alpha = match alpha.raised_conjoin(beta) {
+            Ok(x) => x,
+            Err(ConjoiningError::ReductionError(e)) => {
+                panic!("Reduction error in predicate_modification {e}")
+            }
+            Err(_) => return None,
+        };
+
+        alpha_movers.extend(beta_movers);
+        Some(SemanticState {
+            expr: alpha,
+            movers: alpha_movers,
+        })
+    }
 
     fn predicate_modification(alpha: Self, beta: Self) -> Option<Self> {
         let overlapping_traces = alpha.movers.keys().any(|k| beta.movers.contains_key(k));
@@ -460,7 +494,28 @@ where
                 x,
                 self.history_node(
                     rule_id,
-                    SemanticRule::FunctionalApplication,
+                    SemanticRule::PredicateModification,
+                    Some(alpha_id),
+                    Some(beta_id),
+                ),
+            )
+        })
+    }
+
+    fn event_identification(
+        &mut self,
+        rule_id: RuleIndex,
+        child: (SemanticState<'src>, HistoryId),
+        complement: (SemanticState<'src>, HistoryId),
+    ) -> Option<(SemanticState<'src>, HistoryId)> {
+        let (alpha, alpha_id) = child;
+        let (beta, beta_id) = complement;
+        SemanticState::event_identification(alpha, beta).map(|x| {
+            (
+                x,
+                self.history_node(
+                    rule_id,
+                    SemanticRule::EventIdentification,
                     Some(alpha_id),
                     Some(beta_id),
                 ),
@@ -611,8 +666,12 @@ where
                         let complement_type = complement.0.expr.get_type().unwrap();
                         if child_type == complement_type {
                             self.predicate_modification(rule_id, child, complement)
-                        } else {
+                        } else if child_type.can_apply(&complement_type)
+                            || complement_type.can_apply(&child_type)
+                        {
                             self.functional_application(rule_id, child, complement)
+                        } else {
+                            self.event_identification(rule_id, child, complement)
                         }
                     })
                     .collect()
@@ -739,6 +798,12 @@ where
 
                 self.predicate_modification(rule_id, child, complement)
             }
+            SemanticRule::EventIdentification => {
+                let child = get_child(0);
+                let complement = get_child(1);
+
+                self.event_identification(rule_id, child, complement)
+            }
             SemanticRule::Store => {
                 let child = get_child(0);
                 let complement = get_child(1);
@@ -832,6 +897,25 @@ mod tests {
             let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
 
             assert_eq!(x.to_string(), "lambda a x pa_tall(x) & pa_man(x)");
+        }
+        Ok(())
+    }
+    #[test]
+    fn event_identification() -> anyhow::Result<()> {
+        let lexicon = SemanticLexicon::parse(
+            "voice::v= V::lambda a x lambda e y AgentOf(x, y)\nrun::v::lambda e x pe_runs(x)",
+        )?;
+        for (_, _, r) in lexicon.lexicon().parse(
+            &PhonContent::from(["voice", "run"]),
+            "V",
+            &ParsingConfig::default(),
+        )? {
+            let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
+
+            assert_eq!(
+                x.to_string(),
+                "lambda a x lambda e y AgentOf(x, y) & pe_runs(y)"
+            )
         }
         Ok(())
     }

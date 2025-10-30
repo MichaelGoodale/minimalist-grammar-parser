@@ -14,7 +14,8 @@ use itertools::{Either, Itertools};
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{ThinVec, thin_vec};
-use trees::{FutureTree, GornIndex, ParseMoment};
+pub use trees::GornIndex;
+use trees::{FutureTree, ParseMoment};
 
 use rules::Rule;
 pub use rules::RulePool;

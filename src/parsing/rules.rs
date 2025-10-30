@@ -11,7 +11,7 @@ mod serialization;
 #[cfg(feature = "pretty")]
 pub use printing::Derivation;
 #[cfg(feature = "pretty")]
-pub use serialization::{Tree, TreeEdge, TreeNode};
+pub use serialization::{Tree, TreeEdge, TreeNode, TreeWithMovement};
 
 use crate::{Direction, lexicon::LexemeId};
 

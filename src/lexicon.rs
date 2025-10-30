@@ -14,10 +14,8 @@ use itertools::Itertools;
 
 use logprob::{LogProb, Softmax};
 
-#[cfg(feature = "semantics")]
 use logprob::LogSumExp;
 
-#[cfg(feature = "semantics")]
 use petgraph::Direction::Outgoing;
 use petgraph::dot::Dot;
 use petgraph::prelude::StableDiGraph;
@@ -573,7 +571,6 @@ impl<'a, T: Eq, C: Eq + Clone> Iterator for Climber<'a, T, C> {
     }
 }
 
-#[cfg(feature = "semantics")]
 pub(crate) fn fix_weights_per_node<T: Eq, C: Eq>(
     graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
     node_index: NodeIndex,
@@ -594,7 +591,6 @@ pub(crate) fn fix_weights_per_node<T: Eq, C: Eq>(
     }
 }
 
-#[cfg(feature = "semantics")]
 pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
     graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
 ) {
@@ -605,7 +601,6 @@ pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
-    #[cfg(feature = "semantics")]
     pub(crate) fn add_lexical_entry(
         &mut self,
         lexical_entry: LexicalEntry<T, Category>,
@@ -658,7 +653,6 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             .map(|e| e.target())
     }
 
-    #[cfg(feature = "semantics")]
     ///Finds a node's feature
     pub(crate) fn find(&self, nx: NodeIndex) -> Option<&FeatureOrLemma<T, Category>> {
         self.graph.node_weight(nx)

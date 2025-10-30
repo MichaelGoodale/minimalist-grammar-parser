@@ -17,6 +17,7 @@ use serde::{
     Serialize,
     ser::{SerializeSeq, SerializeStruct, SerializeStructVariant},
 };
+use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::{collections::VecDeque, hash::Hash};
 
@@ -581,6 +582,41 @@ impl Serialize for TraceId {
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
+    ///Get the children of a tree
+    pub fn children(&self) -> impl Iterator<Item = &Tree<'src, T, C>> {
+        self.children.iter()
+    }
+
+    ///Get the node of the tree's root
+    pub fn node(&self) -> &TreeNode<'src, T, C> {
+        &self.node
+    }
+
+    ///Get all gorn addresses in the tree
+    pub fn gorn_addresses(&self) -> HashSet<GornIndex> {
+        let mut h = HashSet::default();
+
+        let mut stack = vec![(self, GornIndex::default())];
+
+        while let Some((tree, gorn)) = stack.pop() {
+            h.insert(gorn);
+            stack.extend(tree.children.iter().enumerate().map(|(x, child)| {
+                (
+                    child,
+                    gorn.clone_push(match x {
+                        0 => Direction::Left,
+                        1 => Direction::Right,
+                        _ => panic!("Trees should always be binary!"),
+                    }),
+                )
+            }))
+        }
+
+        h
     }
 }
 

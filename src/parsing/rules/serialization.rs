@@ -84,7 +84,7 @@ impl<'src, T: Display, C: Eq + Display + Clone> TreeWithMovement<'src, T, C> {
     }
 }
 
-impl<'src, T, C: Eq + Display + Clone> TreeWithMovement<'src, T, C> {
+impl<'src, T, C: Eq + Display> TreeWithMovement<'src, T, C> {
     ///Get the tree, itself
     pub fn tree(&self) -> &Tree<'src, T, C> {
         &self.tree

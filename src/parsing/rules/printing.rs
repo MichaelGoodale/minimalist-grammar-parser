@@ -100,6 +100,15 @@ enum DepthRuleOrder {
 }
 
 impl RulePool {
+    ///Get this derivation as a [`TreeWithMovement`]
+    pub fn to_tree<'src, T: Eq + Clone, C: Eq + Clone + Display>(
+        self,
+        lex: &Lexicon<T, C>,
+    ) -> TreeWithMovement<'src, T, C> {
+        let d = lex.derivation(self);
+        d.tree()
+    }
+
     fn get_node<T: Eq + Clone, C: Eq + Display + Clone>(
         &self,
         lex: &Lexicon<T, C>,
@@ -443,7 +452,7 @@ fn movement_helpers<T: Eq, C: Eq + Clone>(
     }
 }
 
-impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T, C> {
+impl<T: Eq + Clone, C: Eq + Clone + Display> Lexicon<T, C> {
     ///Converts a [`RulePool`] into a [`Derivation`] which allows the construction of [`Tree`]s
     ///which can be used to plot syntactic trees throughout the derivation of the parse.
     pub fn derivation(&self, rules: RulePool) -> Derivation<'static, T, C> {
@@ -531,9 +540,7 @@ impl<T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display> Lexicon<T
 }
 
 #[cfg(feature = "semantics")]
-impl<'src, T: Eq + Debug + Clone + Display, C: Eq + Debug + Clone + Display>
-    SemanticLexicon<'src, T, C>
-{
+impl<'src, T: Eq + Debug + Clone, C: Eq + Debug + Clone + Display> SemanticLexicon<'src, T, C> {
     ///Converts a [`RulePool`] into a [`Derivation`] which allows the construction of [`Tree`]s
     ///which can be used to plot syntactic trees throughout the derivation of the parse. This
     ///version allows for semantic information in the derivation as well.
@@ -575,7 +582,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
     semantics: PhantomData<&'src ()>,
 }
 
-impl<'src, T: Clone + Debug, C: Clone + Eq + Display + Debug> Derivation<'src, T, C> {
+impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
     ///Get all possible [`Tree`]s in bottom-up order of a parse.
     pub fn trees(&self) -> impl DoubleEndedIterator<Item = TreeWithMovement<'src, T, C>> {
         (0..self.windows.len()).map(|x| {

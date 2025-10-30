@@ -144,6 +144,10 @@ impl GornIndex {
         v
     }
 
+    pub fn depth(&self) -> usize {
+        self.size
+    }
+
     pub fn is_ancestor_of(&self, x: GornIndex) -> bool {
         self.size < x.size && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }

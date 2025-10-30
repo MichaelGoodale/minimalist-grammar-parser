@@ -603,20 +603,19 @@ where
                 let complements = self.get_previous_rules(*complement_id);
                 let children = self.get_previous_rules(*child_id);
 
-                let product = children.into_iter().cartesian_product(complements);
-
-                let mut new_states: Vec<_> = product
-                    .clone()
+                children
+                    .into_iter()
+                    .cartesian_product(complements)
                     .filter_map(|(child, complement)| {
-                        self.functional_application(rule_id, child, complement)
+                        let child_type = child.0.expr.get_type().unwrap();
+                        let complement_type = complement.0.expr.get_type().unwrap();
+                        if child_type == complement_type {
+                            self.predicate_modification(rule_id, child, complement)
+                        } else {
+                            self.functional_application(rule_id, child, complement)
+                        }
                     })
-                    .collect();
-
-                new_states.extend(product.filter_map(|(child, complement)| {
-                    self.predicate_modification(rule_id, child, complement)
-                }));
-
-                new_states
+                    .collect()
             }
             Rule::UnmergeFromMover {
                 child_id,

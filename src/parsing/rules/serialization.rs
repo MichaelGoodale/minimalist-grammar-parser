@@ -98,7 +98,7 @@ impl<'src, T, C: Eq + Display> TreeWithMovement<'src, T, C> {
 
     ///Get the tree, itself
     pub fn phrasal_movement(&self) -> &[(GornIndex, GornIndex)] {
-        &self.head_movement.0
+        &self.phrasal_movement.0
     }
 
     pub(crate) fn new(

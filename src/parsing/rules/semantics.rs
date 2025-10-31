@@ -148,6 +148,7 @@ impl<'a> SemanticHistory<'a> {
             SemanticHistory::Rich(items) => Some(
                 items
                     .iter()
+                    .skip(1)
                     .filter_map(|(b, x)| x.as_ref().map(|x| (*b, &x.expr))),
             ),
             SemanticHistory::Simple(_) => None,

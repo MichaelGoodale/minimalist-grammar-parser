@@ -1,5 +1,6 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
+use ahash::{HashMap, HashSet};
 #[cfg(feature = "pretty")]
 use serde::Serialize;
 
@@ -600,7 +601,118 @@ pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
     }
 }
 
+///A struct which records whether a given licensee must always occur with a lexeme of a given
+///category
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct ObligatoryMover<C: Eq> {
+    ///The licensee which always occurs with the category.
+    pub licensee: C,
+    ///The category that requires a specific licensee
+    pub category: C,
+}
+impl<T: Eq + Debug, Category: Eq + Hash + Clone> Lexicon<T, Category> {
+    ///This function goes through a lexicon and returns all licensees which are *always* correlated
+    ///with a *specific* category.
+    ///```
+    /// # use minimalist_grammar_parser::Lexicon;
+    /// # use minimalist_grammar_parser::lexicon::ObligatoryMover;
+    /// # use anyhow;
+    /// # fn main() -> anyhow::Result<()> {
+    /// let lex = Lexicon::from_string("John::d -k -q\nwho::d -k -q -w\nsaw::d= +k v")?;
+    /// assert_eq!(
+    ///     lex.obligatory_movers(),
+    ///     vec![
+    ///         ObligatoryMover {
+    ///             licensee: "k",
+    ///             category: "d",
+    ///         },
+    ///         ObligatoryMover {
+    ///             licensee: "q",
+    ///             category: "d",
+    ///         },
+    ///     ]
+    /// );
+    /// let lex = Lexicon::from_string("John::d -k -q\nwho::d -k -w\nsaw::d= +k v")?;
+    /// assert_eq!(
+    ///     lex.obligatory_movers(),
+    ///     vec![ObligatoryMover {
+    ///         licensee: "k",
+    ///         category: "d",
+    ///     }]
+    /// );
+    /// let lex = Lexicon::from_string("John::d -q\nwho::d -k -q -w\nsaw::d= +k v")?;
+    /// assert_eq!(lex.obligatory_movers(), vec![]);
+    ///
+    /// let lex = Lexicon::from_string("John::d -k -q\nwho::d -k -q -w\nsaw::d= +k v -q")?;
+    /// assert_eq!(
+    ///     lex.obligatory_movers(),
+    ///     vec![ObligatoryMover {
+    ///         licensee: "k",
+    ///         category: "d",
+    ///     }]
+    /// );
+    ///# Ok(())
+    ///# }
+    ///
+    ///```
+    pub fn obligatory_movers(&self) -> Vec<ObligatoryMover<Category>> {
+        let mut stack = vec![(self.root, vec![])];
+        let mut histories: HashMap<&Category, Vec<Vec<&Category>>> = HashMap::default();
+
+        while let Some((x, hist)) = stack.pop() {
+            for child in self.children_of(x) {
+                match self.get(child).unwrap().0 {
+                    FeatureOrLemma::Feature(Feature::Licensee(c)) => {
+                        let mut hist = hist.clone();
+                        hist.push(c);
+                        stack.push((child, hist));
+                    }
+                    FeatureOrLemma::Feature(Feature::Category(c)) => {
+                        histories.entry(c).or_default().push(hist.clone());
+                    }
+                    _ => (),
+                };
+            }
+        }
+
+        let mut movers = vec![];
+        let mut used_licensees = HashSet::default();
+        for (category, mut licensees) in histories {
+            while let Ok(Some(licensee)) = licensees.iter_mut().map(|x| x.pop()).all_equal_value() {
+                if used_licensees.contains(licensee) {
+                    movers.retain(|x: &ObligatoryMover<Category>| &x.licensee != licensee);
+                } else {
+                    used_licensees.insert(licensee);
+                    movers.push(ObligatoryMover {
+                        licensee: licensee.clone(),
+                        category: category.clone(),
+                    });
+                }
+            }
+        }
+
+        movers
+    }
+}
+
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
+    pub(crate) fn get(
+        &self,
+        nx: NodeIndex,
+    ) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
+        if let Some(x) = self.graph.node_weight(nx) {
+            let p = self
+                .graph
+                .edges_directed(nx, petgraph::Direction::Incoming)
+                .next()
+                .unwrap()
+                .weight();
+            Some((x, *p))
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn add_lexical_entry(
         &mut self,
         lexical_entry: LexicalEntry<T, Category>,
@@ -917,23 +1029,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             None => Err(ParsingError::NoLicensorOrCategory(
                 LicenseeOrCategory::Licensee(category.clone()),
             )),
-        }
-    }
-
-    pub(crate) fn get(
-        &self,
-        nx: NodeIndex,
-    ) -> Option<(&FeatureOrLemma<T, Category>, LogProb<f64>)> {
-        if let Some(x) = self.graph.node_weight(nx) {
-            let p = self
-                .graph
-                .edges_directed(nx, petgraph::Direction::Incoming)
-                .next()
-                .unwrap()
-                .weight();
-            Some((x, *p))
-        } else {
-            None
         }
     }
 

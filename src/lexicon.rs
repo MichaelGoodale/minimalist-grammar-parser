@@ -953,10 +953,14 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         })
     }
 
-    ///Iterate over all categories of a grammar
+    ///Iterate over all categories of a grammar whether as selectors or categories. This goes over
+    ///the entire lexicon so it will repeat elements multiple times.
     pub fn categories(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
-            FeatureOrLemma::Feature(Feature::Category(x)) => Some(x),
+            FeatureOrLemma::Feature(Feature::Category(x))
+            | FeatureOrLemma::Feature(Feature::Selector(x, _))
+            | FeatureOrLemma::Complement(x, _)
+            | FeatureOrLemma::Feature(Feature::Affix(x, _)) => Some(x),
             _ => None,
         })
     }
@@ -1174,7 +1178,9 @@ mod tests {
     fn categories() -> Result<()> {
         let lex = Lexicon::from_string("::V= +Z C -W")?;
 
-        assert_eq!(vec![&"C"], lex.categories().collect::<Vec<_>>());
+        let mut cats = lex.categories().collect::<Vec<_>>();
+        cats.sort();
+        assert_eq!(vec![&"C", &"V"], cats);
         let mut lice = lex.licensor_types().collect::<Vec<_>>();
         lice.sort();
         assert_eq!(vec![&"W", &"Z"], lice);

@@ -7,10 +7,9 @@ use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
 use crate::parsing::rules::StolenInfo;
-use crate::parsing::trees::{GornIterator, StolenHead};
+use crate::parsing::trees::StolenHead;
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
-use itertools::{Either, Itertools};
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
 use thin_vec::{ThinVec, thin_vec};
@@ -111,21 +110,20 @@ impl PossibleTree {
         }
     }
 
-    fn to_trees<'a>(&'a self) -> PossibleTreeIterator<'a> {
+    fn to_trees<'a>(&'a self, child_node: LexemeId) -> PossibleTreeIterator<'a> {
         PossibleTreeIterator {
             stack: self
                 .edges
                 .get(&0)
                 .unwrap()
                 .iter()
-                .map(|(_, x)| {
-                    (
-                        *x,
-                        HeadTree {
-                            head: *self.heads.get(x - 1).unwrap(),
-                            child: None,
-                        },
-                    )
+                .filter_map(|(_, x)| {
+                    let head = *self.heads.get(x - 1).unwrap();
+                    if child_node == head {
+                        Some((*x, HeadTree { head, child: None }))
+                    } else {
+                        None
+                    }
                 })
                 .collect(),
             trees: self,
@@ -180,55 +178,32 @@ impl HeadTree {
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct FilledHeadTree<'a, T> {
-    head: Option<&'a T>,
-    child: Option<(Box<FilledHeadTree<'a, T>>, Direction)>,
-}
-
-impl<'a, T> FilledHeadTree<'a, T> {
-    pub fn inorder(&self) -> Vec<&'a T> {
-        let mut order = vec![];
-        self.inorder_inner(&mut order);
-        order
-    }
-    fn inorder_inner(&self, v: &mut Vec<&'a T>) {
-        if let Some((child, d)) = &self.child {
-            match d {
-                Direction::Left => {
-                    child.inorder_inner(v);
-                    if let Some(x) = self.head {
-                        v.push(x);
+impl HeadTree {
+    fn to_filled_head<T: Eq + Clone, C: Eq>(&self, lex: &Lexicon<T, C>) -> Vec<T> {
+        let mut v = vec![];
+        if let Some(h) = lex.leaf_to_lemma(self.head).unwrap().as_ref().cloned() {
+            v.push(h);
+        }
+        let mut x = self;
+        let mut pos = 0;
+        while let Some((h, d)) = &x.child {
+            if let Some(h) = lex.leaf_to_lemma(h.head).unwrap().as_ref().cloned() {
+                if v.is_empty() {
+                    v.push(h);
+                } else {
+                    match d {
+                        Direction::Left => v.insert(pos, h),
+                        Direction::Right => {
+                            pos += 1;
+                            v.insert(pos, h);
+                        }
                     }
-                }
-                Direction::Right => {
-                    if let Some(x) = self.head {
-                        v.push(x);
-                    }
-                    child.inorder_inner(v);
                 }
             }
-        } else if let Some(x) = self.head {
-            v.push(x);
+            x = h
         }
-    }
-}
 
-impl HeadTree {
-    fn to_filled_head<'a, T: Eq, C: Eq>(&self, lex: &'a Lexicon<T, C>) -> FilledHeadTree<'a, T> {
-        let child = self
-            .child
-            .as_ref()
-            .map(|(child, dir)| (Box::new(child.to_filled_head(lex)), *dir));
-
-        FilledHeadTree {
-            head: lex
-                .leaf_to_lemma(self.head)
-                .expect("Head nodes must be lemmas!")
-                .as_ref(),
-            child,
-        }
+        v
     }
 
     pub fn find_node(&self, index: GornIndex) -> Option<LexemeId> {
@@ -301,12 +276,11 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 };
 
                 for (filled_head_tree, id_tree) in possible_trees
-                    .to_trees()
-                    .filter(|x| x.head == child_node)
+                    .to_trees(child_node)
                     .map(|x| (x.to_filled_head(lexicon), x))
                 {
                     let mut new_beam = self.clone();
-                    if new_beam.beam.multiscan(&filled_head_tree) {
+                    if new_beam.beam.multiscan(filled_head_tree) {
                         new_beam.heads[pos] = PossibleHeads::FoundTree(id_tree, moment.tree.id);
                         new_beam.log_prob += child_prob;
                         new_beam.rules.push_rule(

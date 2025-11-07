@@ -24,7 +24,6 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
-use std::ops::Range;
 use std::result::Result;
 use std::{
     fmt::{Debug, Display},

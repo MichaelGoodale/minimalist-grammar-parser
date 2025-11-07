@@ -182,7 +182,7 @@ impl HeadTree {
 }
 impl HeadTree {
     fn to_filled_head<T: Eq + Clone, C: Eq>(&self, lex: &Lexicon<T, C>) -> Vec<T> {
-        let mut v = vec![];
+        let mut v = Vec::with_capacity(self.heads.len());
         let mut pos = 0;
         let mut dir = Direction::Left;
         for (h, d) in self.heads.iter() {

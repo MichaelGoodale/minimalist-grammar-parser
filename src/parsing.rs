@@ -1,7 +1,7 @@
 //! Module to define the core parsing algorithm used to generate or parse strings from MGs
 use std::borrow::Borrow;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
@@ -42,102 +42,127 @@ pub(crate) enum PossibleHeads {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PossibleTree {
-    head: Vec<LexemeId>,
-    left_child: Option<Vec<PossibleTree>>,
-    right_child: Option<Vec<PossibleTree>>,
+    heads: Vec<LexemeId>,
+    edges: BTreeMap<usize, Vec<(Direction, usize)>>,
 }
 
 impl PossibleTree {
     ///Goes through possible trees and keeps only that follow the GornIndex (which needn't go to
     ///the bottom), it also only keeps nodes at the destination are children of [`node`].
+    ///
+    ///Returns false if the tree is now empty.
     fn filter_node<T: Eq, C: Eq>(
         &mut self,
         node: NodeIndex,
-        mut d: GornIterator,
+        d: GornIndex,
         lexicon: &Lexicon<T, C>,
     ) -> bool {
-        match d.next() {
-            Some(Direction::Left) => {
-                self.right_child = None;
-                if let Some(x) = self.left_child.as_mut() {
-                    x.iter_mut().any(|h| h.filter_node(node, d, lexicon))
-                } else {
-                    false
+        let mut heads: Vec<_> = self
+            .edges
+            .get(&0)
+            .unwrap()
+            .iter()
+            .map(|(_, x)| *x)
+            .collect();
+
+        let mut old_heads = vec![];
+        for dir in d {
+            let mut new_heads = vec![];
+            for head in heads.iter() {
+                if let Some(x) = self.edges.get_mut(head) {
+                    x.retain(|(d, _)| d == &dir);
+                    new_heads.extend(x.iter().map(|(_, x)| *x));
                 }
             }
-            Some(Direction::Right) => {
-                self.left_child = None;
-
-                if let Some(x) = self.right_child.as_mut() {
-                    x.iter_mut().any(|h| h.filter_node(node, d, lexicon))
-                } else {
-                    false
-                }
+            if new_heads.is_empty() {
+                return false;
             }
-            None => {
-                self.head
-                    .retain(|x| node == lexicon.parent_of(x.0).unwrap());
-                !self.head.is_empty()
+            old_heads = heads.clone();
+            heads = new_heads;
+        }
+
+        heads.retain(|x| {
+            if node == lexicon.parent_of(self.heads.get(x - 1).unwrap().0).unwrap() {
+                true
+            } else {
+                old_heads.iter().for_each(|k| {
+                    self.edges.remove(k);
+                });
+                false
             }
-        }
+        });
+        !heads.is_empty()
     }
 
-    pub(crate) fn just_heads(nodes: Vec<LexemeId>) -> Self {
-        Self {
-            head: nodes,
-            left_child: None,
-            right_child: None,
-        }
-    }
-    pub(crate) fn merge(mut self, children: Vec<PossibleTree>, dir: Direction) -> Self {
-        match dir {
-            Direction::Left => self.left_child = Some(children),
-            Direction::Right => self.right_child = Some(children),
-        }
-        self
+    pub(crate) fn add_head(&mut self, head: LexemeId) -> usize {
+        self.heads.push(head);
+        self.heads.len() //1-indexed so that 0 is always the root (which is not directly
+        //represented)
     }
 
-    pub(crate) fn empty() -> Self {
+    pub(crate) fn add_edge(&mut self, source: usize, end: usize, dir: Direction) {
+        self.edges.entry(source).or_default().push((dir, end));
+    }
+
+    pub(crate) fn new() -> Self {
         PossibleTree {
-            head: vec![],
-            left_child: None,
-            right_child: None,
+            heads: vec![],
+            edges: BTreeMap::default(),
         }
     }
 
-    fn to_trees(&self) -> impl Iterator<Item = HeadTree> {
-        match (&self.left_child, &self.right_child) {
-            (None, None) => Either::Left(self.head.iter().map(|x| HeadTree {
-                head: *x,
-                child: None,
-            })),
-            _ => {
-                let children = self
-                    .left_child
-                    .iter()
-                    .flat_map(|x| x.iter())
-                    .flat_map(|x| x.to_trees())
-                    .map(|x| (Direction::Left, x));
+    fn to_trees<'a>(&'a self) -> PossibleTreeIterator<'a> {
+        PossibleTreeIterator {
+            stack: self
+                .edges
+                .get(&0)
+                .unwrap()
+                .iter()
+                .map(|(_, x)| {
+                    (
+                        *x,
+                        HeadTree {
+                            head: *self.heads.get(x - 1).unwrap(),
+                            child: None,
+                        },
+                    )
+                })
+                .collect(),
+            trees: self,
+            buffer: vec![],
+        }
+    }
+}
 
-                let children = children.chain(
-                    self.right_child
-                        .iter()
-                        .flat_map(|x| x.iter())
-                        .flat_map(|x| x.to_trees())
-                        .map(|x| (Direction::Right, x)),
-                );
+struct PossibleTreeIterator<'a> {
+    stack: Vec<(usize, HeadTree)>,
+    trees: &'a PossibleTree,
+    buffer: Vec<HeadTree>,
+}
+impl Iterator for PossibleTreeIterator<'_> {
+    type Item = HeadTree;
 
-                Either::Right(
-                    self.head
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(b) = self.buffer.pop() {
+            return Some(b);
+        }
+
+        while let Some((pos, head)) = self.stack.pop() {
+            match self.trees.edges.get(&pos) {
+                Some(children) => {
+                    for ((dir, pos), mut head) in children
                         .iter()
-                        .cartesian_product(children.collect_vec())
-                        .map(|(x, (d, h))| HeadTree {
-                            head: *x,
-                            child: Some((Box::new(h), d)),
-                        }),
-                )
+                        .zip(itertools::repeat_n(head, children.len()))
+                    {
+                        head.add_new_child(*self.trees.heads.get(pos - 1).unwrap(), *dir);
+                        self.stack.push((*pos, head));
+                    }
+                }
+                None => self.buffer.push(head),
             }
         }
+
+        self.buffer.pop()
     }
 }
 
@@ -145,6 +170,15 @@ impl PossibleTree {
 pub(crate) struct HeadTree {
     head: LexemeId,
     child: Option<(Box<HeadTree>, Direction)>,
+}
+
+impl HeadTree {
+    fn add_new_child(&mut self, head: LexemeId, dir: Direction) {
+        match &mut self.child {
+            Some((x, _)) => x.add_new_child(head, dir),
+            None => self.child = Some((Box::new(HeadTree { head, child: None }), dir)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -668,7 +702,7 @@ fn set_beam_head<
         Some(StolenHead::StolenHead(pos, index)) => {
             match &mut beam.heads[pos] {
                 PossibleHeads::Possibles(head_trees) => {
-                    if !head_trees.filter_node(child_node, index.into_iter(), lexicon) {
+                    if !head_trees.filter_node(child_node, index, lexicon) {
                         return Ok(None);
                     }
                 }
@@ -693,7 +727,7 @@ fn set_beam_head<
         }
         None => {
             let head_pos = beam.heads.len();
-            let possible_heads = PossibleHeads::Possibles(lexicon.possible_heads(child_node, 0)?);
+            let possible_heads = PossibleHeads::Possibles(lexicon.possible_heads(child_node)?);
             beam.heads.push(possible_heads);
             Ok(Some(HeadMovement::HeadMovement {
                 stealer: StolenHead::Stealer(head_pos),

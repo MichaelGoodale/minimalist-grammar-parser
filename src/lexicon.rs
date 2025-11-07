@@ -24,6 +24,7 @@ use petgraph::{
     graph::NodeIndex,
     visit::{EdgeRef, IntoNodeReferences},
 };
+use std::ops::Range;
 use std::result::Result;
 use std::{
     fmt::{Debug, Display},
@@ -498,51 +499,68 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+    fn add_heads(&self, nx: NodeIndex, possibles: &mut PossibleTree) -> (usize, usize) {
+        let mut start = None;
+        let mut end = None;
+        self.children_of(nx).for_each(|child| {
+            if matches!(
+                self.graph.node_weight(child).unwrap(),
+                FeatureOrLemma::Lemma(_)
+            ) {
+                let head = possibles.add_head(LexemeId(child));
+                if start.is_none() {
+                    start = Some(head);
+                }
+                end = Some(head + 1);
+            }
+        });
+
+        (start.unwrap(), end.unwrap())
+    }
+
     pub(crate) fn possible_heads(
         &self,
         nx: NodeIndex,
-        depth: usize,
     ) -> Result<PossibleTree, ParsingError<Category>> {
-        if depth > 10 {
-            return Ok(PossibleTree::empty());
-        }
-        let Some(FeatureOrLemma::Feature(Feature::Affix(category, direction))) =
+        let mut possibles = PossibleTree::new();
+        let Some(FeatureOrLemma::Feature(Feature::Affix(category, dir))) =
             self.graph.node_weight(nx)
         else {
             panic!("Node must be an affix!")
         };
-
-        let mut children = vec![];
-        let mut lemmas = vec![];
+        let heads = self.add_heads(nx, &mut possibles);
+        for head in heads.0..heads.1 {
+            possibles.add_edge(0, head, Direction::Left);
+        }
         let x: NodeIndex = self.find_category(category)?;
+        let mut stack = vec![(x, heads, dir, 0)];
 
-        let mut stack = vec![x];
-
-        while let Some(nx) = stack.pop() {
+        while let Some((nx, heads, dir, depth)) = stack.pop() {
+            if depth > 10 {
+                continue;
+            }
             match self.graph.node_weight(nx).unwrap() {
-                FeatureOrLemma::Feature(Feature::Affix(..)) => {
-                    children.push(self.possible_heads(nx, depth + 1)?)
+                FeatureOrLemma::Feature(Feature::Affix(category, new_dir)) => {
+                    let x: NodeIndex = self.find_category(category)?;
+                    let new_heads = self.add_heads(nx, &mut possibles);
+                    for head in heads.0..heads.1 {
+                        for new_head in new_heads.0..new_heads.1 {
+                            possibles.add_edge(head, new_head, *dir)
+                        }
+                    }
+                    stack.push((x, new_heads, new_dir, depth + 1));
                 }
-                FeatureOrLemma::Lemma(_) => lemmas.push(LexemeId(nx)),
-                _ => stack.extend(self.children_of(nx)),
+                FeatureOrLemma::Lemma(_) => {
+                    let lemma = possibles.add_head(LexemeId(nx));
+                    for head in heads.0..heads.1 {
+                        possibles.add_edge(head, lemma, *dir)
+                    }
+                }
+                _ => stack.extend(self.children_of(nx).map(|x| (x, heads, dir, depth))),
             }
         }
-        children.push(PossibleTree::just_heads(lemmas));
 
-        let heads: Vec<LexemeId> = self
-            .children_of(nx)
-            .filter_map(|child| {
-                if matches!(
-                    self.graph.node_weight(child).unwrap(),
-                    FeatureOrLemma::Lemma(_)
-                ) {
-                    Some(LexemeId(child))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        Ok(PossibleTree::just_heads(heads).merge(children, *direction))
+        Ok(possibles)
     }
 }
 

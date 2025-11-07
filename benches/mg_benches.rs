@@ -131,6 +131,54 @@ fn generate_copy_language(bencher: divan::Bencher) {
 }
 
 #[divan::bench]
+fn head_movement(bencher: divan::Bencher) {
+    let head_movement = "John::2= +1 0::lambda a x pa_woman(x)
+John::=>0 0= +1 0::lambda t phi lambda t psi ~~phi
+runs::=>0 0= +1 0::lambda t phi lambda t psi every_e(x, psi, pa_man(a_John))
+runs::=>0 0= +1 0::lambda t phi lambda t psi ~pa_woman(a_Phil)
+runs::2::a_Mary
+John::0 -1::pa_woman(a_Susan)";
+
+    let worse_head_movement = "runs::0<= 0::lambda t phi some(x, pa_man(a_Susan), pa_man(a_John))
+ε::0<= 0::lambda t phi phi
+ε::0<= 0::lambda t phi some(x, phi, ~pa_man(a_John))
+ε::0<= 0::lambda t phi ~phi & phi
+John::0= +1 0::lambda t phi pa_man(a_Phil)
+John::0 -1::some_e(x, pa_woman(a_Mary), pa_man(a_Phil))";
+
+    let semantics = SemanticLexicon::parse(head_movement).unwrap();
+
+    let config = ParsingConfig::new(
+        LogProb::new(-32.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        10,
+        50,
+    );
+
+    let sentences = [vec!["John", "runs"]].map(PhonContent::new);
+
+    bencher.bench(|| {
+        if let Ok(parser) = semantics.lexicon().parse_multiple(&sentences, "0", &config) {
+            let mut map = HashMap::default();
+            for (p, s, r) in parser.take(20) {
+                let parses = map.entry(s).or_insert((p, vec![]));
+                let interp = r
+                    .to_interpretation(&semantics)
+                    .take(10)
+                    .filter_map(|(pool, h)| {
+                        if let Ok(expr) = pool.into_pool() {
+                            Some((expr, h.into_rich(&semantics, &r)))
+                        } else {
+                            None
+                        }
+                    });
+                parses.1.extend(interp);
+            }
+        }
+    });
+}
+
+#[divan::bench]
 fn semantic_bench(bencher: divan::Bencher) {
     let bad_grammar="ε::0= 0::lambda t phi pa_man(a_John) | (~every_e(x, pe_likes, PatientOf(a_Phil, x)) & phi)
 ε::0= 0::lambda t phi every_e(x, pe_laughs, phi) & some(x, pa_man, (every(y, pa_woman, some(z, all_a, some(a, lambda a b some_e(c, pe_laughs, pe_laughs(c)), some(b, pa_woman, some_e(c, lambda e d pe_helps(c), PatientOf(b, c)) | ~(pa_man(a) | every(c, all_a, pa_woman(x))))))) & pa_woman(a_Phil) & some(y, all_a, every_e(z, pe_runs, every_e(a, pe_runs, PatientOf(a_Mary, a))))) | every(y, all_a, phi)) & some(x, all_a, some(y, all_a, some(z, lambda a a phi, some(a, all_a, every_e(b, pe_likes, pa_woman(x)))) & phi))
@@ -156,6 +204,7 @@ Mary::0= 0::lambda t phi phi";
     );
 
     let sentences = [
+        vec!["John", "runs"],
         vec!["Mary", "laughs"],
         vec!["Mary", "sleeps"],
         vec!["John", "sleeps"],

@@ -1,4 +1,3 @@
-//! This module defines various mutations which allow one to create random minimalist grammars or
 //! evolve them in a genetic algorithm
 
 use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Hash};
@@ -54,11 +53,15 @@ impl Position {
                     if rng.random_bool(config.lemma_prob) {
                         *self = Position::Done;
                     }
+                    let dir = config.direction(rng);
+                    let category = categories.choose(rng).unwrap().clone();
 
-                    Feature::Selector(
-                        categories.choose(rng).unwrap().clone(),
-                        config.direction(rng),
-                    )
+                    if *self == Position::Done && rng.random_bool(config.affix_prob) {
+                        Feature::Affix(category, dir)
+                    } else {
+                        *self = Position::Done;
+                        Feature::Selector(category, dir)
+                    }
                 } else {
                     Feature::Licensor(licensors.choose(rng).unwrap().clone())
                 }
@@ -509,7 +512,7 @@ where
                     //If the lemma node has no siblings, deleting it will make an invalid grammar.
                     self.graph.edges_directed(parent, Outgoing).count() > 1
                 }
-                FeatureOrLemma::Complement(_, _) => {
+                FeatureOrLemma::Complement(..) | FeatureOrLemma::Feature(Feature::Affix(..)) => {
                     let parent = self.parent_of(nx).unwrap();
                     //If the parent of a complement is a licensor, we can't delete it
                     !matches!(
@@ -537,6 +540,7 @@ where
                     self.graph.node_weight(parent).unwrap(),
                     FeatureOrLemma::Feature(Feature::Selector(_, _))
                 ) {
+                    //complicated code to check complements are respected
                     let mut complement_edges = vec![];
                     let mut selector_edges = vec![];
 
@@ -787,6 +791,7 @@ pub struct LexicalProbConfig {
     add_cat_prob: f64,
     mover_prob: f64,
     licensee_prob: f64,
+    affix_prob: f64,
 }
 
 impl Default for LexicalProbConfig {
@@ -799,6 +804,7 @@ impl Default for LexicalProbConfig {
             add_cat_prob: 0.65,
             mover_prob: 0.2,
             licensee_prob: 0.05,
+            affix_prob: 0.25,
         }
     }
 }
@@ -846,7 +852,11 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         } else {
             let c = self.choose_category_for_feature(rng);
             if self.is_lemma(rng) {
-                FeatureOrLemma::Complement(c, self.config.direction(rng))
+                if rng.random_bool(self.config.affix_prob) {
+                    FeatureOrLemma::Feature(Feature::Affix(c, self.config.direction(rng)))
+                } else {
+                    FeatureOrLemma::Complement(c, self.config.direction(rng))
+                }
             } else {
                 FeatureOrLemma::Feature(Feature::Selector(c, self.config.direction(rng)))
             }
@@ -897,8 +907,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                     }
                 }
                 FeatureOrLemma::Feature(Feature::Licensor(_))
-                | FeatureOrLemma::Feature(Feature::Selector(_, _))
-                | FeatureOrLemma::Feature(Feature::Affix(_, _)) => {
+                | FeatureOrLemma::Feature(Feature::Selector(_, _)) => {
                     let n_children = self.n_children(rng);
                     for _ in 0..n_children {
                         let feature = self.get_feature(rng);
@@ -929,7 +938,8 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         }
                     }
                 }
-                FeatureOrLemma::Complement(_, _) => {
+                FeatureOrLemma::Complement(_, _)
+                | FeatureOrLemma::Feature(Feature::Affix(_, _)) => {
                     let n_children = self.n_children(rng);
                     for _ in 0..n_children {
                         let child = self
@@ -962,10 +972,14 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         let new_feature = match n {
             FeatureOrLemma::Root => FeatureOrLemma::Root,
             FeatureOrLemma::Lemma(_) => FeatureOrLemma::Lemma(self.get_lemma(rng)),
-            FeatureOrLemma::Feature(f) => FeatureOrLemma::Feature(match f {
-                Feature::Category(_) => Feature::Category(self.choose_category_for_category(rng)),
-                Feature::Licensee(_) => Feature::Licensee(self.choose_category_for_licensee(rng)),
-                _ => {
+            FeatureOrLemma::Feature(f) => match f {
+                Feature::Category(_) => FeatureOrLemma::Feature(Feature::Category(
+                    self.choose_category_for_category(rng),
+                )),
+                Feature::Licensee(_) => FeatureOrLemma::Feature(Feature::Licensee(
+                    self.choose_category_for_licensee(rng),
+                )),
+                Feature::Selector(_, _) | Feature::Licensor(_) => {
                     let lemma_children =
                         self.lexicon
                             .graph
@@ -979,17 +993,42 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
 
                     if rng.random_bool(self.config.mover_prob) && !lemma_children {
                         let feature = self.choose_category_for_licensor(rng);
-                        Feature::Licensor(feature)
+                        FeatureOrLemma::Feature(Feature::Licensor(feature))
                     } else {
                         let feature = self.choose_category_for_feature(rng);
-                        Feature::Selector(feature, self.config.direction(rng))
+                        FeatureOrLemma::Feature(Feature::Selector(
+                            feature,
+                            self.config.direction(rng),
+                        ))
                     }
                 }
-            }),
-            FeatureOrLemma::Complement(..) => FeatureOrLemma::Complement(
-                self.choose_category_for_feature(rng),
-                self.config.direction(rng),
-            ),
+                Feature::Affix(_, _) => {
+                    if rng.random_bool(self.config.affix_prob) {
+                        FeatureOrLemma::Feature(Feature::Affix(
+                            self.choose_category_for_feature(rng),
+                            self.config.direction(rng),
+                        ))
+                    } else {
+                        FeatureOrLemma::Complement(
+                            self.choose_category_for_feature(rng),
+                            self.config.direction(rng),
+                        )
+                    }
+                }
+            },
+            FeatureOrLemma::Complement(..) => {
+                if rng.random_bool(self.config.affix_prob) {
+                    FeatureOrLemma::Feature(Feature::Affix(
+                        self.choose_category_for_feature(rng),
+                        self.config.direction(rng),
+                    ))
+                } else {
+                    FeatureOrLemma::Complement(
+                        self.choose_category_for_feature(rng),
+                        self.config.direction(rng),
+                    )
+                }
+            }
         };
         *self.lexicon.graph.node_weight_mut(node).unwrap() = new_feature;
     }
@@ -1097,14 +1136,16 @@ mod test {
                 Position::Category => match f {
                     FeatureOrLemma::Feature(Feature::Selector(..))
                     | FeatureOrLemma::Feature(Feature::Licensor(_)) => Ok(Position::PostCategory),
-                    FeatureOrLemma::Complement(..) => Ok(Position::NextIsLemma),
+                    FeatureOrLemma::Complement(..)
+                    | FeatureOrLemma::Feature(Feature::Affix(_, _)) => Ok(Position::NextIsLemma),
                     FeatureOrLemma::Lemma(_) => Ok(Position::Done),
                     _ => bail!("can't go from {:?} to {:?} !", self, f),
                 },
                 Position::PostCategory => match f {
                     FeatureOrLemma::Feature(Feature::Selector(..))
                     | FeatureOrLemma::Feature(Feature::Licensor(_)) => Ok(Position::PostCategory),
-                    FeatureOrLemma::Complement(..) => Ok(Position::NextIsLemma),
+                    FeatureOrLemma::Complement(..)
+                    | FeatureOrLemma::Feature(Feature::Affix(_, _)) => Ok(Position::NextIsLemma),
                     _ => bail!("can't go from {:?} to {:?} !", self, f),
                 },
                 Position::NextIsLemma => match f {
@@ -1182,6 +1223,7 @@ mod test {
                         lex.graph.node_weight(parent.unwrap()).unwrap(),
                         FeatureOrLemma::Complement(_, _)
                             | FeatureOrLemma::Feature(Feature::Category(_))
+                            | FeatureOrLemma::Feature(Feature::Affix(_, _))
                     ));
                     assert!(children.is_empty());
                 }
@@ -1210,6 +1252,14 @@ mod test {
     }
 
     #[test]
+    fn sample_lexeme() -> anyhow::Result<()> {
+        let config = LexicalProbConfig::default();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let lex = LexicalEntry::sample(&["a", "b"], &["c", "d"], Some("john"), config, &mut rng);
+        Ok(())
+    }
+
+    #[test]
     fn pruning() -> anyhow::Result<()> {
         let mut lex = Lexicon::from_string("A::c= s\nB::d\nC::c")?;
         lex.prune(&"s");
@@ -1231,11 +1281,22 @@ mod test {
     #[test]
     fn random_lexicon() -> anyhow::Result<()> {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut at_least_one_affix = false;
         for _ in 0..1000 {
             let x = Lexicon::<_, usize>::random(&0, &["the", "dog", "runs"], None, &mut rng);
-            dbg!(&x);
+            for leaf in x.leaves() {
+                let nx = x.parent_of(leaf.0).unwrap();
+                let (f, _) = x.get(nx).unwrap();
+                match f {
+                    FeatureOrLemma::Feature(Feature::Affix(..)) => at_least_one_affix = true,
+                    FeatureOrLemma::Complement(..)
+                    | FeatureOrLemma::Feature(Feature::Category(_)) => (),
+                    _ => panic!("Invalid lexicon"),
+                }
+            }
             validate_lexicon(&x)?;
         }
+        assert!(at_least_one_affix);
         Ok(())
     }
 

@@ -1255,7 +1255,7 @@ mod test {
     fn sample_lexeme() -> anyhow::Result<()> {
         let config = LexicalProbConfig::default();
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let lex = LexicalEntry::sample(&["a", "b"], &["c", "d"], Some("john"), config, &mut rng);
+        LexicalEntry::sample(&["a", "b"], &["c", "d"], Some("john"), config, &mut rng);
         Ok(())
     }
 

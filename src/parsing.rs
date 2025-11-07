@@ -120,7 +120,12 @@ impl PossibleTree {
                 .filter_map(|(_, x)| {
                     let head = *self.heads.get(x - 1).unwrap();
                     if child_node == head {
-                        Some((*x, HeadTree { head, child: None }))
+                        Some((
+                            *x,
+                            HeadTree {
+                                heads: vec![(head, None)],
+                            },
+                        ))
                     } else {
                         None
                     }
@@ -166,47 +171,55 @@ impl Iterator for PossibleTreeIterator<'_> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HeadTree {
-    head: LexemeId,
-    child: Option<(Box<HeadTree>, Direction)>,
+    heads: Vec<(LexemeId, Option<Direction>)>,
 }
 
 impl HeadTree {
     fn add_new_child(&mut self, head: LexemeId, dir: Direction) {
-        match &mut self.child {
-            Some((x, _)) => x.add_new_child(head, dir),
-            None => self.child = Some((Box::new(HeadTree { head, child: None }), dir)),
-        }
+        self.heads.last_mut().unwrap().1 = Some(dir);
+        self.heads.push((head, None));
     }
 }
 impl HeadTree {
     fn to_filled_head<T: Eq + Clone, C: Eq>(&self, lex: &Lexicon<T, C>) -> Vec<T> {
         let mut v = vec![];
-        if let Some(h) = lex.leaf_to_lemma(self.head).unwrap().as_ref().cloned() {
-            v.push(h);
-        }
-        let mut x = self;
         let mut pos = 0;
-        while let Some((h, d)) = &x.child {
-            if let Some(h) = lex.leaf_to_lemma(h.head).unwrap().as_ref().cloned() {
-                if v.is_empty() {
-                    v.push(h);
-                } else {
-                    match d {
-                        Direction::Left => v.insert(pos, h),
-                        Direction::Right => {
-                            pos += 1;
-                            v.insert(pos, h);
-                        }
+        let mut dir = Direction::Left;
+        for (h, d) in self.heads.iter() {
+            if let Some(h) = lex.leaf_to_lemma(*h).unwrap().as_ref().cloned() {
+                match dir {
+                    Direction::Left => v.insert(pos, h),
+                    Direction::Right => {
+                        pos += 1;
+                        v.insert(pos, h);
                     }
                 }
+                if let Some(d) = d {
+                    dir = *d;
+                } else {
+                    break;
+                }
             }
-            x = h
         }
-
         v
     }
 
     pub fn find_node(&self, index: GornIndex) -> Option<LexemeId> {
+        dbg!(index, self);
+        let mut pos = 0;
+        for (d, (_, other_d)) in index.into_iter().zip(&self.heads) {
+            if let Some(other_d) = other_d
+                && other_d == &d
+            {
+                pos += 1;
+            } else {
+                println!("NONE");
+                return None;
+            }
+        }
+
+        self.heads.get(pos).map(|(x, _)| *x)
+        /*
         let mut pos = self;
         let mut node = self.head;
         for d in index {
@@ -219,7 +232,7 @@ impl HeadTree {
                 return None;
             }
         }
-        Some(node)
+        Some(node)*/
     }
 }
 

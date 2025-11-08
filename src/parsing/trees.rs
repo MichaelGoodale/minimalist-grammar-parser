@@ -190,6 +190,22 @@ impl GornIndex {
             Ordering::Equal => Ordering::Equal,
         }
     }
+
+    ///The length of the [`GornIndex`]
+    ///```
+    ///# use minimalist_grammar_parser::parsing::GornIndex;
+    ///# use minimalist_grammar_parser::Direction;
+    ///assert_eq!(GornIndex::default().len(), 0);
+    ///assert_eq!(GornIndex::from([Direction::Left, Direction::Right]).len(), 2);
+    ///```
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
+    ///Checks if the [`GornIndex`] is root.
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

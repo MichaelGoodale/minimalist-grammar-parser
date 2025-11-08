@@ -498,23 +498,31 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
-    fn add_heads(&self, nx: NodeIndex, possibles: &mut PossibleTree) -> (usize, usize) {
+    fn add_heads(
+        &self,
+        nx: NodeIndex,
+        min_index: usize,
+        possibles: &mut PossibleTree,
+    ) -> (usize, usize) {
         let mut start = None;
-        let mut end = None;
+        let mut max = None;
         self.children_of(nx).for_each(|child| {
             if matches!(
                 self.graph.node_weight(child).unwrap(),
                 FeatureOrLemma::Lemma(_)
             ) {
-                let head = possibles.add_head(LexemeId(child));
+                let head = possibles.add_head(LexemeId(child), self, min_index);
                 if start.is_none() {
                     start = Some(head);
+                    max = Some(head);
                 }
-                end = Some(head + 1);
+                if max.unwrap() < head {
+                    max = Some(head);
+                }
             }
         });
 
-        (start.unwrap(), end.unwrap())
+        (start.unwrap(), max.unwrap() + 1)
     }
 
     pub(crate) fn possible_heads(
@@ -527,7 +535,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         else {
             panic!("Node must be an affix!")
         };
-        let heads = self.add_heads(nx, &mut possibles);
+        let heads = self.add_heads(nx, 0, &mut possibles);
         for head in heads.0..heads.1 {
             possibles.add_edge(0, head, Direction::Left);
         }
@@ -541,7 +549,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             match self.graph.node_weight(nx).unwrap() {
                 FeatureOrLemma::Feature(Feature::Affix(category, new_dir)) => {
                     let x: NodeIndex = self.find_category(category)?;
-                    let new_heads = self.add_heads(nx, &mut possibles);
+                    let new_heads = self.add_heads(nx, heads.1 - 1, &mut possibles);
                     for head in heads.0..heads.1 {
                         for new_head in new_heads.0..new_heads.1 {
                             possibles.add_edge(head, new_head, *dir)
@@ -550,7 +558,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                     stack.push((x, new_heads, new_dir, depth + 1));
                 }
                 FeatureOrLemma::Lemma(_) => {
-                    let lemma = possibles.add_head(LexemeId(nx));
+                    let lemma = possibles.add_head(LexemeId(nx), self, heads.1 - 1);
                     for head in heads.0..heads.1 {
                         possibles.add_edge(head, lemma, *dir)
                     }

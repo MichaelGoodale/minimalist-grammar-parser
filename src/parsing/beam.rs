@@ -17,7 +17,7 @@ use std::{fmt::Debug, hash::Hash};
 pub(crate) trait Scanner<T>: Sized {
     fn scan(&mut self, s: &Option<T>) -> bool;
 
-    fn multiscan(&mut self, heads: Vec<T>) -> bool;
+    fn multiscan(&mut self, heads: Vec<&T>) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +48,7 @@ where
         !self.sentence.is_empty()
     }
 
-    fn multiscan(&mut self, heads: Vec<T>) -> bool {
+    fn multiscan(&mut self, heads: Vec<&T>) -> bool {
         if heads.is_empty() {
             return true;
         }
@@ -57,7 +57,7 @@ where
             if let Some(s) = sentence.get(*position) {
                 match s {
                     PhonContent::Normal(s) => {
-                        if heads.len() == 1 && heads.first().unwrap() == s {
+                        if heads.len() == 1 && heads.first().unwrap() == &s {
                             *position += 1;
                             true
                         } else {
@@ -66,7 +66,7 @@ where
                     }
                     PhonContent::Affixed(string) => {
                         if heads.len() == string.len()
-                            && heads.iter().zip(string.iter()).all(|(a, b)| a == b)
+                            && heads.iter().zip(string.iter()).all(|(a, b)| *a == b)
                         {
                             *position += 1;
                             true
@@ -160,12 +160,12 @@ where
         true
     }
 
-    fn multiscan(&mut self, mut heads: Vec<T>) -> bool {
+    fn multiscan(&mut self, mut heads: Vec<&T>) -> bool {
         self.sentence_guides.retain_mut(|(sentence, position)| {
             if let Some(s) = sentence.get(*position) {
                 match s {
                     PhonContent::Normal(s) => {
-                        if heads.len() == 1 && heads.first().unwrap() == s {
+                        if heads.len() == 1 && heads.first().unwrap() == &s {
                             *position += 1;
                             true
                         } else {
@@ -174,7 +174,7 @@ where
                     }
                     PhonContent::Affixed(string) => {
                         if heads.len() == string.len()
-                            && heads.iter().zip(string.iter()).all(|(a, b)| a == b)
+                            && heads.iter().zip(string.iter()).all(|(a, b)| *a == b)
                         {
                             *position += 1;
                             true
@@ -190,9 +190,10 @@ where
         if !heads.is_empty() {
             if heads.len() == 1 {
                 self.generated_sentences
-                    .push(PhonContent::Normal(heads.pop().unwrap()));
+                    .push(PhonContent::Normal(heads.pop().unwrap().clone()));
             } else {
-                self.generated_sentences.push(PhonContent::Affixed(heads));
+                self.generated_sentences
+                    .push(PhonContent::Affixed(heads.into_iter().cloned().collect()));
             }
         }
         true
@@ -216,13 +217,14 @@ where
         true
     }
 
-    fn multiscan(&mut self, mut heads: Vec<T>) -> bool {
+    fn multiscan(&mut self, mut heads: Vec<&T>) -> bool {
         if !heads.is_empty() {
             if heads.len() == 1 {
                 self.sentence
-                    .push(PhonContent::Normal(heads.pop().unwrap()));
+                    .push(PhonContent::Normal(heads.pop().unwrap().clone()));
             } else {
-                self.sentence.push(PhonContent::Affixed(heads));
+                self.sentence
+                    .push(PhonContent::Affixed(heads.into_iter().cloned().collect()));
             }
         }
         true
@@ -282,7 +284,7 @@ where
         }
     }
 
-    fn multiscan(&mut self, heads: Vec<T>) -> bool {
+    fn multiscan(&mut self, heads: Vec<&T>) -> bool {
         if heads.is_empty() {
             return true;
         }
@@ -290,7 +292,7 @@ where
         if let Some(s) = self.prefix.get(self.position) {
             match s {
                 PhonContent::Normal(s) => {
-                    if heads.len() == 1 && heads.first().unwrap() == s {
+                    if heads.len() == 1 && heads.first().unwrap() == &s {
                         self.position += 1;
                         true
                     } else {
@@ -299,7 +301,7 @@ where
                 }
                 PhonContent::Affixed(string) => {
                     if heads.len() == string.len()
-                        && heads.iter().zip(string.iter()).all(|(a, b)| a == b)
+                        && heads.iter().zip(string.iter()).all(|(a, b)| *a == b)
                     {
                         self.position += 1;
                         true
@@ -309,7 +311,9 @@ where
                 }
             }
         } else if self.position == self.prefix.len() {
-            self.final_char = Some(Continuation::AffixedWord(heads));
+            self.final_char = Some(Continuation::AffixedWord(
+                heads.into_iter().cloned().collect(),
+            ));
             self.position += 1;
             true
         } else {

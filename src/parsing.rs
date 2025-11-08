@@ -3,6 +3,7 @@ use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt::Debug;
+use std::hash::Hasher;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
@@ -41,7 +42,7 @@ pub(crate) enum PossibleHeads {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PossibleTree {
-    heads: Vec<LexemeId>,
+    heads: Vec<Vec<LexemeId>>,
     edges: BTreeMap<usize, Vec<(Direction, usize)>>,
 }
 
@@ -81,7 +82,10 @@ impl PossibleTree {
         }
 
         heads.retain(|x| {
-            if node == lexicon.parent_of(self.heads.get(x - 1).unwrap().0).unwrap() {
+            let heads = self.heads.get_mut(x - 1).unwrap();
+            heads.retain(|x| node == lexicon.parent_of(x.0).unwrap());
+
+            if !heads.is_empty() {
                 true
             } else {
                 old_heads.iter().for_each(|k| {
@@ -93,10 +97,27 @@ impl PossibleTree {
         !heads.is_empty()
     }
 
-    pub(crate) fn add_head(&mut self, head: LexemeId) -> usize {
-        self.heads.push(head);
-        self.heads.len() //1-indexed so that 0 is always the root (which is not directly
-        //represented)
+    pub(crate) fn add_head<T: Eq, C: Eq>(
+        &mut self,
+        head: LexemeId,
+        lexicon: &Lexicon<T, C>,
+        min_index: usize,
+    ) -> usize {
+        let head_pron = lexicon.leaf_to_lemma(head);
+        if let Some((i, x)) = self
+            .heads
+            .iter_mut()
+            .enumerate()
+            .skip(min_index)
+            .find(|(_, x)| lexicon.leaf_to_lemma(*x.first().unwrap()) == head_pron)
+        {
+            x.push(head);
+            i + 1
+        } else {
+            self.heads.push(vec![head]);
+            self.heads.len() //1-indexed so that 0 is always the root (which is not directly
+            //represented)
+        }
     }
 
     pub(crate) fn add_edge(&mut self, source: usize, end: usize, dir: Direction) {
@@ -110,58 +131,85 @@ impl PossibleTree {
         }
     }
 
-    fn to_trees<'a>(&'a self, child_node: LexemeId) -> PossibleTreeIterator<'a> {
-        PossibleTreeIterator {
-            stack: self
-                .edges
-                .get(&0)
-                .unwrap()
-                .iter()
-                .filter_map(|(_, x)| {
-                    let head = *self.heads.get(x - 1).unwrap();
-                    if child_node == head {
-                        Some((
-                            *x,
-                            HeadTree {
-                                heads: vec![(head, None)],
-                            },
-                        ))
+    fn to_stack<'a, T: Eq, C: Eq>(
+        &mut self,
+        child_node: LexemeId,
+        lex: &'a Lexicon<T, C>,
+    ) -> Vec<(Vec<(usize, Option<Direction>)>, Vec<&'a T>, usize)> {
+        self.edges
+            .get(&0)
+            .unwrap()
+            .iter()
+            .filter_map(|(_, x)| {
+                let head = self.heads.get_mut(x - 1).unwrap();
+                head.retain(|x| *x == child_node);
+                if !head.is_empty() {
+                    if let Some(head) = lex.leaf_to_lemma(child_node).unwrap() {
+                        Some((vec![(*x, None)], vec![head], 0))
                     } else {
-                        None
+                        Some((vec![(*x, None)], vec![], 0))
                     }
-                })
-                .collect(),
-            trees: self,
-            buffer: vec![],
-        }
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
-struct PossibleTreeIterator<'a> {
-    stack: Vec<(usize, HeadTree)>,
+struct PossibleTreeIterator<'a, T: Eq, C: Eq> {
+    stack: Vec<(Vec<(usize, Option<Direction>)>, Vec<&'a T>, usize)>,
     trees: &'a PossibleTree,
-    buffer: Vec<HeadTree>,
+    buffer: Vec<(HeadTree, Vec<&'a T>)>,
+    lex: &'a Lexicon<T, C>,
 }
-impl Iterator for PossibleTreeIterator<'_> {
-    type Item = HeadTree;
+impl<'a, T: Eq + Clone + Debug, C: Eq> Iterator for PossibleTreeIterator<'a, T, C> {
+    type Item = (HeadTree, Vec<&'a T>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(b) = self.buffer.pop() {
             return Some(b);
         }
 
-        while let Some((pos, head)) = self.stack.pop() {
+        while let Some(x) = self.stack.pop() {
+            let pos = x.0.last().unwrap().0;
             match self.trees.edges.get(&pos) {
                 Some(children) => {
-                    for ((dir, pos), mut head) in children
-                        .iter()
-                        .zip(itertools::repeat_n(head, children.len()))
+                    for ((dir, pos), (mut hist, mut heads, mut x)) in
+                        children.iter().zip(itertools::repeat_n(x, children.len()))
                     {
-                        head.add_new_child(*self.trees.heads.get(pos - 1).unwrap(), *dir);
-                        self.stack.push((*pos, head));
+                        if let Some(head) = self
+                            .lex
+                            .leaf_to_lemma(*self.trees.heads.get(pos - 1).unwrap().first().unwrap())
+                            .unwrap()
+                        {
+                            if heads.is_empty() {
+                                heads.push(head);
+                            } else {
+                                match dir {
+                                    Direction::Left => heads.insert(x, head),
+                                    Direction::Right => {
+                                        x += 1;
+                                        heads.insert(x, head);
+                                    }
+                                }
+                            }
+                        }
+                        hist.last_mut().unwrap().1 = Some(*dir);
+                        hist.push((*pos, None));
+                        self.stack.push((hist, heads, x));
                     }
                 }
-                None => self.buffer.push(head),
+                None => self.buffer.push((
+                    HeadTree {
+                        heads: x
+                            .0
+                            .into_iter()
+                            .map(|(x, d)| (self.trees.heads.get(x - 1).unwrap().clone(), d))
+                            .collect(),
+                    },
+                    x.1,
+                )),
             }
         }
 
@@ -171,41 +219,11 @@ impl Iterator for PossibleTreeIterator<'_> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct HeadTree {
-    heads: Vec<(LexemeId, Option<Direction>)>,
+    heads: Vec<(Vec<LexemeId>, Option<Direction>)>,
 }
 
 impl HeadTree {
-    fn add_new_child(&mut self, head: LexemeId, dir: Direction) {
-        self.heads.last_mut().unwrap().1 = Some(dir);
-        self.heads.push((head, None));
-    }
-}
-impl HeadTree {
-    fn to_filled_head<T: Eq + Clone, C: Eq>(&self, lex: &Lexicon<T, C>) -> Vec<T> {
-        let mut v = Vec::with_capacity(self.heads.len());
-        let mut pos = 0;
-        let mut dir = Direction::Left;
-        for (h, d) in self.heads.iter() {
-            if let Some(h) = lex.leaf_to_lemma(*h).unwrap().as_ref().cloned() {
-                match dir {
-                    Direction::Left => v.insert(pos, h),
-                    Direction::Right => {
-                        pos += 1;
-                        v.insert(pos, h);
-                    }
-                }
-                if let Some(d) = d {
-                    dir = *d;
-                } else {
-                    break;
-                }
-            }
-        }
-        v
-    }
-
-    pub fn find_node(&self, index: GornIndex) -> Option<LexemeId> {
-        dbg!(index, self);
+    pub fn find_node(&mut self, index: GornIndex) -> Option<&mut Vec<LexemeId>> {
         let mut pos = 0;
         for (d, (_, other_d)) in index.into_iter().zip(&self.heads) {
             if let Some(other_d) = other_d
@@ -213,26 +231,11 @@ impl HeadTree {
             {
                 pos += 1;
             } else {
-                println!("NONE");
                 return None;
             }
         }
 
-        self.heads.get(pos).map(|(x, _)| *x)
-        /*
-        let mut pos = self;
-        let mut node = self.head;
-        for d in index {
-            if let Some((child, child_d)) = &pos.child
-                && *child_d == d
-            {
-                node = child.head;
-                pos = child;
-            } else {
-                return None;
-            }
-        }
-        Some(node)*/
+        self.heads.get_mut(pos).map(|(x, _)| x)
     }
 }
 
@@ -259,11 +262,20 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
 }
 
 impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T, B> {
-    fn check_node(&self, index: GornIndex, node: LexemeId, headtree: &HeadTree) -> bool {
-        if let Some(found_node) = headtree.find_node(index) {
-            found_node == node
+    fn check_node(&mut self, pos: usize, index: GornIndex, node: LexemeId) -> Option<RuleIndex> {
+        let PossibleHeads::FoundTree(headtree, rule_id) = &mut self.heads[pos] else {
+            panic!()
+        };
+
+        if let Some(heads) = headtree.find_node(index) {
+            heads.retain_mut(|x| x == &node);
+            if !heads.is_empty() {
+                Some(*rule_id)
+            } else {
+                None
+            }
         } else {
-            false
+            None
         }
     }
 
@@ -284,17 +296,23 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             Some(StolenHead::Stealer(pos)) => {
                 let trees = std::mem::take(&mut self.heads[pos]);
 
-                let PossibleHeads::Possibles(possible_trees) = trees else {
+                let PossibleHeads::Possibles(mut possible_trees) = trees else {
                     panic!()
                 };
 
-                for (filled_head_tree, id_tree) in possible_trees
-                    .to_trees(child_node)
-                    .map(|x| (x.to_filled_head(lexicon), x))
-                {
+                let stack = possible_trees.to_stack(child_node, lexicon);
+
+                let trees = PossibleTreeIterator {
+                    stack,
+                    trees: &possible_trees,
+                    buffer: vec![],
+                    lex: lexicon,
+                };
+
+                for (heads, tree) in trees {
                     let mut new_beam = self.clone();
-                    if new_beam.beam.multiscan(filled_head_tree) {
-                        new_beam.heads[pos] = PossibleHeads::FoundTree(id_tree, moment.tree.id);
+                    if new_beam.beam.multiscan(tree) {
+                        new_beam.heads[pos] = PossibleHeads::FoundTree(heads, moment.tree.id);
                         new_beam.log_prob += child_prob;
                         new_beam.rules.push_rule(
                             v.rules_mut(),
@@ -309,20 +327,12 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 }
                 None
             }
-            Some(StolenHead::StolenHead(pos, index)) => {
-                let PossibleHeads::FoundTree(headtree, rule_id) = &self.heads[pos] else {
-                    panic!()
-                };
-
-                if self.check_node(index, child_node, headtree) {
-                    Some(Rule::Scan {
-                        lexeme: child_node,
-                        stolen: StolenInfo::Stolen(*rule_id, index),
-                    })
-                } else {
-                    None
-                }
-            }
+            Some(StolenHead::StolenHead(pos, index)) => self
+                .check_node(pos, index, child_node)
+                .map(|rule_id| Rule::Scan {
+                    lexeme: child_node,
+                    stolen: StolenInfo::Stolen(rule_id, index),
+                }),
             None => {
                 if self.beam.scan(s) {
                     Some(Rule::Scan {
@@ -694,11 +704,12 @@ fn set_beam_head<
                     }
                 }
                 PossibleHeads::FoundTree(heads, _) => {
-                    let Some(node) = heads.find_node(index) else {
+                    let Some(nodes) = heads.find_node(index) else {
                         //Wrong shape of head movement
                         return Ok(None);
                     };
-                    if child_node != lexicon.parent_of(node.0).unwrap() {
+                    nodes.retain_mut(|x| lexicon.parent_of(x.0).unwrap() == child_node);
+                    if nodes.is_empty() {
                         //Wrong head for the head movement
                         return Ok(None);
                     }

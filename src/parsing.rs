@@ -3,7 +3,6 @@ use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::fmt::Debug;
-use std::hash::Hasher;
 use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
@@ -131,7 +130,7 @@ impl PossibleTree {
         }
     }
 
-    fn to_stack<'a, T: Eq, C: Eq>(
+    fn stack<'a, T: Eq, C: Eq>(
         &mut self,
         child_node: LexemeId,
         lex: &'a Lexicon<T, C>,
@@ -300,7 +299,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                     panic!()
                 };
 
-                let stack = possible_trees.to_stack(child_node, lexicon);
+                let stack = possible_trees.stack(child_node, lexicon);
 
                 let trees = PossibleTreeIterator {
                     stack,
@@ -691,6 +690,7 @@ fn set_beam_head<
     lexicon: &Lexicon<U, Category>,
     child_node: NodeIndex,
     beam: &mut BeamWrapper<T, B>,
+    config: &ParsingConfig,
 ) -> Result<Option<HeadMovement>, ParsingError<Category>> {
     match moment.stolen_head {
         Some(StolenHead::Stealer(_)) => panic!(
@@ -725,7 +725,8 @@ fn set_beam_head<
         }
         None => {
             let head_pos = beam.heads.len();
-            let possible_heads = PossibleHeads::Possibles(lexicon.possible_heads(child_node)?);
+            let possible_heads =
+                PossibleHeads::Possibles(lexicon.possible_heads(child_node, config)?);
             beam.heads.push(possible_heads);
             Ok(Some(HeadMovement::HeadMovement {
                 stealer: StolenHead::Stealer(head_pos),
@@ -810,7 +811,7 @@ pub(crate) fn expand<
                 }
                 (FeatureOrLemma::Feature(Feature::Affix(cat, dir)), p) => {
                     if let Ok(Some(head_info)) =
-                        set_beam_head(&moment, *dir, lexicon, child_node, &mut beam)
+                        set_beam_head(&moment, *dir, lexicon, child_node, &mut beam, config)
                     {
                         //We set dir=right since headmovement is always after a right-merge, even
                         //if you can put it to the left or right of the head

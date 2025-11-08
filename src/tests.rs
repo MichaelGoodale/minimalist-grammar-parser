@@ -179,6 +179,7 @@ fn generation() -> Result<()> {
                 max_beams: Some(1000),
                 max_time: None,
                 max_consecutive_empty: None,
+                max_head_depth: 10,
             },
         )?
         .collect();

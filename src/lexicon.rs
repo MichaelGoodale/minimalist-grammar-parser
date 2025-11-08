@@ -4,8 +4,8 @@ use ahash::{HashMap, HashSet};
 #[cfg(feature = "pretty")]
 use serde::Serialize;
 
-use crate::Direction;
 use crate::parsing::PossibleTree;
+use crate::{Direction, ParsingConfig};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -528,6 +528,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     pub(crate) fn possible_heads(
         &self,
         nx: NodeIndex,
+        config: &ParsingConfig,
     ) -> Result<PossibleTree, ParsingError<Category>> {
         let mut possibles = PossibleTree::new();
         let Some(FeatureOrLemma::Feature(Feature::Affix(category, dir))) =
@@ -543,7 +544,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         let mut stack = vec![(x, heads, dir, 0)];
 
         while let Some((nx, heads, dir, depth)) = stack.pop() {
-            if depth > 10 {
+            if depth > config.max_head_depth {
                 continue;
             }
             match self.graph.node_weight(nx).unwrap() {

@@ -51,7 +51,7 @@ impl std::fmt::Display for TraceId {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum StolenInfo {
     Normal,
-    Stolen(RuleIndex, GornIndex),
+    Stolen(RuleIndex, Direction),
     Stealer,
 }
 
@@ -180,6 +180,11 @@ pub(crate) struct PartialRulePool {
 }
 
 impl PartialRulePool {
+    ///Check what the next call to [`PartialRulePool::fresh`] will return without modifying
+    pub(crate) fn peek_fresh(&self) -> RuleIndex {
+        RuleIndex(self.n_nodes)
+    }
+
     pub(crate) fn fresh(&mut self) -> RuleIndex {
         let id = RuleIndex(self.n_nodes); //Get fresh ID
         self.n_nodes += 1;

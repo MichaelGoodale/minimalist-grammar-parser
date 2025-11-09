@@ -4,7 +4,6 @@ use ahash::{HashMap, HashSet};
 #[cfg(feature = "pretty")]
 use serde::Serialize;
 
-use crate::parsing::PossibleTree;
 use crate::{Direction, ParsingConfig};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
@@ -497,81 +496,6 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
     graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap())
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
-    fn add_heads(
-        &self,
-        nx: NodeIndex,
-        min_index: usize,
-        possibles: &mut PossibleTree,
-    ) -> (usize, usize) {
-        let mut start = None;
-        let mut max = None;
-        self.children_of(nx).for_each(|child| {
-            if matches!(
-                self.graph.node_weight(child).unwrap(),
-                FeatureOrLemma::Lemma(_)
-            ) {
-                let head = possibles.add_head(LexemeId(child), self, min_index);
-                if start.is_none() {
-                    start = Some(head);
-                    max = Some(head);
-                }
-                if max.unwrap() < head {
-                    max = Some(head);
-                }
-            }
-        });
-
-        (start.unwrap(), max.unwrap() + 1)
-    }
-
-    pub(crate) fn possible_heads(
-        &self,
-        nx: NodeIndex,
-        config: &ParsingConfig,
-    ) -> Result<PossibleTree, ParsingError<Category>> {
-        let mut possibles = PossibleTree::new();
-        let Some(FeatureOrLemma::Feature(Feature::Affix(category, dir))) =
-            self.graph.node_weight(nx)
-        else {
-            panic!("Node must be an affix!")
-        };
-        let heads = self.add_heads(nx, 0, &mut possibles);
-        for head in heads.0..heads.1 {
-            possibles.add_edge(0, head, Direction::Left);
-        }
-        let x: NodeIndex = self.find_category(category)?;
-        let mut stack = vec![(x, heads, dir, 0)];
-
-        while let Some((nx, heads, dir, depth)) = stack.pop() {
-            if depth > config.max_head_depth {
-                continue;
-            }
-            match self.graph.node_weight(nx).unwrap() {
-                FeatureOrLemma::Feature(Feature::Affix(category, new_dir)) => {
-                    let x: NodeIndex = self.find_category(category)?;
-                    let new_heads = self.add_heads(nx, heads.1 - 1, &mut possibles);
-                    for head in heads.0..heads.1 {
-                        for new_head in new_heads.0..new_heads.1 {
-                            possibles.add_edge(head, new_head, *dir)
-                        }
-                    }
-                    stack.push((x, new_heads, new_dir, depth + 1));
-                }
-                FeatureOrLemma::Lemma(_) => {
-                    let lemma = possibles.add_head(LexemeId(nx), self, heads.1 - 1);
-                    for head in heads.0..heads.1 {
-                        possibles.add_edge(head, lemma, *dir)
-                    }
-                }
-                _ => stack.extend(self.children_of(nx).map(|x| (x, heads, dir, depth))),
-            }
-        }
-
-        Ok(possibles)
-    }
-}
-
 ///Iterator that climbs up a graph until it reaches the root.
 pub struct Climber<'a, T: Eq, C: Eq> {
     lex: &'a Lexicon<T, C>,
@@ -1018,6 +942,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             leaves,
             root: root_index,
         }
+    }
+
+    pub(crate) fn is_lemma(&self, nx: NodeIndex) -> bool {
+        self.graph.node_weight(nx).unwrap().is_lemma()
     }
 
     ///Get the node corresponding to a category

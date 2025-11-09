@@ -208,7 +208,7 @@ impl GornIndex {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct FutureTree {
     pub node: NodeIndex,
     pub index: GornIndex,
@@ -231,10 +231,36 @@ impl Ord for FutureTree {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub(super) enum StolenHeadIndex {
+    #[default]
+    None,
+    Index(usize),
+    Building(usize, FutureTree),
+    Done(usize),
+}
+
+impl StolenHeadIndex {
+    pub(crate) fn unwrap(self) -> (usize, FutureTree) {
+        let StolenHeadIndex::Building(id, head) = self else {
+            panic!()
+        };
+        (id, head)
+    }
+
+    pub(crate) fn id(&self) -> usize {
+        let StolenHeadIndex::Building(id, _) = self else {
+            panic!()
+        };
+        *id
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParseMoment {
     pub tree: FutureTree,
-    pub stolen_head: Option<StolenHead>,
+    pub stolen_head_info: Option<StolenHead>,
+    pub stolen_head_index: StolenHeadIndex,
     pub movers: ThinVec<FutureTree>,
 }
 
@@ -257,11 +283,26 @@ impl ParseMoment {
         ParseMoment {
             tree,
             movers,
-            stolen_head,
+            stolen_head_info: stolen_head,
+            stolen_head_index: StolenHeadIndex::None,
         }
     }
-    pub fn no_movers(&self) -> bool {
-        self.movers.is_empty()
+    pub fn ready_to_scan(&self) -> bool {
+        self.movers.is_empty() || self.time_to_steal_head()
+    }
+
+    pub fn time_to_steal_head(&self) -> bool {
+        matches!(self.stolen_head_info, Some(StolenHead::StolenHead(_, _)))
+    }
+
+    pub fn stolen_head_dir_and_pos(&self) -> (Direction, usize) {
+        let Some(StolenHead::StolenHead(_, d)) = self.stolen_head_info else {
+            panic!()
+        };
+        let StolenHeadIndex::Building(pos, _) = self.stolen_head_index else {
+            panic!()
+        };
+        (d, pos)
     }
 }
 
@@ -279,12 +320,12 @@ impl Ord for ParseMoment {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StolenHead {
-    Stealer(usize),
-    StolenHead(usize, GornIndex),
+    Stealer,
+    StolenHead(RuleIndex, Direction),
 }
 
 impl StolenHead {
-    pub(crate) fn new_stolen(pos: usize, direction: Direction) -> Self {
-        StolenHead::StolenHead(pos, GornIndex::new(direction))
+    pub(crate) fn new_stolen(rule: RuleIndex, direction: Direction) -> Self {
+        StolenHead::StolenHead(rule, direction)
     }
 }

@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
 use crate::parsing::rules::StolenInfo;
-use crate::parsing::trees::StolenHead;
+use crate::parsing::trees::{StolenHead, StolenHeadIndex};
 use crate::{Direction, ParseHeap, ParsingConfig};
 use beam::Scanner;
 use logprob::LogProb;
@@ -21,221 +21,43 @@ pub use rules::RulePool;
 pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
 
 #[derive(Debug, Clone)]
+pub struct AffixedHead {
+    heads: Vec<LexemeId>,
+    pos: usize,
+    head: usize,
+}
+
+impl AffixedHead {
+    fn insert(&mut self, nx: LexemeId, dir: Direction) {
+        match dir {
+            Direction::Left => {
+                self.head += 1;
+                self.heads.insert(self.pos, nx)
+            }
+            Direction::Right => {
+                self.pos += 1;
+                self.heads.insert(self.pos, nx);
+            }
+        }
+    }
+    fn new(nx: LexemeId) -> Self {
+        AffixedHead {
+            heads: vec![nx],
+            pos: 0,
+            head: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    heads: Vec<PossibleHeads>,
+    heads: Vec<AffixedHead>,
     rules: PartialRulePool,
     n_consec_empties: usize,
     pub beam: B,
     phantom: PhantomData<T>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) enum PossibleHeads {
-    Possibles(PossibleTree),
-    FoundTree(HeadTree, RuleIndex),
-    #[default]
-    PlaceHolder,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PossibleTree {
-    heads: Vec<Vec<LexemeId>>,
-    edges: BTreeMap<usize, Vec<(Direction, usize)>>,
-}
-
-impl PossibleTree {
-    ///Goes through possible trees and keeps only that follow the GornIndex (which needn't go to
-    ///the bottom), it also only keeps nodes at the destination are children of [`node`].
-    ///
-    ///Returns false if the tree is now empty.
-    fn filter_node<T: Eq, C: Eq>(
-        &mut self,
-        node: NodeIndex,
-        d: GornIndex,
-        lexicon: &Lexicon<T, C>,
-    ) -> bool {
-        let mut heads: Vec<_> = self
-            .edges
-            .get(&0)
-            .unwrap()
-            .iter()
-            .map(|(_, x)| *x)
-            .collect();
-
-        let mut old_heads = vec![];
-        for dir in d {
-            let mut new_heads = vec![];
-            for head in heads.iter() {
-                if let Some(x) = self.edges.get_mut(head) {
-                    x.retain(|(d, _)| d == &dir);
-                    new_heads.extend(x.iter().map(|(_, x)| *x));
-                }
-            }
-            if new_heads.is_empty() {
-                return false;
-            }
-            old_heads = heads.clone();
-            heads = new_heads;
-        }
-
-        heads.retain(|x| {
-            let heads = self.heads.get_mut(x - 1).unwrap();
-            heads.retain(|x| node == lexicon.parent_of(x.0).unwrap());
-
-            if !heads.is_empty() {
-                true
-            } else {
-                old_heads.iter().for_each(|k| {
-                    self.edges.remove(k);
-                });
-                false
-            }
-        });
-        !heads.is_empty()
-    }
-
-    pub(crate) fn add_head<T: Eq, C: Eq>(
-        &mut self,
-        head: LexemeId,
-        lexicon: &Lexicon<T, C>,
-        min_index: usize,
-    ) -> usize {
-        let head_pron = lexicon.leaf_to_lemma(head);
-        if let Some((i, x)) = self
-            .heads
-            .iter_mut()
-            .enumerate()
-            .skip(min_index)
-            .find(|(_, x)| lexicon.leaf_to_lemma(*x.first().unwrap()) == head_pron)
-        {
-            x.push(head);
-            i + 1
-        } else {
-            self.heads.push(vec![head]);
-            self.heads.len() //1-indexed so that 0 is always the root (which is not directly
-            //represented)
-        }
-    }
-
-    pub(crate) fn add_edge(&mut self, source: usize, end: usize, dir: Direction) {
-        self.edges.entry(source).or_default().push((dir, end));
-    }
-
-    pub(crate) fn new() -> Self {
-        PossibleTree {
-            heads: vec![],
-            edges: BTreeMap::default(),
-        }
-    }
-
-    fn stack<'a, T: Eq, C: Eq>(
-        &mut self,
-        child_node: LexemeId,
-        lex: &'a Lexicon<T, C>,
-    ) -> Vec<(Vec<(usize, Option<Direction>)>, Vec<&'a T>, usize)> {
-        self.edges
-            .get(&0)
-            .unwrap()
-            .iter()
-            .filter_map(|(_, x)| {
-                let head = self.heads.get_mut(x - 1).unwrap();
-                head.retain(|x| *x == child_node);
-                if !head.is_empty() {
-                    if let Some(head) = lex.leaf_to_lemma(child_node).unwrap() {
-                        Some((vec![(*x, None)], vec![head], 0))
-                    } else {
-                        Some((vec![(*x, None)], vec![], 0))
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-}
-
-struct PossibleTreeIterator<'a, T: Eq, C: Eq> {
-    stack: Vec<(Vec<(usize, Option<Direction>)>, Vec<&'a T>, usize)>,
-    trees: &'a PossibleTree,
-    buffer: Vec<(HeadTree, Vec<&'a T>)>,
-    lex: &'a Lexicon<T, C>,
-}
-impl<'a, T: Eq + Clone + Debug, C: Eq> Iterator for PossibleTreeIterator<'a, T, C> {
-    type Item = (HeadTree, Vec<&'a T>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(b) = self.buffer.pop() {
-            return Some(b);
-        }
-
-        while let Some(x) = self.stack.pop() {
-            let pos = x.0.last().unwrap().0;
-            match self.trees.edges.get(&pos) {
-                Some(children) => {
-                    for ((dir, pos), (mut hist, mut heads, mut x)) in
-                        children.iter().zip(itertools::repeat_n(x, children.len()))
-                    {
-                        if let Some(head) = self
-                            .lex
-                            .leaf_to_lemma(*self.trees.heads.get(pos - 1).unwrap().first().unwrap())
-                            .unwrap()
-                        {
-                            if heads.is_empty() {
-                                heads.push(head);
-                            } else {
-                                match dir {
-                                    Direction::Left => heads.insert(x, head),
-                                    Direction::Right => {
-                                        x += 1;
-                                        heads.insert(x, head);
-                                    }
-                                }
-                            }
-                        }
-                        hist.last_mut().unwrap().1 = Some(*dir);
-                        hist.push((*pos, None));
-                        self.stack.push((hist, heads, x));
-                    }
-                }
-                None => self.buffer.push((
-                    HeadTree {
-                        heads: x
-                            .0
-                            .into_iter()
-                            .map(|(x, d)| (self.trees.heads.get(x - 1).unwrap().clone(), d))
-                            .collect(),
-                    },
-                    x.1,
-                )),
-            }
-        }
-
-        self.buffer.pop()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct HeadTree {
-    heads: Vec<(Vec<LexemeId>, Option<Direction>)>,
-}
-
-impl HeadTree {
-    pub fn find_node(&mut self, index: GornIndex) -> Option<&mut Vec<LexemeId>> {
-        let mut pos = 0;
-        for (d, (_, other_d)) in index.into_iter().zip(&self.heads) {
-            if let Some(other_d) = other_d
-                && other_d == &d
-            {
-                pos += 1;
-            } else {
-                return None;
-            }
-        }
-
-        self.heads.get_mut(pos).map(|(x, _)| x)
-    }
 }
 
 impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> PartialEq for BeamWrapper<T, B> {
@@ -261,23 +83,6 @@ impl<T: Eq + std::fmt::Debug, B: Scanner<T> + Eq> Ord for BeamWrapper<T, B> {
 }
 
 impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T, B> {
-    fn check_node(&mut self, pos: usize, index: GornIndex, node: LexemeId) -> Option<RuleIndex> {
-        let PossibleHeads::FoundTree(headtree, rule_id) = &mut self.heads[pos] else {
-            panic!()
-        };
-
-        if let Some(heads) = headtree.find_node(index) {
-            heads.retain_mut(|x| x == &node);
-            if !heads.is_empty() {
-                Some(*rule_id)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
     fn scan<Category: Eq + std::fmt::Debug + Clone>(
         mut self,
         v: &mut ParseHeap<T, B>,
@@ -291,47 +96,52 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             Some(_) => self.n_consec_empties = 0,
             None => self.n_consec_empties += 1,
         }
-        let rule = match moment.stolen_head {
-            Some(StolenHead::Stealer(pos)) => {
-                let trees = std::mem::take(&mut self.heads[pos]);
-
-                let PossibleHeads::Possibles(mut possible_trees) = trees else {
+        let rule = match moment.stolen_head_info {
+            Some(StolenHead::Stealer) => {
+                let StolenHeadIndex::Done(head_id) = moment.stolen_head_index else {
                     panic!()
                 };
+                let heads = &mut self.heads[head_id];
 
-                let stack = possible_trees.stack(child_node, lexicon);
+                // We change this one so that the head is the lemma we are at, previously we didn't
+                // know which it was, so at that index was an affix feature.
+                heads.heads[heads.head] = child_node;
 
-                let trees = PossibleTreeIterator {
-                    stack,
-                    trees: &possible_trees,
-                    buffer: vec![],
-                    lex: lexicon,
-                };
+                let heads = heads
+                    .heads
+                    .iter()
+                    .filter_map(|x| lexicon.leaf_to_lemma(*x).unwrap().as_ref())
+                    .collect();
 
-                for (heads, tree) in trees {
-                    let mut new_beam = self.clone();
-                    if new_beam.beam.multiscan(tree) {
-                        new_beam.heads[pos] = PossibleHeads::FoundTree(heads, moment.tree.id);
-                        new_beam.log_prob += child_prob;
-                        new_beam.rules.push_rule(
-                            v.rules_mut(),
-                            Rule::Scan {
-                                lexeme: child_node,
-                                stolen: StolenInfo::Stealer,
-                            },
-                            moment.tree.id,
-                        );
-                        v.push(new_beam);
-                    }
+                if self.beam.multiscan(heads) {
+                    Some(Rule::Scan {
+                        lexeme: child_node,
+                        stolen: StolenInfo::Stealer,
+                    })
+                } else {
+                    None
                 }
-                None
             }
-            Some(StolenHead::StolenHead(pos, index)) => self
-                .check_node(pos, index, child_node)
-                .map(|rule_id| Rule::Scan {
+            Some(StolenHead::StolenHead(rule_id, dir)) => {
+                let head_id = match moment.stolen_head_index {
+                    StolenHeadIndex::Index(head_id) => head_id,
+                    StolenHeadIndex::Building(head_id, head_tree) => {
+                        self.add_tree_to_queue(
+                            head_tree,
+                            thin_vec![],
+                            Some(StolenHead::Stealer),
+                            StolenHeadIndex::Done(head_id),
+                        );
+                        head_id
+                    }
+                    StolenHeadIndex::Done(_) | StolenHeadIndex::None => panic!(),
+                };
+                self.heads[head_id].insert(child_node, dir);
+                Some(Rule::Scan {
                     lexeme: child_node,
-                    stolen: StolenInfo::Stolen(rule_id, index),
-                }),
+                    stolen: StolenInfo::Stolen(rule_id, dir),
+                })
+            }
             None => {
                 if self.beam.scan(s) {
                     Some(Rule::Scan {
@@ -361,15 +171,26 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         node: NodeIndex,
         index: GornIndex,
         movers: ThinVec<FutureTree>,
-        stolen_head: Option<StolenHead>,
+        stolen_head_info: Option<StolenHead>,
     ) -> RuleIndex {
         let (tree, id) = self.new_future_tree(node, index);
+        self.add_tree_to_queue(tree, movers, stolen_head_info, StolenHeadIndex::None);
+        id
+    }
+
+    fn add_tree_to_queue(
+        &mut self,
+        tree: FutureTree,
+        movers: ThinVec<FutureTree>,
+        stolen_head_info: Option<StolenHead>,
+        stolen_head_index: StolenHeadIndex,
+    ) {
         self.queue.push(Reverse(ParseMoment {
             tree,
             movers,
-            stolen_head,
+            stolen_head_info,
+            stolen_head_index,
         }));
-        id
     }
 
     pub(super) fn new(beam: B, category_index: NodeIndex) -> Self {
@@ -385,9 +206,9 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         )));
         BeamWrapper {
             beam,
-            heads: vec![],
             n_consec_empties: 0,
             queue,
+            heads: vec![],
             log_prob: LogProb::prob_of_one(),
             rules: PartialRulePool::default(),
             phantom: PhantomData,
@@ -466,7 +287,7 @@ fn unmerge_from_mover<
                         child_node,
                         moment.tree.index,
                         child_movers,
-                        moment.stolen_head,
+                        moment.stolen_head_info,
                     );
                     let stored_id =
                         beam.push_moment(stored_child_node, mover.index, stored_movers, None);
@@ -527,21 +348,78 @@ fn unmerge<
 
     let (child_head, comp_head) = match head_info {
         HeadMovement::HeadMovement { stealer, stolen } => (Some(stealer), Some(stolen)),
-        HeadMovement::Inherit => (moment.stolen_head, None),
+        HeadMovement::Inherit => (moment.stolen_head_info, None),
     };
 
-    let complement_id = beam.push_moment(
-        complement,
-        moment.tree.index.clone_push(dir),
-        complement_movers,
-        comp_head,
-    );
-    let child_id = beam.push_moment(
-        child_node,
-        moment.tree.index.clone_push(dir.flip()),
-        child_movers,
-        child_head,
-    );
+    let (child_tree, child_id) =
+        beam.new_future_tree(child_node, moment.tree.index.clone_push(dir.flip()));
+    let (complement_tree, complement_id) =
+        beam.new_future_tree(complement, moment.tree.index.clone_push(dir));
+
+    match (child_head, comp_head) {
+        (None, None) => {
+            //do normal stuff
+            beam.add_tree_to_queue(child_tree, child_movers, None, StolenHeadIndex::None);
+            beam.add_tree_to_queue(
+                complement_tree,
+                complement_movers,
+                None,
+                StolenHeadIndex::None,
+            );
+        }
+        (Some(StolenHead::Stealer), Some(StolenHead::StolenHead(r, g))) => {
+            //First time we are stealing a head!
+            #[cfg(test)]
+            assert!(child_movers.is_empty());
+            let id = beam.heads.len();
+            beam.heads.push(AffixedHead::new(LexemeId(child_node))); //assumes that affixes are
+            //complements, e.g. that child_node is a lexeme
+            beam.add_tree_to_queue(
+                complement_tree,
+                complement_movers,
+                Some(StolenHead::StolenHead(r, g)),
+                StolenHeadIndex::Building(id, child_tree),
+            );
+        }
+        (Some(StolenHead::Stealer), Some(StolenHead::Stealer)) => panic!("A"),
+        (Some(StolenHead::StolenHead(r, d)), Some(_)) => {
+            //Previous head was stolen, and we're stealing this one too.
+            //the complement is behaving normally.
+            beam.add_tree_to_queue(
+                child_tree,
+                child_movers,
+                Some(StolenHead::StolenHead(r, d)),
+                StolenHeadIndex::Index(moment.stolen_head_index.id()),
+            );
+            beam.add_tree_to_queue(
+                complement_tree,
+                complement_movers,
+                None,
+                moment.stolen_head_index,
+            );
+        }
+        (Some(StolenHead::StolenHead(r, d)), None) => {
+            //We are finished stealing heads, the child should go up to be with its stealer while
+            //the complement is behaving normally.
+            #[cfg(test)]
+            assert!(child_movers.is_empty());
+            beam.add_tree_to_queue(
+                child_tree,
+                child_movers,
+                Some(StolenHead::StolenHead(r, d)),
+                moment.stolen_head_index,
+            );
+
+            beam.add_tree_to_queue(
+                complement_tree,
+                complement_movers,
+                None,
+                StolenHeadIndex::None,
+            );
+        }
+        (Some(StolenHead::Stealer), None) => panic!("E"),
+        (None, Some(_)) => panic!("Should be impossible"),
+    };
 
     beam.log_prob += child_prob;
     beam.rules.push_rule(
@@ -604,8 +482,12 @@ fn unmove_from_mover<
                         .chain(std::iter::once(stored_tree))
                         .collect();
 
-                    let child_id =
-                        beam.push_moment(child_node, moment.tree.index, movers, moment.stolen_head);
+                    let child_id = beam.push_moment(
+                        child_node,
+                        moment.tree.index,
+                        movers,
+                        moment.stolen_head_info,
+                    );
                     beam.log_prob += stored_prob + child_prob;
 
                     let trace_id = beam.rules.fresh_trace();
@@ -653,7 +535,7 @@ fn unmove<
         child_node,
         moment.tree.index.clone_push(Direction::Right),
         clone_push(&moment.movers, stored),
-        moment.stolen_head,
+        moment.stolen_head_info,
     );
 
     beam.log_prob += child_prob;
@@ -679,60 +561,23 @@ enum HeadMovement {
 }
 
 #[inline]
-fn set_beam_head<
-    T: Eq + std::fmt::Debug + Clone,
-    U: Eq + std::fmt::Debug + Clone,
-    Category: Eq + std::fmt::Debug + Clone,
-    B: Scanner<T> + Eq + Clone,
->(
+fn set_beam_head<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone>(
     moment: &ParseMoment,
     dir: Direction,
-    lexicon: &Lexicon<U, Category>,
-    child_node: NodeIndex,
     beam: &mut BeamWrapper<T, B>,
-    config: &ParsingConfig,
-) -> Result<Option<HeadMovement>, ParsingError<Category>> {
-    match moment.stolen_head {
-        Some(StolenHead::Stealer(_)) => panic!(
+) -> HeadMovement {
+    match moment.stolen_head_info {
+        Some(StolenHead::Stealer) => panic!(
             "Only possible if there are multiple head movements to one lemma which is not yet supported"
         ),
-        Some(StolenHead::StolenHead(pos, index)) => {
-            match &mut beam.heads[pos] {
-                PossibleHeads::Possibles(head_trees) => {
-                    if !head_trees.filter_node(child_node, index, lexicon) {
-                        return Ok(None);
-                    }
-                }
-                PossibleHeads::FoundTree(heads, _) => {
-                    let Some(nodes) = heads.find_node(index) else {
-                        //Wrong shape of head movement
-                        return Ok(None);
-                    };
-                    nodes.retain_mut(|x| lexicon.parent_of(x.0).unwrap() == child_node);
-                    if nodes.is_empty() {
-                        //Wrong head for the head movement
-                        return Ok(None);
-                    }
-                }
-                PossibleHeads::PlaceHolder => {
-                    panic!("This enum variant is just used for swapping!")
-                }
-            }
-            Ok(Some(HeadMovement::HeadMovement {
-                stealer: StolenHead::StolenHead(pos, index),
-                stolen: StolenHead::StolenHead(pos, index.clone_push(dir)),
-            }))
-        }
-        None => {
-            let head_pos = beam.heads.len();
-            let possible_heads =
-                PossibleHeads::Possibles(lexicon.possible_heads(child_node, config)?);
-            beam.heads.push(possible_heads);
-            Ok(Some(HeadMovement::HeadMovement {
-                stealer: StolenHead::Stealer(head_pos),
-                stolen: StolenHead::new_stolen(head_pos, dir),
-            }))
-        }
+        Some(StolenHead::StolenHead(pos, old_d)) => HeadMovement::HeadMovement {
+            stealer: StolenHead::StolenHead(pos, old_d),
+            stolen: StolenHead::StolenHead(pos, dir),
+        },
+        None => HeadMovement::HeadMovement {
+            stealer: StolenHead::Stealer,
+            stolen: StolenHead::new_stolen(beam.rules.peek_fresh(), dir),
+        },
     }
 }
 
@@ -756,7 +601,7 @@ pub(crate) fn expand<
         .zip(lexicon.children_of(moment.tree.node))
         .for_each(
             |(mut beam, child_node)| match lexicon.get(child_node).unwrap() {
-                (FeatureOrLemma::Lemma(s), p) if moment.no_movers() => {
+                (FeatureOrLemma::Lemma(s), p) if moment.ready_to_scan() => {
                     beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon)
                 }
                 (FeatureOrLemma::Complement(cat, dir), mut p)
@@ -810,23 +655,20 @@ pub(crate) fn expand<
                     }
                 }
                 (FeatureOrLemma::Feature(Feature::Affix(cat, dir)), p) => {
-                    if let Ok(Some(head_info)) =
-                        set_beam_head(&moment, *dir, lexicon, child_node, &mut beam, config)
-                    {
-                        //We set dir=right since headmovement is always after a right-merge, even
-                        //if you can put it to the left or right of the head
-                        let _ = unmerge(
-                            extender,
-                            lexicon,
-                            &moment,
-                            beam,
-                            cat,
-                            Direction::Right,
-                            child_node,
-                            p,
-                            head_info,
-                        );
-                    }
+                    let head_info = set_beam_head(&moment, *dir, &mut beam);
+                    //We set dir=right since headmovement is always after a right-merge, even
+                    //if you can put it to the left or right of the head
+                    let _ = unmerge(
+                        extender,
+                        lexicon,
+                        &moment,
+                        beam,
+                        cat,
+                        Direction::Right,
+                        child_node,
+                        p,
+                        head_info,
+                    );
                 }
                 (FeatureOrLemma::Lemma(_), _)
                 | (FeatureOrLemma::Feature(Feature::Category(_)), _)

@@ -139,21 +139,25 @@ runs::=>0 0= +1 0::lambda t phi lambda t psi ~pa_woman(a_Phil)
 runs::2::a_Mary
 John::0 -1::pa_woman(a_Susan)";
 
-    let worse_head_movement = "runs::0<= 0::lambda t phi some(x, pa_man(a_Susan), pa_man(a_John))
-ε::0<= 0::lambda t phi phi
-ε::0<= 0::lambda t phi some(x, phi, ~pa_man(a_John))
-ε::0<= 0::lambda t phi ~phi & phi
-John::0= +1 0::lambda t phi pa_man(a_Phil)
-John::0 -1::some_e(x, pa_woman(a_Mary), pa_man(a_Phil))";
+    let worse_head_movement = 
+    "ε::0::some(x, pa_man(x), pa_woman(x))
+John::0::pa_woman(a_Susan)
+John::0::some_e(x, pe_breathe(x), pe_breathe(x))
+John::0<= =0 0::lambda t phi lambda t psi some_e(x, phi, pa_man(a_John))
+John::0<= =0 0::lambda t phi lambda t psi every(x, pa_man(a_Phil), phi)
+runs::0<= =1 =1 =0 0::lambda t phi lambda a x lambda a y lambda t psi pa_woman(a_Susan) & pa_man(a_Phil)
+runs::1= =1 =1 =0 0::lambda a x lambda a y lambda a z lambda t phi some_e(a, phi, pa_man(a_Mary))
+runs::1= =1 =0 0::lambda a x lambda a y lambda t phi pa_man(a_Mary)
+ε::1::a_Mary";
 
-    let semantics = SemanticLexicon::parse(head_movement).unwrap();
+    let semantics = SemanticLexicon::parse(worse_head_movement).unwrap();
 
     let config = ParsingConfig::new(
         LogProb::new(-32.0).unwrap(),
         LogProb::from_raw_prob(0.5).unwrap(),
         10,
         50,
-    );
+    ).with_max_heads(2);
 
     let sentences = [vec!["John", "runs"]].map(PhonContent::new);
 

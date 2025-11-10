@@ -40,6 +40,7 @@ use std::marker::PhantomData;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
+use ahash::HashMap;
 pub use lexicon::{Lexicon, ParsingError};
 
 use logprob::LogProb;
@@ -271,17 +272,36 @@ impl Default for ParsingConfig {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+struct BeamKey(LogProb<f64>, usize);
+
+impl PartialOrd for BeamKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BeamKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ParseHeap<T, B: Scanner<T>> {
-    parse_heap: MinMaxHeap<BeamWrapper<T, B>>,
+    parse_heap: MinMaxHeap<BeamKey>,
     phantom: PhantomData<T>,
     config: ParsingConfig,
     rule_arena: Vec<RuleHolder>,
+    beam_arena: Vec<Option<BeamWrapper<T, B>>>,
+    fresh: usize,
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B> {
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
-        self.parse_heap.pop_max()
+        self.parse_heap
+            .pop_max()
+            .map(|x| self.beam_arena[x.1].take().unwrap())
     }
 
     fn can_push(&self, v: &BeamWrapper<T, B>) -> bool {
@@ -305,24 +325,32 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
 
     fn push(&mut self, v: BeamWrapper<T, B>) {
         if self.can_push(&v) {
+            self.fresh += 1;
+            let key = BeamKey(v.log_prob(), self.fresh);
             if let Some(max_beams) = self.config.max_beams
                 && self.parse_heap.len() > max_beams
             {
-                self.parse_heap.push_pop_min(v);
+                let x = self.parse_heap.push_pop_min(key);
+                self.beam_arena[x.1] = None;
             } else {
-                self.parse_heap.push(v);
+                self.parse_heap.push(key);
             }
+            self.beam_arena.push(Some(v));
         }
     }
 
     fn new(start: BeamWrapper<T, B>, config: &ParsingConfig, cat: NodeIndex) -> Self {
         let mut parse_heap = MinMaxHeap::with_capacity(config.max_beams.unwrap_or(50));
-        parse_heap.push(start);
+        let key = BeamKey(start.log_prob(), 0);
+        parse_heap.push(key);
+        let beam_arena = vec![Some(start)];
         ParseHeap {
             parse_heap,
+            beam_arena,
             phantom: PhantomData,
             config: *config,
             rule_arena: PartialRulePool::default_pool(cat),
+            fresh: 0,
         }
     }
 

@@ -3,7 +3,7 @@ use std::{borrow::Borrow, cmp::Ordering};
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
-use crate::{Direction, Lexicon, lexicon::FeatureOrLemma};
+use crate::Direction;
 use bitvec::prelude::*;
 use thin_vec::ThinVec;
 
@@ -135,6 +135,7 @@ impl GornIndex {
         v
     }
 
+    ///Add a [`Direction`] to a [`GornIndex`]
     pub fn push(&mut self, d: Direction) {
         self.index.set(self.size, d.into());
         self.size += 1;
@@ -270,10 +271,6 @@ impl ParseMoment {
     pub fn should_be_scanned(&self) -> bool {
         self.movers.is_empty()
     }
-
-    pub fn is_lemma<T: Eq, C: Eq>(&self, lex: Lexicon<T, C>) -> bool {
-        lex.is_lemma(self.tree.node)
-    }
 }
 
 impl PartialOrd for ParseMoment {
@@ -293,8 +290,8 @@ impl Ord for ParseMoment {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StolenHead {
     None,
-    Stealer(usize),
-    StolenHead {
+    Root(usize),
+    Affix {
         rule: RuleIndex,
         direction: Direction,
         stealer_id: usize,
@@ -311,12 +308,8 @@ impl PartialOrd for StolenHead {
 impl Ord for StolenHead {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (StolenHead::StolenHead { .. }, StolenHead::None | StolenHead::Stealer(_)) => {
-                Ordering::Less
-            }
-            (StolenHead::None | StolenHead::Stealer(_), StolenHead::StolenHead { .. }) => {
-                Ordering::Greater
-            }
+            (StolenHead::Affix { .. }, StolenHead::None | StolenHead::Root(_)) => Ordering::Less,
+            (StolenHead::None | StolenHead::Root(_), StolenHead::Affix { .. }) => Ordering::Greater,
             _ => Ordering::Equal,
         }
     }
@@ -324,7 +317,7 @@ impl Ord for StolenHead {
 
 impl StolenHead {
     pub(crate) fn new_stolen(rule: RuleIndex, direction: Direction, stealer_id: usize) -> Self {
-        StolenHead::StolenHead {
+        StolenHead::Affix {
             rule,
             direction,
             stealer_id,
@@ -335,13 +328,13 @@ impl StolenHead {
     pub(crate) fn with_done(self) -> Self {
         match self {
             StolenHead::None => StolenHead::None,
-            StolenHead::Stealer(x) => StolenHead::Stealer(x),
-            StolenHead::StolenHead {
+            StolenHead::Root(x) => StolenHead::Root(x),
+            StolenHead::Affix {
                 rule,
                 direction,
                 stealer_id,
                 ..
-            } => StolenHead::StolenHead {
+            } => StolenHead::Affix {
                 rule,
                 direction,
                 stealer_id,
@@ -352,13 +345,13 @@ impl StolenHead {
 
     pub(crate) fn with_not_done(self) -> Self {
         match self {
-            StolenHead::None | StolenHead::Stealer(_) => panic!("These can't be finished!"),
-            StolenHead::StolenHead {
+            StolenHead::None | StolenHead::Root(_) => panic!("These can't be finished!"),
+            StolenHead::Affix {
                 rule,
                 direction,
                 stealer_id,
                 ..
-            } => StolenHead::StolenHead {
+            } => StolenHead::Affix {
                 rule,
                 direction,
                 stealer_id,

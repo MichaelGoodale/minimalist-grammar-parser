@@ -4,7 +4,7 @@ use ahash::{HashMap, HashSet};
 #[cfg(feature = "pretty")]
 use serde::Serialize;
 
-use crate::{Direction, ParsingConfig};
+use crate::Direction;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -780,10 +780,6 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
 }
 
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
-    pub(crate) fn is_lemma(&self, nx: NodeIndex) -> bool {
-        self.graph.node_weight(nx).unwrap().is_lemma()
-    }
-
     ///Checks if `nx` is a complement
     pub fn is_complement(&self, nx: NodeIndex) -> bool {
         matches!(

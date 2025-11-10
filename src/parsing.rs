@@ -67,8 +67,8 @@ impl AffixedHead {
 pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    head_buffer: Vec<(LexemeId, RuleIndex, GornIndex)>,
-    heads: Vec<AffixedHead>,
+    head_buffer: ThinVec<(LexemeId, RuleIndex, GornIndex)>,
+    heads: ThinVec<AffixedHead>,
     rules: PartialRulePool,
     n_consec_empties: usize,
     pub beam: B,
@@ -112,7 +112,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             None => self.n_consec_empties += 1,
         }
         let rule = match moment.stolen_head {
-            StolenHead::Stealer(head_id) => {
+            StolenHead::Root(head_id) => {
                 let heads = &mut self.heads[head_id];
                 // We change this one so that the head is the lemma we are at, previously we didn't
                 // know which it was, so at that index was an affix feature.
@@ -152,7 +152,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                     None
                 }
             }
-            StolenHead::StolenHead {
+            StolenHead::Affix {
                 rule,
                 direction,
                 stealer_id,
@@ -160,7 +160,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             } => {
                 if is_done {
                     let tree = self.heads[stealer_id].tree.take().unwrap();
-                    self.add_tree_to_queue(tree, thin_vec![], StolenHead::Stealer(stealer_id));
+                    self.add_tree_to_queue(tree, thin_vec![], StolenHead::Root(stealer_id));
                 }
                 self.heads[stealer_id].insert(child_node, direction);
                 Some(Rule::Scan {
@@ -244,8 +244,8 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             beam,
             n_consec_empties: 0,
             queue,
-            heads: vec![],
-            head_buffer: vec![],
+            heads: thin_vec![],
+            head_buffer: thin_vec![],
             log_prob: LogProb::prob_of_one(),
             rules: PartialRulePool::default(),
             phantom: PhantomData,
@@ -402,7 +402,7 @@ fn unmerge<
             beam.add_tree_to_queue(child_tree, child_movers, StolenHead::None);
             beam.add_tree_to_queue(complement_tree, complement_movers, StolenHead::None);
         }
-        (StolenHead::Stealer(_), stole @ StolenHead::StolenHead { .. }) => {
+        (StolenHead::Root(_), stole @ StolenHead::Affix { .. }) => {
             //First time we are stealing a head!
             #[cfg(test)]
             assert!(child_movers.is_empty());
@@ -412,11 +412,8 @@ fn unmerge<
             //complements, e.g. that child_node is a lexeme
             beam.add_tree_to_queue(complement_tree, complement_movers, stole.with_done());
         }
-        (StolenHead::Stealer(_), StolenHead::Stealer(_)) => panic!("A"),
-        (
-            stole_child @ StolenHead::StolenHead { .. },
-            stolen_comp @ StolenHead::StolenHead { .. },
-        ) => {
+        (StolenHead::Root(_), StolenHead::Root(_)) => panic!("A"),
+        (stole_child @ StolenHead::Affix { .. }, stolen_comp @ StolenHead::Affix { .. }) => {
             #[cfg(test)]
             assert!(child_movers.is_empty());
 
@@ -425,7 +422,7 @@ fn unmerge<
             beam.add_tree_to_queue(child_tree, child_movers, stole_child.with_not_done());
             beam.add_tree_to_queue(complement_tree, complement_movers, stolen_comp.with_done());
         }
-        (stole @ StolenHead::StolenHead { .. }, StolenHead::None) => {
+        (stole @ StolenHead::Affix { .. }, StolenHead::None) => {
             //We are finished stealing heads, the child should go up to be with its stealer while
             //the complement is behaving normally.
             #[cfg(test)]
@@ -576,22 +573,22 @@ fn set_beam_head<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone>(
     beam: &mut BeamWrapper<T, B>,
 ) -> HeadMovement {
     match moment.stolen_head {
-        StolenHead::Stealer(_) => panic!(
+        StolenHead::Root(_) => panic!(
             "Only possible if there are multiple head movements to one lemma which is not yet supported"
         ),
-        StolenHead::StolenHead {
+        StolenHead::Affix {
             stealer_id,
             rule,
             direction: old_dir,
             is_done,
         } => HeadMovement::HeadMovement {
-            stealer: StolenHead::StolenHead {
+            stealer: StolenHead::Affix {
                 stealer_id,
                 rule,
                 direction: old_dir,
                 is_done: false,
             },
-            stolen: StolenHead::StolenHead {
+            stolen: StolenHead::Affix {
                 stealer_id,
                 direction: dir,
                 rule,
@@ -601,7 +598,7 @@ fn set_beam_head<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone>(
         StolenHead::None => {
             let id = beam.heads.len();
             HeadMovement::HeadMovement {
-                stealer: StolenHead::Stealer(id),
+                stealer: StolenHead::Root(id),
                 stolen: StolenHead::new_stolen(beam.rules.peek_fresh(), dir, id),
             }
         }

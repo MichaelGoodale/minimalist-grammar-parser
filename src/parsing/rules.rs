@@ -51,7 +51,7 @@ impl std::fmt::Display for TraceId {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum StolenInfo {
     Normal,
-    Stolen(RuleIndex, Direction),
+    Stolen(RuleIndex, GornIndex),
     Stealer,
 }
 

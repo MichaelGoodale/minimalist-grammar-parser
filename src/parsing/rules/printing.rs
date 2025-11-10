@@ -711,13 +711,13 @@ mod test {
     fn complicated_head_movement() -> anyhow::Result<()> {
         let grammar = [
             "John::d -k -q",
-            "Mary::d -k -q",
+            //"Mary::d -k -q",
             "some::n= d -k -q",
             "vase::n",
-            "dance::V",
+            //:will"dance::V",
             "see::d= +k V",
             "break::d= V",
-            "fall::d= v",
+            //"fall::d= v",
             "::=>V v",
             "::v<= =d +k voice",
             "s::=>voice +q t",

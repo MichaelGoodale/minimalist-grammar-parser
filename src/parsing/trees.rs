@@ -135,6 +135,11 @@ impl GornIndex {
         v
     }
 
+    pub fn push(&mut self, d: Direction) {
+        self.index.set(self.size, d.into());
+        self.size += 1;
+    }
+
     ///Create a [`GornIndex`] with one [`Direction`] preset (you can use [`GornIndex::default`] for
     ///the root).
     pub fn new(d: Direction) -> Self {

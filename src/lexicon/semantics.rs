@@ -414,9 +414,9 @@ mod test {
         }
         for (a, b) in vec![
                 "someone likes someone\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
+                "everyone likes someone\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
                 "someone likes everyone\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
                 "everyone likes everyone\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nevery(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
-                "everyone likes someone\nevery(x, all_a, some(y, all_a, some_e(z, all_e, AgentOf(x, z) & pe_likes(z) & PatientOf(y, z))))\nsome(x, all_a, every(y, all_a, some_e(z, all_e, AgentOf(y, z) & pe_likes(z) & PatientOf(x, z))))",
             ].into_iter().zip(v) {
             assert_eq!(a,b)
         }

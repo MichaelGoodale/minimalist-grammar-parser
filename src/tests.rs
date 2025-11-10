@@ -673,5 +673,37 @@ fn head_movement_checks() -> Result<()> {
         .next()
         .unwrap();
 
+    let lexicon = ["::V<= T", "s::=>v +k V", "A::d -k", "see::d= v"];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
+    );
+
+    let v: Vec<String> = lexicon
+        .generate("T", &CONFIG)?
+        .map(|(_, s, _)| PhonContent::flatten(s).join(" "))
+        .collect();
+
+    assert_eq!(v, vec!["sees A"]);
+
+    for leaf in lexicon.leaves() {
+        println!("{leaf:?}: {:?}", lexicon.leaf_to_lemma(*leaf).unwrap())
+    }
+    lexicon
+        .parse(
+            &[
+                PhonContent::Affixed(vec!["see", "s"]),
+                PhonContent::Normal("A"),
+            ],
+            "T",
+            &CONFIG,
+        )?
+        .next()
+        .unwrap();
+
     Ok(())
 }

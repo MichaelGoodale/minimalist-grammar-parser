@@ -21,27 +21,27 @@ pub use rules::RulePool;
 pub(crate) use rules::{PartialRulePool, RuleHolder, RuleIndex};
 
 #[derive(Debug, Clone)]
-pub struct AffixedHead {
+struct AffixedHead {
     heads: Vec<LexemeId>,
     pos: usize,
     head: usize,
     tree: Option<FutureTree>,
+    current_index: GornIndex,
 }
 
 impl AffixedHead {
     fn insert(&mut self, nx: LexemeId, dir: Direction) {
         match dir {
-            Direction::Left => {
-                if self.pos <= self.head {
-                    self.head += 1;
-                }
-                self.heads.insert(self.pos, nx)
-            }
+            Direction::Left => self.heads.insert(self.pos, nx),
             Direction::Right => {
                 self.pos += 1;
                 self.heads.insert(self.pos, nx);
             }
         }
+        if self.pos <= self.head {
+            self.head += 1;
+        }
+        self.current_index.push(dir);
     }
 
     fn is_unfinished_and_before(&self, index: &GornIndex) -> bool {
@@ -58,6 +58,7 @@ impl AffixedHead {
             pos: 0,
             head: 0,
             tree: Some(tree),
+            current_index: GornIndex::default(),
         }
     }
 }
@@ -113,7 +114,6 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         let rule = match moment.stolen_head {
             StolenHead::Stealer(head_id) => {
                 let heads = &mut self.heads[head_id];
-
                 // We change this one so that the head is the lemma we are at, previously we didn't
                 // know which it was, so at that index was an affix feature.
                 heads.heads[heads.head] = child_node;
@@ -141,7 +141,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                             );
                         } else {
                             //We stop early without adding the beam back on since its a failure
-                            return ();
+                            return;
                         }
                     }
                     Some(Rule::Scan {
@@ -160,26 +160,26 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             } => {
                 if is_done {
                     let tree = self.heads[stealer_id].tree.take().unwrap();
-
                     self.add_tree_to_queue(tree, thin_vec![], StolenHead::Stealer(stealer_id));
                 }
                 self.heads[stealer_id].insert(child_node, direction);
                 Some(Rule::Scan {
                     lexeme: child_node,
-                    stolen: StolenInfo::Stolen(rule, direction),
+                    stolen: StolenInfo::Stolen(rule, self.heads[stealer_id].current_index),
                 })
             }
             StolenHead::None => {
-                if self
-                    .heads
-                    .iter()
-                    .any(|x| x.is_unfinished_and_before(&moment.tree.index))
+                if s.is_some()
+                    && self
+                        .heads
+                        .iter()
+                        .any(|x| x.is_unfinished_and_before(&moment.tree.index))
                 {
                     //We need to figure out stolen heads before scanning this guy, so off to the
                     //buffer he goes
                     self.head_buffer.push((child_node, moment.tree.id));
                     v.push(self);
-                    return ();
+                    return;
                 } else if self.beam.scan(s) {
                     Some(Rule::Scan {
                         lexeme: child_node,

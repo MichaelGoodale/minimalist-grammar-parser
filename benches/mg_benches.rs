@@ -8,6 +8,11 @@ use minimalist_grammar_parser::{
     lexicon::{LexicalEntry, Lexicon, SemanticLexicon},
 };
 
+use divan::AllocProfiler;
+
+#[global_allocator]
+static ALLOC: AllocProfiler = AllocProfiler::system();
+
 fn main() {
     // Run registered benchmarks.
     divan::main();
@@ -157,7 +162,7 @@ runs::1= =1 =0 0::lambda a x lambda a y lambda t phi pa_man(a_Mary)
         LogProb::from_raw_prob(0.5).unwrap(),
         10,
         50,
-    ).with_max_heads(2);
+    );
 
     let sentences = [vec!["John", "runs"]].map(PhonContent::new);
 

@@ -40,7 +40,6 @@ use std::marker::PhantomData;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
-use ahash::HashMap;
 pub use lexicon::{Lexicon, ParsingError};
 
 use logprob::LogProb;
@@ -166,7 +165,6 @@ pub struct ParsingConfig {
     max_steps: Option<usize>,
     max_beams: Option<usize>,
     max_consecutive_empty: Option<usize>,
-    max_head_depth: usize,
 
     #[cfg(not(target_arch = "wasm32"))]
     max_time: Option<Duration>,
@@ -187,8 +185,6 @@ impl ParsingConfig {
             max_consecutive_empty: None,
             max_steps: None,
             max_beams: None,
-            max_head_depth: 10,
-
             #[cfg(not(target_arch = "wasm32"))]
             max_time: None,
         }
@@ -208,7 +204,6 @@ impl ParsingConfig {
             move_prob,
             dont_move_prob: merge_prob,
             max_consecutive_empty: None,
-            max_head_depth: 10,
             max_steps: Some(max_steps),
             max_beams: Some(max_beams),
             #[cfg(not(target_arch = "wasm32"))]
@@ -232,12 +227,6 @@ impl ParsingConfig {
     ///Set the minimum log probability for a parse.
     pub fn with_min_log_prob(mut self, min_log_prob: LogProb<f64>) -> Self {
         self.min_log_prob = Some(min_log_prob);
-        self
-    }
-
-    ///Set the max number of heads adjoined for a parse.
-    pub fn with_max_heads(mut self, max_heads: usize) -> Self {
-        self.max_head_depth = max_heads;
         self
     }
 

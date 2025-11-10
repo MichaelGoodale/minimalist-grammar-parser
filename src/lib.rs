@@ -283,7 +283,6 @@ struct ParseHeap<T, B: Scanner<T>> {
     config: ParsingConfig,
     rule_arena: Vec<RuleHolder>,
     beam_arena: Vec<Option<BeamWrapper<T, B>>>,
-    fresh: usize,
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B> {
@@ -314,13 +313,15 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
 
     fn push(&mut self, v: BeamWrapper<T, B>) {
         if self.can_push(&v) {
-            self.fresh += 1;
-            let key = BeamKey(v.log_prob(), self.fresh);
+            let key = BeamKey(v.log_prob(), self.beam_arena.len());
             if let Some(max_beams) = self.config.max_beams
                 && self.parse_heap.len() > max_beams
             {
                 let x = self.parse_heap.push_pop_min(key);
-                self.beam_arena[x.1] = None;
+                if x.1 != key.1 {
+                    //only delete if its not the same thing
+                    self.beam_arena[x.1] = None;
+                }
             } else {
                 self.parse_heap.push(key);
             }
@@ -339,7 +340,6 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
             phantom: PhantomData,
             config: *config,
             rule_arena: PartialRulePool::default_pool(cat),
-            fresh: 0,
         }
     }
 

@@ -616,6 +616,33 @@ fn empty_head_movement() -> Result<()> {
 }
 
 #[test]
+fn weird_issue_with_queue() -> anyhow::Result<()> {
+    let config = ParsingConfig::new(
+        LogProb::new(-32.0).unwrap(),
+        LogProb::from_raw_prob(0.5).unwrap(),
+        20,
+        50,
+    )
+    .with_max_time(Duration::from_millis(100))
+    .with_max_consecutive_empty(2);
+
+    let lexicon = "John::0
+runs::=2 =0 0
+runs::=0 0
+ε::=0 0";
+
+    let lexicon = Lexicon::from_string(lexicon)?;
+    for (p, s, r) in lexicon
+        .parse(&PhonContent::from(["John", "runs"]), "0", &config)?
+        .take(128)
+    {
+        let used_strings: HashSet<_> = r.used_lemmas().collect();
+        println!("weewoo");
+    }
+    Ok(())
+}
+
+#[test]
 fn head_movement_checks() -> Result<()> {
     let lexicon = [
         "::V<= =d T",

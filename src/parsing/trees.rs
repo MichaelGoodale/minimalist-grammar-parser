@@ -3,7 +3,7 @@ use std::{borrow::Borrow, cmp::Ordering};
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 
-use crate::Direction;
+use crate::{Direction, Lexicon, lexicon::FeatureOrLemma};
 use bitvec::prelude::*;
 use thin_vec::ThinVec;
 
@@ -162,6 +162,11 @@ impl GornIndex {
         x.size > 0 && self.size == (x.size - 1) && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }
 
+    ///Is `self` to the left of `x`?
+    pub fn comes_before(&self, x: &GornIndex) -> bool {
+        matches!(GornIndex::infix_order(self, x), Ordering::Less)
+    }
+
     pub(crate) fn infix_order(x: &GornIndex, y: &GornIndex) -> Ordering {
         for (a, b) in (*x).into_iter().zip(*y) {
             match (a, b) {
@@ -231,36 +236,10 @@ impl Ord for FutureTree {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub(super) enum StolenHeadIndex {
-    #[default]
-    None,
-    Index(usize),
-    Building(usize, FutureTree),
-    Done(usize),
-}
-
-impl StolenHeadIndex {
-    pub(crate) fn unwrap(self) -> (usize, FutureTree) {
-        let StolenHeadIndex::Building(id, head) = self else {
-            panic!()
-        };
-        (id, head)
-    }
-
-    pub(crate) fn id(&self) -> usize {
-        let StolenHeadIndex::Building(id, _) = self else {
-            panic!()
-        };
-        *id
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParseMoment {
     pub tree: FutureTree,
-    pub stolen_head_info: Option<StolenHead>,
-    pub stolen_head_index: StolenHeadIndex,
+    pub stolen_head: StolenHead,
     pub movers: ThinVec<FutureTree>,
 }
 
@@ -275,34 +254,20 @@ impl ParseMoment {
         least
     }
 
-    pub fn new(
-        tree: FutureTree,
-        movers: ThinVec<FutureTree>,
-        stolen_head: Option<StolenHead>,
-    ) -> Self {
+    pub fn new(tree: FutureTree, movers: ThinVec<FutureTree>, stolen_head: StolenHead) -> Self {
         ParseMoment {
             tree,
             movers,
-            stolen_head_info: stolen_head,
-            stolen_head_index: StolenHeadIndex::None,
+            stolen_head,
         }
     }
-    pub fn ready_to_scan(&self) -> bool {
-        self.movers.is_empty() || self.time_to_steal_head()
+
+    pub fn should_be_scanned(&self) -> bool {
+        self.movers.is_empty()
     }
 
-    pub fn time_to_steal_head(&self) -> bool {
-        matches!(self.stolen_head_info, Some(StolenHead::StolenHead(_, _)))
-    }
-
-    pub fn stolen_head_dir_and_pos(&self) -> (Direction, usize) {
-        let Some(StolenHead::StolenHead(_, d)) = self.stolen_head_info else {
-            panic!()
-        };
-        let StolenHeadIndex::Building(pos, _) = self.stolen_head_index else {
-            panic!()
-        };
-        (d, pos)
+    pub fn is_lemma<T: Eq, C: Eq>(&self, lex: Lexicon<T, C>) -> bool {
+        lex.is_lemma(self.tree.node)
     }
 }
 
@@ -320,12 +285,57 @@ impl Ord for ParseMoment {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StolenHead {
-    Stealer,
-    StolenHead(RuleIndex, Direction),
+    None,
+    Stealer(usize),
+    StolenHead {
+        rule: RuleIndex,
+        direction: Direction,
+        stealer_id: usize,
+        is_done: bool,
+    },
 }
 
 impl StolenHead {
-    pub(crate) fn new_stolen(rule: RuleIndex, direction: Direction) -> Self {
-        StolenHead::StolenHead(rule, direction)
+    pub(crate) fn new_stolen(rule: RuleIndex, direction: Direction, stealer_id: usize) -> Self {
+        StolenHead::StolenHead {
+            rule,
+            direction,
+            stealer_id,
+            is_done: false,
+        }
+    }
+
+    pub(crate) fn with_done(self) -> Self {
+        match self {
+            StolenHead::None | StolenHead::Stealer(_) => panic!("These can't be finished!"),
+            StolenHead::StolenHead {
+                rule,
+                direction,
+                stealer_id,
+                ..
+            } => StolenHead::StolenHead {
+                rule,
+                direction,
+                stealer_id,
+                is_done: true,
+            },
+        }
+    }
+
+    pub(crate) fn with_not_done(self) -> Self {
+        match self {
+            StolenHead::None | StolenHead::Stealer(_) => panic!("These can't be finished!"),
+            StolenHead::StolenHead {
+                rule,
+                direction,
+                stealer_id,
+                ..
+            } => StolenHead::StolenHead {
+                rule,
+                direction,
+                stealer_id,
+                is_done: false,
+            },
+        }
     }
 }

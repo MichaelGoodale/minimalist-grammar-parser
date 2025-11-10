@@ -50,7 +50,7 @@ fn index_order() -> Result<()> {
             id: RuleIndex::one(),
             index: [Direction::Right].into(),
         },],
-        None,
+        crate::parsing::trees::StolenHead::None,
     );
 
     assert_eq!(a.least_index(), &[Direction::Left, Direction::Right].into());

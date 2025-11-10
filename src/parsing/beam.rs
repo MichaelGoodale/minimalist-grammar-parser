@@ -602,6 +602,26 @@ PAST::=>V +subj1 t
 ";
 
         let lexicon = Lexicon::from_string(lexicon)?;
+        assert!(
+            lexicon
+                .parse(
+                    &[
+                        PhonContent::Normal("I"),
+                        PhonContent::Normal("can"),
+                        PhonContent::Normal("see"),
+                        PhonContent::Normal("a"),
+                        PhonContent::Normal("woman"),
+                        PhonContent::Normal("who"),
+                        PhonContent::Normal("a"),
+                        PhonContent::Normal("man"),
+                        PhonContent::Affixed(vec!["see", "3PRES"]),
+                    ],
+                    "C",
+                    &ParsingConfig::empty().with_max_steps(50),
+                )?
+                .next()
+                .is_some()
+        );
         assert_eq!(
             lexicon.valid_continuations(
                 "C",

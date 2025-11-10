@@ -779,7 +779,11 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+impl<T: Eq, Category: Eq> Lexicon<T, Category> {
+    pub(crate) fn is_lemma(&self, nx: NodeIndex) -> bool {
+        self.graph.node_weight(nx).unwrap().is_lemma()
+    }
+
     ///Checks if `nx` is a complement
     pub fn is_complement(&self, nx: NodeIndex) -> bool {
         matches!(
@@ -798,6 +802,25 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         &self.leaves
     }
 
+    ///Get all lemmas of a grammar
+    pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
+        self.leaves.iter().filter_map(|x| match &self.graph[x.0] {
+            FeatureOrLemma::Lemma(x) => Some(x),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn log_prob(&self, nx: NodeIndex) -> LogProb<f64> {
+        *self
+            .graph
+            .edges_directed(nx, petgraph::Direction::Incoming)
+            .next()
+            .unwrap()
+            .weight()
+    }
+}
+
+impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
     ///Returns all leaves with their sibling nodes (e.g. exemes that are identical except for
     ///their lemma)
     pub fn sibling_leaves(&self) -> Vec<Vec<LexemeId>> {
@@ -881,14 +904,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         Ok(LexicalEntry { features, lemma })
     }
 
-    ///Get all lemmas of a grammar
-    pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
-        self.leaves.iter().filter_map(|x| match &self.graph[x.0] {
-            FeatureOrLemma::Lemma(x) => Some(x),
-            _ => None,
-        })
-    }
-
     ///Create a new grammar from a [`Vec`] of [`LexicalEntry`]
     pub fn new(items: Vec<LexicalEntry<T, Category>>, collapse_lemmas: bool) -> Self {
         let n_items = items.len();
@@ -942,10 +957,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
             leaves,
             root: root_index,
         }
-    }
-
-    pub(crate) fn is_lemma(&self, nx: NodeIndex) -> bool {
-        self.graph.node_weight(nx).unwrap().is_lemma()
     }
 
     ///Get the node corresponding to a category

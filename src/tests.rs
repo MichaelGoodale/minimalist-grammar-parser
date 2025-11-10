@@ -561,8 +561,8 @@ fn simple_head_movement() -> Result<()> {
         .collect();
 
     assert_eq!(
-        v,
-        vec![
+        v.into_iter().collect::<HashSet<_>>(),
+        [
             "john will laugh",
             "john can laugh",
             "john may laugh",
@@ -576,6 +576,9 @@ fn simple_head_movement() -> Result<()> {
             "john avoids mary",
             "john is avoiding mary"
         ]
+        .into_iter()
+        .map(|x| x.to_string())
+        .collect::<HashSet<_>>()
     );
     lexicon
         .parse(

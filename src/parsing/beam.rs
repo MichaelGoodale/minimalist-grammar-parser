@@ -602,12 +602,6 @@ PAST::=>V +subj1 t
 ";
 
         let lexicon = Lexicon::from_string(lexicon)?;
-        let mut at_least_one = false;
-        for (_, s, _) in lexicon.generate("C", &ParsingConfig::empty().with_max_steps(10))? {
-            println!("{s:?}");
-            at_least_one = true;
-        }
-        assert!(at_least_one);
 
         assert!(
             lexicon

@@ -284,11 +284,13 @@ impl PartialOrd for ParseMoment {
 
 impl Ord for ParseMoment {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.least_index().cmp(other.least_index())
+        self.stolen_head
+            .cmp(&other.stolen_head)
+            .then(self.least_index().cmp(other.least_index()))
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StolenHead {
     None,
     Stealer(usize),
@@ -298,6 +300,26 @@ pub enum StolenHead {
         stealer_id: usize,
         is_done: bool,
     },
+}
+
+impl PartialOrd for StolenHead {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for StolenHead {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (StolenHead::StolenHead { .. }, StolenHead::None | StolenHead::Stealer(_)) => {
+                Ordering::Less
+            }
+            (StolenHead::None | StolenHead::Stealer(_), StolenHead::StolenHead { .. }) => {
+                Ordering::Greater
+            }
+            _ => Ordering::Equal,
+        }
+    }
 }
 
 impl StolenHead {
@@ -312,7 +334,8 @@ impl StolenHead {
 
     pub(crate) fn with_done(self) -> Self {
         match self {
-            StolenHead::None | StolenHead::Stealer(_) => panic!("These can't be finished!"),
+            StolenHead::None => StolenHead::None,
+            StolenHead::Stealer(x) => StolenHead::Stealer(x),
             StolenHead::StolenHead {
                 rule,
                 direction,

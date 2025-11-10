@@ -67,7 +67,7 @@ impl AffixedHead {
 pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    head_buffer: Vec<(LexemeId, RuleIndex)>,
+    head_buffer: Vec<(LexemeId, RuleIndex, GornIndex)>,
     heads: Vec<AffixedHead>,
     rules: PartialRulePool,
     n_consec_empties: usize,
@@ -126,7 +126,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
 
                 if self.beam.multiscan(heads) {
                     //All nodes for scanning (except for StolenHeads) were held until ready to be used here.
-                    for (lexeme, rule_id) in self.head_buffer.drain(..) {
+                    for (lexeme, rule_id, _) in self.head_buffer.drain(..) {
                         let s = lexicon.leaf_to_lemma(lexeme).unwrap();
                         if self.beam.scan(s) {
                             let p = lexicon.log_prob(lexeme.0);
@@ -177,7 +177,8 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 {
                     //We need to figure out stolen heads before scanning this guy, so off to the
                     //buffer he goes
-                    self.head_buffer.push((child_node, moment.tree.id));
+                    self.head_buffer
+                        .push((child_node, moment.tree.id, moment.tree.index));
                     v.push(self);
                     return;
                 } else if self.beam.scan(s) {
@@ -324,6 +325,7 @@ fn unmerge_from_mover<
                         child_movers,
                         moment.stolen_head,
                     );
+
                     let stored_id = beam.push_moment(
                         stored_child_node,
                         mover.index,

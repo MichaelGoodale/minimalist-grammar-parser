@@ -805,15 +805,6 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             _ => None,
         })
     }
-
-    pub(crate) fn log_prob(&self, nx: NodeIndex) -> LogProb<f64> {
-        *self
-            .graph
-            .edges_directed(nx, petgraph::Direction::Incoming)
-            .next()
-            .unwrap()
-            .weight()
-    }
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {

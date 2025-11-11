@@ -44,14 +44,6 @@ impl AffixedHead {
         self.current_index.push(dir);
     }
 
-    fn is_unfinished_and_before(&self, index: &GornIndex) -> bool {
-        let Some(tree) = self.tree else {
-            return false;
-        };
-
-        tree.index.comes_before(index)
-    }
-
     fn new(nx: LexemeId, tree: FutureTree) -> Self {
         AffixedHead {
             heads: vec![nx],
@@ -67,7 +59,6 @@ impl AffixedHead {
 pub(crate) struct BeamWrapper<T, B: Scanner<T>> {
     log_prob: LogProb<f64>,
     queue: BinaryHeap<Reverse<ParseMoment>>,
-    head_buffer: ThinVec<(LexemeId, RuleIndex, GornIndex)>,
     heads: ThinVec<AffixedHead>,
     rules: PartialRulePool,
     n_consec_empties: usize,
@@ -125,25 +116,6 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                     .collect();
 
                 if self.beam.multiscan(heads) {
-                    //All nodes for scanning (except for StolenHeads) were held until ready to be used here.
-                    for (lexeme, rule_id, _) in self.head_buffer.drain(..) {
-                        let s = lexicon.leaf_to_lemma(lexeme).unwrap();
-                        if self.beam.scan(s) {
-                            let p = lexicon.log_prob(lexeme.0);
-                            self.log_prob += p;
-                            self.rules.push_rule(
-                                v.rules_mut(),
-                                Rule::Scan {
-                                    lexeme,
-                                    stolen: StolenInfo::Normal,
-                                },
-                                rule_id,
-                            );
-                        } else {
-                            //We stop early without adding the beam back on since its a failure
-                            return;
-                        }
-                    }
                     Some(Rule::Scan {
                         lexeme: child_node,
                         stolen: StolenInfo::Stealer,
@@ -169,19 +141,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 })
             }
             StolenHead::None => {
-                if s.is_some()
-                    && self
-                        .heads
-                        .iter()
-                        .any(|x| x.is_unfinished_and_before(&moment.tree.index))
-                {
-                    //We need to figure out stolen heads before scanning this guy, so off to the
-                    //buffer he goes
-                    self.head_buffer
-                        .push((child_node, moment.tree.id, moment.tree.index));
-                    v.push(self);
-                    return;
-                } else if self.beam.scan(s) {
+                if self.beam.scan(s) {
                     Some(Rule::Scan {
                         lexeme: child_node,
                         stolen: StolenInfo::Normal,
@@ -245,7 +205,6 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
             n_consec_empties: 0,
             queue,
             heads: thin_vec![],
-            head_buffer: thin_vec![],
             log_prob: LogProb::prob_of_one(),
             rules: PartialRulePool::default(),
             phantom: PhantomData,

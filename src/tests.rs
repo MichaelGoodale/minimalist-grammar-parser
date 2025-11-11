@@ -632,11 +632,10 @@ runs::=0 0
 ε::=0 0";
 
     let lexicon = Lexicon::from_string(lexicon)?;
-    for (p, s, r) in lexicon
+    for _ in lexicon
         .parse(&PhonContent::from(["John", "runs"]), "0", &config)?
         .take(128)
     {
-        let used_strings: HashSet<_> = r.used_lemmas().collect();
         println!("weewoo");
     }
     Ok(())

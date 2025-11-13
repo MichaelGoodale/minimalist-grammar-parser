@@ -1,5 +1,8 @@
 use crate::lexicon::{Feature, LexiconParsingError};
+use ahash::HashMap;
 use anyhow::Result;
+#[cfg(feature = "sampling")]
+use rand::SeedableRng;
 
 use super::*;
 use crate::{
@@ -729,6 +732,124 @@ fn head_movement_checks() -> Result<()> {
         )?
         .next()
         .unwrap();
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "sampling")]
+fn random_parse() -> Result<()> {
+    let lexicon = [
+        "John::d",
+        "Mary::d",
+        "saw::=d d= t",
+        "saw::=d d= v",
+        "::v= t",
+    ];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
+    );
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+    const N: usize = 7500;
+    let mut counts: HashMap<_, usize> = HashMap::default();
+
+    for _ in 0..N {
+        let (_, _, r) = lexicon
+            .random_parse(
+                &PhonContent::from(["John", "saw", "Mary"]),
+                "t",
+                &CONFIG,
+                &mut rng,
+            )?
+            .unwrap();
+
+        *counts.entry(r).or_default() += 1;
+    }
+    let mut counts: Vec<_> = counts.values().map(|x| (*x as f64) / (N as f64)).collect();
+    counts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let baseline = [0.5, 0.5];
+    println!("{counts:?} ≈ {baseline:?}");
+    for (a, b) in counts.into_iter().zip(baseline) {
+        approx::assert_abs_diff_eq!(a, b, epsilon = 1e-2)
+    }
+
+    let jsm = PhonContent::from(["John", "saw", "Mary"]);
+    let msj = PhonContent::from(["Mary", "saw", "John"]);
+
+    let mut j_count: HashMap<_, usize> = HashMap::default();
+    let mut m_count: HashMap<_, usize> = HashMap::default();
+
+    for _ in 0..N {
+        let mut set = HashSet::new();
+        for (_, s, r) in lexicon.random_parse_multiple(&[&jsm, &msj], "t", &CONFIG, &mut rng)? {
+            if set.contains(&s) {
+                panic!()
+            } else {
+                set.insert(s);
+            }
+            if s == jsm {
+                *j_count.entry(r).or_default() += 1;
+            } else if s == msj {
+                *m_count.entry(r).or_default() += 1;
+            } else {
+                panic!()
+            }
+        }
+    }
+
+    let mut j_count: Vec<_> = j_count.values().map(|x| (*x as f64) / (N as f64)).collect();
+    j_count.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let mut m_count: Vec<_> = m_count.values().map(|x| (*x as f64) / (N as f64)).collect();
+    m_count.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let baseline = [0.5, 0.5];
+    println!("{j_count:?} ≈ {m_count:?} ≈ {baseline:?}");
+    for ((a, b), c) in j_count.into_iter().zip(baseline).zip(m_count) {
+        approx::assert_abs_diff_eq!(a, b, epsilon = 1e-2);
+        approx::assert_abs_diff_eq!(c, b, epsilon = 1e-2);
+    }
+
+    let lexicon = [
+        "John::d",
+        "Mary::d",
+        "saw::=d d= t",
+        "saw::=d d= v",
+        "saw::d= =d v",
+        "::v= t",
+    ];
+
+    let lexicon = Lexicon::new(
+        lexicon
+            .into_iter()
+            .map(SimpleLexicalEntry::parse)
+            .collect::<Result<Vec<_>, LexiconParsingError>>()?,
+        false,
+    );
+    let mut counts: HashMap<_, usize> = HashMap::default();
+
+    for _ in 0..N {
+        let (_, _, r) = lexicon
+            .random_parse(
+                &PhonContent::from(["John", "saw", "Mary"]),
+                "t",
+                &CONFIG,
+                &mut rng,
+            )?
+            .unwrap();
+
+        *counts.entry(r).or_default() += 1;
+    }
+    let mut counts: Vec<_> = counts.values().map(|x| (*x as f64) / (N as f64)).collect();
+    counts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let baseline = [0.25, 0.25, 0.5];
+    println!("{counts:?} ≈ {baseline:?}");
+    for (a, b) in counts.into_iter().zip(baseline) {
+        approx::assert_abs_diff_eq!(a, b, epsilon = 1e-2)
+    }
 
     Ok(())
 }

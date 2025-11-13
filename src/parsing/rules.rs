@@ -268,7 +268,7 @@ impl Default for PartialRulePool {
 
 ///This struct holds the history of which rules were used to generate a parse and thus can be used
 ///to plot trees or look at the syntactic structure of a parse.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RulePool(Vec<Rule>);
 
 #[cfg(feature = "semantics")]

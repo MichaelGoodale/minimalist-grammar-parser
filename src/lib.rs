@@ -51,6 +51,13 @@ use parsing::beam::{FuzzyScan, GeneratorScan, ParseScan, Scanner};
 use parsing::{BeamWrapper, PartialRulePool, expand};
 use petgraph::graph::NodeIndex;
 
+#[cfg(feature = "sampling")]
+use rand::Rng;
+#[cfg(feature = "sampling")]
+use rand_distr::Distribution;
+#[cfg(feature = "sampling")]
+use rand_distr::weighted::WeightedIndex;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -283,9 +290,39 @@ struct ParseHeap<T, B: Scanner<T>> {
     config: ParsingConfig,
     rule_arena: Vec<RuleHolder>,
     beam_arena: Vec<Option<BeamWrapper<T, B>>>,
+    #[cfg(feature = "sampling")]
+    random_buffer: Vec<BeamWrapper<T, B>>,
+    #[cfg(feature = "sampling")]
+    head: Option<BeamWrapper<T, B>>,
+    #[cfg(feature = "sampling")]
+    random_order: bool,
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B> {
+    ///Retain only elements in the closure, which may be mutated.
+    fn retain_map<F: FnMut(BeamWrapper<T, B>) -> Option<BeamWrapper<T, B>>>(&mut self, mut f: F) {
+        let mut heap = MinMaxHeap::new();
+        std::mem::swap(&mut heap, &mut self.parse_heap);
+        self.parse_heap.extend(heap.into_iter().filter(|x| {
+            let v = self.beam_arena.get_mut(x.1).unwrap().take().unwrap();
+            if let Some(v) = f(v) {
+                self.beam_arena[x.1] = Some(v);
+                true
+            } else {
+                false
+            }
+        }));
+    }
+
+    #[cfg(feature = "sampling")]
+    fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
+        self.head.take().or_else(|| {
+            self.parse_heap
+                .pop_max()
+                .map(|x| self.beam_arena[x.1].take().unwrap())
+        })
+    }
+    #[cfg(not(feature = "sampling"))]
     fn pop(&mut self) -> Option<BeamWrapper<T, B>> {
         self.parse_heap
             .pop_max()
@@ -311,21 +348,56 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
         is_short_enough && is_probable_enough && is_not_fake_structure
     }
 
+    #[cfg(feature = "sampling")]
+    fn process_randoms(&mut self, rng: &mut impl Rng) {
+        let weights = self
+            .random_buffer
+            .iter()
+            .map(|x| -x.log_prob().into_inner())
+            .collect::<Vec<_>>();
+        if !weights.is_empty() {
+            let weights = WeightedIndex::new(weights).unwrap();
+            let head_id = weights.sample(rng);
+
+            //maybe could be optimized by making `add_to_heap` not depend on self.
+            let buffer = std::mem::take(&mut self.random_buffer);
+            for (i, beam) in buffer.into_iter().enumerate() {
+                if i == head_id {
+                    self.head = Some(beam)
+                } else {
+                    self.add_to_heap(beam);
+                }
+            }
+        }
+    }
+
+    fn add_to_heap(&mut self, v: BeamWrapper<T, B>) {
+        let key = BeamKey(v.log_prob(), self.beam_arena.len());
+        if let Some(max_beams) = self.config.max_beams
+            && self.parse_heap.len() > max_beams
+        {
+            let x = self.parse_heap.push_pop_min(key);
+            if x.1 != key.1 {
+                //only delete if its not the same thing
+                self.beam_arena[x.1] = None;
+            }
+        } else {
+            self.parse_heap.push(key);
+        }
+        self.beam_arena.push(Some(v));
+    }
+
     fn push(&mut self, v: BeamWrapper<T, B>) {
         if self.can_push(&v) {
-            let key = BeamKey(v.log_prob(), self.beam_arena.len());
-            if let Some(max_beams) = self.config.max_beams
-                && self.parse_heap.len() > max_beams
-            {
-                let x = self.parse_heap.push_pop_min(key);
-                if x.1 != key.1 {
-                    //only delete if its not the same thing
-                    self.beam_arena[x.1] = None;
-                }
+            #[cfg(feature = "sampling")]
+            if self.random_order {
+                self.random_buffer.push(v);
             } else {
-                self.parse_heap.push(key);
+                self.add_to_heap(v);
             }
-            self.beam_arena.push(Some(v));
+
+            #[cfg(not(feature = "sampling"))]
+            self.add_to_heap(v);
         }
     }
 
@@ -339,6 +411,12 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
             beam_arena,
             phantom: PhantomData,
             config: *config,
+            #[cfg(feature = "sampling")]
+            random_order: false,
+            #[cfg(feature = "sampling")]
+            random_buffer: vec![],
+            #[cfg(feature = "sampling")]
+            head: None,
             rule_arena: PartialRulePool::default_pool(cat),
         }
     }
@@ -448,6 +526,85 @@ where
     }
 }
 
+///An iterator constructed by [`Lexicon::parse`] and [`Lexicon::parse_multiple`]
+#[cfg(feature = "sampling")]
+pub struct RandomParser<
+    'a,
+    'b,
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+    R: Rng,
+> {
+    lexicon: &'a Lexicon<T, Category>,
+    parse_heap: ParseHeap<T, ParseScan<'b, T>>,
+
+    #[cfg(not(target_arch = "wasm32"))]
+    start_time: Option<Instant>,
+    config: &'a ParsingConfig,
+    buffer: Vec<ParserOutput<'b, T>>,
+    rng: &'a mut R,
+}
+
+#[cfg(feature = "sampling")]
+impl<'a, 'b, T, Category, R> Iterator for RandomParser<'a, 'b, T, Category, R>
+where
+    T: Eq + std::fmt::Debug + Clone,
+    Category: Eq + Clone + std::fmt::Debug,
+    R: Rng,
+{
+    type Item = ParserOutput<'b, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.start_time.is_none() {
+            self.start_time = Some(Instant::now());
+        }
+
+        if self.buffer.is_empty() {
+            while let Some(mut beam) = self.parse_heap.pop() {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(max_time) = self.config.max_time
+                    && max_time < self.start_time.unwrap().elapsed()
+                {
+                    return None;
+                }
+
+                if let Some(moment) = beam.pop_moment() {
+                    expand(
+                        &mut self.parse_heap,
+                        moment,
+                        beam,
+                        self.lexicon,
+                        self.config,
+                    );
+                    self.parse_heap.process_randoms(self.rng);
+                } else if let Some((mut good_parses, p, rules)) =
+                    ParseScan::yield_good_parse(beam, &self.parse_heap.rule_arena)
+                    && let Some(next_sentence) = good_parses.next()
+                {
+                    //Get rid of parses that have already been yielded
+                    self.parse_heap.retain_map(|mut x| {
+                        x.beam.sentence.retain(|(s, _)| s != &next_sentence);
+                        if x.beam.sentence.is_empty() {
+                            None
+                        } else {
+                            Some(x)
+                        }
+                    });
+                    self.buffer
+                        .extend(good_parses.map(|x| (p, x, rules.clone())));
+                    let next = Some((p, next_sentence, rules));
+                    return next;
+                }
+            }
+        } else {
+            return self.buffer.pop();
+        }
+
+        None
+    }
+}
+
 impl<T, Category> Lexicon<T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
@@ -489,6 +646,76 @@ where
             config: *config,
             parse_heap,
             phantom: PhantomData,
+        })
+    }
+    ///Parses a sentence under the assumption it is has the category, `category`, but will randomly
+    ///return only *one* possible parse.
+    ///
+    ///Returns [`None`] if no parse can be found.
+    #[cfg(feature = "sampling")]
+    pub fn random_parse<'a, 'b, R: Rng>(
+        &'a self,
+        s: &'b [PhonContent<T>],
+        category: Category,
+        config: &'a ParsingConfig,
+        rng: &'a mut R,
+    ) -> Result<Option<ParserOutput<'b, T>>, ParsingError<Category>> {
+        let cat = self.find_category(&category)?;
+
+        let beam = BeamWrapper::new(
+            ParseScan {
+                sentence: vec![(s, 0)],
+            },
+            cat,
+        );
+        let mut parse_heap = ParseHeap::new(beam, config, cat);
+        parse_heap.random_order = true;
+        Ok(RandomParser {
+            lexicon: self,
+            config,
+            #[cfg(not(target_arch = "wasm32"))]
+            start_time: None,
+            buffer: vec![],
+            parse_heap,
+            rng,
+        }
+        .next())
+    }
+
+    ///Parses sentences under the assumption it is has the category, `category`, but will randomly
+    ///return only *one* possible parse for each sentence.
+    ///
+    ///Returns an iterator, [`Parser`] which has items of type `(`[`LogProb<f64>`]`, &'a [T],
+    ///`[`RulePool`]`)`
+    #[cfg(feature = "sampling")]
+    pub fn random_parse_multiple<'a, 'b, U, R: Rng>(
+        &'a self,
+        sentences: &'b [U],
+        category: Category,
+        config: &'a ParsingConfig,
+        rng: &'a mut R,
+    ) -> Result<RandomParser<'a, 'b, T, Category, R>, ParsingError<Category>>
+    where
+        U: AsRef<[PhonContent<T>]>,
+    {
+        let cat = self.find_category(&category)?;
+
+        let beam = BeamWrapper::new(
+            ParseScan {
+                sentence: sentences.iter().map(|x| (x.as_ref(), 0)).collect(),
+            },
+            cat,
+        );
+        let mut parse_heap = ParseHeap::new(beam, config, cat);
+        parse_heap.random_order = true;
+        Ok(RandomParser {
+            lexicon: self,
+            config,
+            #[cfg(not(target_arch = "wasm32"))]
+            start_time: None,
+            buffer: vec![],
+            parse_heap,
+            rng,
         })
     }
 

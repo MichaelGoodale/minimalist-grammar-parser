@@ -356,8 +356,12 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
             .map(|x| -x.log_prob().into_inner())
             .collect::<Vec<_>>();
         if !weights.is_empty() {
-            let weights = WeightedIndex::new(weights).unwrap();
-            let head_id = weights.sample(rng);
+            let head_id = if weights.len() > 1 {
+                let weights = WeightedIndex::new(weights).unwrap();
+                weights.sample(rng)
+            } else {
+                0
+            };
 
             //maybe could be optimized by making `add_to_heap` not depend on self.
             let buffer = std::mem::take(&mut self.random_buffer);

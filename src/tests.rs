@@ -739,6 +739,12 @@ fn head_movement_checks() -> Result<()> {
 #[test]
 #[cfg(feature = "sampling")]
 fn random_parse() -> Result<()> {
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
+    let lexicon = Lexicon::from_string("John::0")?;
+    lexicon
+        .random_parse(&PhonContent::from(["John"]), "0", &CONFIG, &mut rng)?
+        .unwrap();
+
     let lexicon = [
         "John::d",
         "Mary::d",
@@ -754,7 +760,6 @@ fn random_parse() -> Result<()> {
             .collect::<Result<Vec<_>, LexiconParsingError>>()?,
         false,
     );
-    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
     const N: usize = 7500;
     let mut counts: HashMap<_, usize> = HashMap::default();
 

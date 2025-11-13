@@ -801,7 +801,7 @@ impl Default for LexicalProbConfig {
             lemma_prob: 0.75,
             empty_prob: 0.25,
             left_prob: 0.5,
-            add_cat_prob: 0.65,
+            add_cat_prob: 0.25,
             mover_prob: 0.2,
             licensee_prob: 0.05,
             affix_prob: 0.25,
@@ -1048,9 +1048,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
     }
 
     fn choose_category_for_licensor(&mut self, rng: &mut impl Rng) -> C {
-        if self.licensee_features.is_empty()
-            || rng.random_bool(self.config.add_cat_prob / self.licensee_features.len() as f64)
-        {
+        if self.licensee_features.is_empty() || rng.random_bool(self.config.add_cat_prob) {
             let new_cat = C::fresh(
                 &[
                     self.categories.as_slice(),
@@ -1067,7 +1065,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
     }
 
     fn choose_category_for_feature(&mut self, rng: &mut impl Rng) -> C {
-        if rng.random_bool(self.config.add_cat_prob / self.categories.len() as f64) {
+        if rng.random_bool(self.config.add_cat_prob) {
             let new_cat = C::fresh(
                 &[
                     self.categories.as_slice(),

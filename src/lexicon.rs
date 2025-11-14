@@ -663,6 +663,20 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
         }
     }
 
+    ///Goes over all categories than can be parsed. Crucially, will exclude any category that may
+    ///must necessarily be moved.
+    pub fn root_categories(&self) -> impl Iterator<Item = &Category> {
+        self.children_of(self.root).filter_map(|x| {
+            if let FeatureOrLemma::Feature(Feature::Category(c)) =
+                self.graph.node_weight(x).unwrap()
+            {
+                Some(c)
+            } else {
+                None
+            }
+        })
+    }
+
     pub(crate) fn add_lexical_entry(
         &mut self,
         lexical_entry: LexicalEntry<T, Category>,

@@ -819,6 +819,22 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             _ => None,
         })
     }
+
+    ///Get the feature of a node, if it has one.
+    pub(crate) fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
+        self.graph.node_weight(nx).and_then(|x| match x {
+            FeatureOrLemma::Root => None,
+            FeatureOrLemma::Lemma(_) => None,
+            FeatureOrLemma::Feature(feature) => match feature {
+                Feature::Category(c)
+                | Feature::Selector(c, _)
+                | Feature::Licensor(c)
+                | Feature::Licensee(c)
+                | Feature::Affix(c, _) => Some(c),
+            },
+            FeatureOrLemma::Complement(c, _) => Some(c),
+        })
+    }
 }
 
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
@@ -996,22 +1012,6 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 LicenseeOrCategory::Licensee(category.clone()),
             )),
         }
-    }
-
-    ///Get the feature of a node, if it has one.
-    pub(crate) fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
-        self.graph.node_weight(nx).and_then(|x| match x {
-            FeatureOrLemma::Root => None,
-            FeatureOrLemma::Lemma(_) => None,
-            FeatureOrLemma::Feature(feature) => match feature {
-                Feature::Category(c)
-                | Feature::Selector(c, _)
-                | Feature::Licensor(c)
-                | Feature::Licensee(c)
-                | Feature::Affix(c, _) => Some(c),
-            },
-            FeatureOrLemma::Complement(c, _) => Some(c),
-        })
     }
 
     ///Iterate over all categories of a grammar whether as selectors or categories. This goes over

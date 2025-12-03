@@ -1,7 +1,7 @@
 //! Defines helper functions which allow one to record the structure of a parse.
 use ahash::HashSet;
 use petgraph::graph::NodeIndex;
-use std::{fmt::Debug, hash::Hash};
+use std::{collections::BTreeMap, fmt::Debug, hash::Hash};
 
 #[cfg(feature = "pretty")]
 mod printing;
@@ -13,7 +13,7 @@ pub use printing::Derivation;
 #[cfg(feature = "pretty")]
 pub use serialization::{Tree, TreeEdge, TreeNode, TreeWithMovement};
 
-use crate::{Direction, lexicon::LexemeId};
+use crate::{Direction, Lexicon, lexicon::LexemeId};
 
 use super::trees::GornIndex;
 
@@ -93,6 +93,141 @@ pub(crate) enum Rule {
     },
 }
 
+///A description of each step in the derivation. The usizes are indices pointing to the other rules
+///in the tree.
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash)]
+pub enum DerivationStep<T> {
+    ///A lemma is merged here
+    Lemma(Option<T>),
+
+    ///Merge
+    Merge {
+        ///The child (towards the head)
+        child: usize,
+        ///The argument of the merge
+        argument: usize,
+        ///Whether it merged left or right
+        direction: Direction,
+    },
+    ///Merge right and move the head of the complement
+    MergeAffix {
+        ///The child (towards head)
+        child: usize,
+        ///The argument of the merge
+        argument: usize,
+        ///Whether the head of the affix was put to the right or left of the child
+        direction: Direction,
+    },
+    ///Move
+    Move {
+        ///The child of movement
+        child: usize,
+        ///That which has been moved
+        mover: usize,
+    },
+}
+
+impl RulePool {
+    ///This outputs a [`Vec`] of [`DerivationStep`]s which indicates the steps needed to make the
+    ///derivation. The usizes on the enum are indexes that indicates where the tree next points
+    ///
+    ///Warning, when something is moved twice, both move steps point to the origin!
+    pub fn as_derivation<T: Eq + Clone + Debug, C: Eq>(
+        &self,
+        lex: &Lexicon<T, C>,
+    ) -> Vec<DerivationStep<T>> {
+        let mut stack = vec![(RuleIndex(1), 0)];
+        let mut rules = vec![None];
+        let mut movers: BTreeMap<RuleIndex, Vec<usize>> = BTreeMap::new();
+
+        while let Some((x, i)) = stack.pop() {
+            match self.get(x) {
+                Rule::Start { .. } => unimplemented!("Should be skipped!"),
+                Rule::UnmoveTrace(_) => (),
+                Rule::Scan { lexeme, .. } => {
+                    let lemma = lex.leaf_to_lemma(*lexeme).unwrap();
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Lemma(lemma.clone()));
+                }
+                Rule::Unmerge {
+                    child_id,
+                    complement_id,
+                    dir,
+                    affix,
+                    ..
+                } => {
+                    let child = rules.len();
+                    let argument = rules.len() + 1;
+                    rules.extend([None, None]);
+                    stack.extend([(*child_id, child), (*complement_id, argument)]);
+                    *rules.get_mut(i).unwrap() = Some(if *affix {
+                        DerivationStep::MergeAffix {
+                            child,
+                            argument,
+                            direction: *dir,
+                        }
+                    } else {
+                        DerivationStep::Merge {
+                            child,
+                            argument,
+                            direction: *dir,
+                        }
+                    })
+                }
+                Rule::UnmergeFromMover {
+                    child_id,
+                    stored_id,
+                    dir,
+                    destination_id,
+                    ..
+                } => {
+                    let child = rules.len();
+                    let argument = rules.len() + 1;
+                    rules.extend([None, None]);
+                    stack.extend([(*child_id, child), (*stored_id, argument)]);
+                    let targets = movers.get(destination_id).unwrap();
+                    for target in targets {
+                        let Some(DerivationStep::Move { mover, .. }) =
+                            rules.get_mut(*target).unwrap()
+                        else {
+                            panic!("Problem as all targets must be Move!")
+                        };
+                        *mover = argument;
+                    }
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Merge {
+                        child,
+                        argument,
+                        direction: *dir,
+                    })
+                }
+                Rule::Unmove {
+                    child_id,
+                    stored_id,
+                } => {
+                    let child = rules.len();
+                    movers.insert(*stored_id, vec![i]);
+                    rules.push(None);
+                    stack.push((*child_id, child));
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 })
+                }
+                Rule::UnmoveFromMover {
+                    child_id,
+                    stored_id,
+                    destination_id,
+                    ..
+                } => {
+                    let child = rules.len();
+                    let mut future_moves = movers.remove(destination_id).unwrap();
+                    future_moves.push(i);
+                    movers.insert(*stored_id, future_moves);
+                    rules.push(None);
+                    stack.push((*child_id, child));
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 })
+                }
+            }
+        }
+        rules.into_iter().map(|x| x.unwrap()).collect()
+    }
+}
 impl Rule {
     #[cfg(any(feature = "semantics", feature = "pretty"))]
     fn children_directed(&self) -> impl DoubleEndedIterator<Item = RuleIndex> {
@@ -363,7 +498,9 @@ impl RulePool {
 
 #[cfg(test)]
 mod test {
-    use crate::{Lexicon, PhonContent};
+    use crate::{
+        Direction, Lexicon, ParsingConfig, PhonContent, grammars, parsing::rules::DerivationStep,
+    };
 
     #[test]
     fn memory_load() -> anyhow::Result<()> {
@@ -399,6 +536,183 @@ mod test {
             .unwrap();
 
         assert_eq!(rules.max_memory_load(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn convert_to_derivation() -> anyhow::Result<()> {
+        let lexicon = Lexicon::from_string("a::b= s\nb::c= b\nc::c")?;
+        for (_, _, rules) in lexicon.generate("s", &ParsingConfig::default())? {
+            assert_eq!(
+                rules.as_derivation(&lexicon),
+                vec![
+                    DerivationStep::Merge {
+                        child: 1,
+                        argument: 2,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(Some("a")),
+                    DerivationStep::Merge {
+                        child: 3,
+                        argument: 4,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(Some("b")),
+                    DerivationStep::Lemma(Some("c"))
+                ]
+            );
+        }
+
+        println!("The king knows which beer the queen drinks");
+        let lexicon = Lexicon::from_string(grammars::STABLER2011)?;
+        for (_, _, rules) in lexicon.parse(
+            &PhonContent::from([
+                "the", "king", "knows", "which", "beer", "the", "queen", "drinks",
+            ]),
+            "C",
+            &ParsingConfig::default(),
+        )? {
+            let d = rules.as_derivation(&lexicon);
+
+            for (i, x) in d.iter().enumerate() {
+                println!("{i}\t{x:?}");
+            }
+
+            assert_eq!(
+                d,
+                vec![
+                    DerivationStep::Merge {
+                        child: 1,
+                        argument: 2,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(None),
+                    DerivationStep::Merge {
+                        child: 3,
+                        argument: 4,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Merge {
+                        child: 7,
+                        argument: 8,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Merge {
+                        child: 5,
+                        argument: 6,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(Some("the")),
+                    DerivationStep::Lemma(Some("king")),
+                    DerivationStep::Lemma(Some("knows")),
+                    DerivationStep::Move {
+                        child: 9,
+                        mover: 17
+                    },
+                    DerivationStep::Merge {
+                        child: 10,
+                        argument: 11,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(None),
+                    DerivationStep::Merge {
+                        child: 12,
+                        argument: 13,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Merge {
+                        child: 16,
+                        argument: 17,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Merge {
+                        child: 14,
+                        argument: 15,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(Some("the")),
+                    DerivationStep::Lemma(Some("queen")),
+                    DerivationStep::Lemma(Some("drinks")),
+                    DerivationStep::Merge {
+                        child: 18,
+                        argument: 19,
+                        direction: Direction::Right
+                    },
+                    DerivationStep::Lemma(Some("which")),
+                    DerivationStep::Lemma(Some("beer"))
+                ]
+            );
+        }
+
+        let lexicon = Lexicon::from_string(grammars::COPY_LANGUAGE)?;
+        println!("ABAB");
+
+        for (_, _, rules) in lexicon.parse(
+            &PhonContent::from(["a", "b", "a", "b"]),
+            "T",
+            &ParsingConfig::default(),
+        )? {
+            let d = rules.as_derivation(&lexicon);
+
+            for (i, x) in d.iter().enumerate() {
+                println!("{i}\t{x:?}");
+            }
+            assert_eq!(
+                d,
+                vec![
+                    DerivationStep::Move { child: 1, mover: 4 },
+                    DerivationStep::Move { child: 2, mover: 7 },
+                    DerivationStep::Merge {
+                        child: 3,
+                        argument: 4,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Lemma(None),
+                    DerivationStep::Move {
+                        child: 5,
+                        mover: 10
+                    },
+                    DerivationStep::Merge {
+                        child: 6,
+                        argument: 7,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Lemma(Some("b")),
+                    DerivationStep::Move {
+                        child: 8,
+                        mover: 13
+                    },
+                    DerivationStep::Merge {
+                        child: 9,
+                        argument: 10,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Lemma(Some("b")),
+                    DerivationStep::Move {
+                        child: 11,
+                        mover: 16
+                    },
+                    DerivationStep::Merge {
+                        child: 12,
+                        argument: 13,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Lemma(Some("a")),
+                    DerivationStep::Move {
+                        child: 14,
+                        mover: 16
+                    },
+                    DerivationStep::Merge {
+                        child: 15,
+                        argument: 16,
+                        direction: Direction::Left
+                    },
+                    DerivationStep::Lemma(Some("a")),
+                    DerivationStep::Lemma(None)
+                ]
+            );
+        }
+
         Ok(())
     }
 }

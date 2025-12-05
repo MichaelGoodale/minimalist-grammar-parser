@@ -631,7 +631,11 @@ pub(crate) fn expand<
                         &beam,
                         cat,
                         child_node,
-                        p + config.move_prob,
+                        if lexicon.find_licensee(cat).is_ok() {
+                            p + config.move_prob
+                        } else {
+                            p
+                        },
                         already_mover_of_this_cat,
                     ) {
                         p += config.dont_move_prob

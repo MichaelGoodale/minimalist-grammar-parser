@@ -13,7 +13,10 @@ pub use printing::Derivation;
 #[cfg(feature = "pretty")]
 pub use serialization::{Tree, TreeEdge, TreeNode, TreeWithMovement};
 
-use crate::{Direction, Lexicon, lexicon::LexemeId};
+use crate::{
+    Direction, Lexicon,
+    lexicon::{Feature, FeatureOrLemma, LexemeId},
+};
 
 use super::trees::GornIndex;
 
@@ -132,7 +135,7 @@ impl RulePool {
     ///derivation. The usizes on the enum are indexes that indicates where the tree next points
     ///
     ///Warning, when something is moved twice, both move steps point to the origin!
-    pub fn as_derivation<T: Eq + Clone + Debug, C: Eq>(
+    pub fn as_derivation<T: Eq + Clone + Debug, C: Eq + Debug>(
         &self,
         lex: &Lexicon<T, C>,
     ) -> Vec<DerivationStep<T>> {
@@ -153,13 +156,18 @@ impl RulePool {
                     complement_id,
                     dir,
                     affix,
-                    ..
+                    child: nx,
                 } => {
                     let child = rules.len();
                     let argument = rules.len() + 1;
                     rules.extend([None, None]);
                     stack.extend([(*child_id, child), (*complement_id, argument)]);
                     *rules.get_mut(i).unwrap() = Some(if *affix {
+                        let FeatureOrLemma::Feature(Feature::Affix(_, dir)) =
+                            lex.get(*nx).unwrap().0
+                        else {
+                            panic!("Can't affix a non-affix")
+                        };
                         DerivationStep::MergeAffix {
                             child,
                             argument,

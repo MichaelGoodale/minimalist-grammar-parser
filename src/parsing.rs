@@ -597,7 +597,11 @@ pub(crate) fn expand<
                         cat,
                         child_node,
                         *dir,
-                        p + config.move_prob,
+                        if lexicon.find_category(cat).is_ok() {
+                            p + config.move_prob
+                        } else {
+                            p
+                        },
                     ) {
                         p += config.dont_move_prob
                     }

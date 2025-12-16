@@ -25,8 +25,6 @@ pub enum SemanticRule {
     EventIdentification,
     ///Store a meaning for later, leaving behind a free variable as in QR.
     Store,
-    ///Store a meaning only.
-    OnlyStore,
     ///Apply the identity function
     Identity,
     ///Retrieve something from storage and apply it.
@@ -49,7 +47,6 @@ impl std::fmt::Display for SemanticRule {
                 SemanticRule::PredicateModification => "PM",
                 SemanticRule::EventIdentification => "EI",
                 SemanticRule::Store => "Store",
-                SemanticRule::OnlyStore => "OnlyStore",
                 SemanticRule::Identity => "Id",
                 SemanticRule::ApplyFromStorage => "ApplyFromStorage",
                 SemanticRule::UpdateTrace => "UpdateTrace",
@@ -524,28 +521,6 @@ where
         })
     }
 
-    fn only_store(
-        &mut self,
-        rule_id: RuleIndex,
-        child: (SemanticState<'src>, HistoryId),
-        complement: (SemanticState<'src>, HistoryId),
-        trace_id: TraceId,
-    ) -> Option<(SemanticState<'src>, HistoryId)> {
-        let (mut alpha, alpha_id) = child;
-        let (beta, beta_id) = complement;
-        alpha.movers.extend(beta.movers);
-        alpha.movers.insert(trace_id, (beta.expr.clone(), None));
-        Some((
-            alpha,
-            self.history_node(
-                rule_id,
-                SemanticRule::OnlyStore,
-                Some(alpha_id),
-                Some(beta_id),
-            ),
-        ))
-    }
-
     fn store(
         &mut self,
         rule_id: RuleIndex,
@@ -693,15 +668,6 @@ where
                     })
                     .collect::<Vec<_>>();
 
-                new_states.extend(
-                    product
-                        .clone()
-                        .filter_map(|(child, complement)| {
-                            self.only_store(rule_id, child, complement, *trace_id)
-                        })
-                        .collect::<Vec<_>>(),
-                );
-
                 new_states.extend(product.filter_map(|(child, complement)| {
                     self.functional_application(rule_id, child, complement)
                 }));
@@ -809,11 +775,6 @@ where
                 let child = get_child(0);
                 let complement = get_child(1);
                 self.store(rule_id, child, complement, trace_id.unwrap())
-            }
-            SemanticRule::OnlyStore => {
-                let child = get_child(0);
-                let complement = get_child(1);
-                self.only_store(rule_id, child, complement, trace_id.unwrap())
             }
             SemanticRule::Identity => {
                 let child = get_child(0);

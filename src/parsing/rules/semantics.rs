@@ -669,7 +669,17 @@ where
                     .collect::<Vec<_>>();
 
                 new_states.extend(product.filter_map(|(child, complement)| {
-                    self.functional_application(rule_id, child, complement)
+                    let child_type = child.0.expr.get_type().unwrap();
+                    let complement_type = complement.0.expr.get_type().unwrap();
+                    if child_type == complement_type {
+                        self.predicate_modification(rule_id, child, complement)
+                    } else if child_type.can_apply(&complement_type)
+                        || complement_type.can_apply(&child_type)
+                    {
+                        self.functional_application(rule_id, child, complement)
+                    } else {
+                        self.event_identification(rule_id, child, complement)
+                    }
                 }));
                 new_states
             }
@@ -860,6 +870,25 @@ mod tests {
 
             assert_eq!(x.to_string(), "lambda a x pa_tall(x) & pa_man(x)");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn weird_lex() -> anyhow::Result<()> {
+        let lexicon = SemanticLexicon::parse(
+            "0::3= +2 1= 0::lambda t phi phi & Q#<a,t>(a_m)\n1::3 -2::lambda t phi phi & P#<a,t>(a_m)\n2::1::P#<a,t>(a_j)",
+        )?;
+        let mut n = 0;
+        for (_, _, r) in lexicon.lexicon().parse(
+            &PhonContent::from(["1", "0", "2"]),
+            "0",
+            &ParsingConfig::default(),
+        )? {
+            let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
+            println!("{x:}");
+            n += 1;
+        }
+        assert!(n > 0);
         Ok(())
     }
     #[test]

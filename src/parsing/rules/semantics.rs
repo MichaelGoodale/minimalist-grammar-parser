@@ -875,20 +875,25 @@ mod tests {
 
     #[test]
     fn weird_lex() -> anyhow::Result<()> {
-        let lexicon = SemanticLexicon::parse(
+        let lexicons = [
             "0::3= +2 1= 0::lambda t phi phi & Q#<a,t>(a_m)\n1::3 -2::lambda t phi phi & P#<a,t>(a_m)\n2::1::P#<a,t>(a_j)",
-        )?;
-        let mut n = 0;
-        for (_, _, r) in lexicon.lexicon().parse(
-            &PhonContent::from(["1", "0", "2"]),
-            "0",
-            &ParsingConfig::default(),
-        )? {
-            let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
-            println!("{x:}");
-            n += 1;
+            "0::3= 2= +1 0::a_c\n1::3 -1::lambda a x iota_e(y, some_e(z, all_e, pa_Q(a_c)))\n2::2::lambda e x ~(pe_run(x) | pe_walk(x))",
+        ];
+
+        for lexicon in lexicons {
+            let lexicon = SemanticLexicon::parse(lexicon)?;
+            let mut n = 0;
+            for (_, _, r) in lexicon.lexicon().parse(
+                &PhonContent::from(["1", "0", "2"]),
+                "0",
+                &ParsingConfig::default(),
+            )? {
+                let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
+                println!("{x:}");
+                n += 1;
+            }
+            assert!(n > 0);
         }
-        assert!(n > 0);
         Ok(())
     }
     #[test]

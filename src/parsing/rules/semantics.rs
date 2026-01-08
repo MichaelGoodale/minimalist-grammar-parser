@@ -285,19 +285,16 @@ impl<'src> SemanticState<'src> {
             movers: beta_movers,
             ..
         } = beta;
-        println!("{} {}", alpha.get_type().unwrap(), beta.get_type().unwrap());
 
         let alpha = match alpha.raised_conjoin(beta) {
             Ok(x) => x,
             Err(ConjoiningError::ReductionError(e)) => {
                 panic!("Reduction error in predicate_modification {e}")
             }
-            Err(e) => {
-                println!("{e}");
+            Err(_) => {
                 return None;
             }
         };
-        println!("wee woo");
         alpha_movers.extend(beta_movers);
         Some(SemanticState {
             expr: alpha,
@@ -967,7 +964,7 @@ mod tests {
                     .parse(&PhonContent::from(s), "0", &ParsingConfig::default())?
             {
                 let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
-                println!("{x:}");
+                println!("{x}");
                 n += 1;
             }
             assert!(n > 0);

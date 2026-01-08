@@ -1,8 +1,8 @@
 //! This module defines the basic semantic rules which allow for semantic derivations.
-use std::{collections::BTreeMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Display, ops::Deref};
 
 use crate::lexicon::{LexemeId, SemanticLexicon};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},
     language::{ConjoiningError, Expr},
@@ -285,14 +285,19 @@ impl<'src> SemanticState<'src> {
             movers: beta_movers,
             ..
         } = beta;
+        println!("{} {}", alpha.get_type().unwrap(), beta.get_type().unwrap());
+
         let alpha = match alpha.raised_conjoin(beta) {
             Ok(x) => x,
             Err(ConjoiningError::ReductionError(e)) => {
                 panic!("Reduction error in predicate_modification {e}")
             }
-            Err(_) => return None,
+            Err(e) => {
+                println!("{e}");
+                return None;
+            }
         };
-
+        println!("wee woo");
         alpha_movers.extend(beta_movers);
         Some(SemanticState {
             expr: alpha,
@@ -372,6 +377,24 @@ enum ApplyFromStorageResult<T> {
     SuccesfulMerge(T),
     FailedMerge,
     NoTrace(T),
+}
+
+fn can_apply(a: &LambdaType, b: &LambdaType) -> bool {
+    a.can_apply(b) || b.can_apply(a)
+}
+
+fn can_event_id(alpha: &LambdaType, beta: &LambdaType) -> bool {
+    if let LambdaType::Composition(_sigma, b) = alpha
+        && let LambdaType::Composition(tau_alpha, t) = b.deref()
+        && matches!(t.deref(), LambdaType::T)
+        && let LambdaType::Composition(tau_beta, t_beta) = beta
+        && tau_beta == tau_alpha
+        && matches!(t_beta.deref(), LambdaType::T)
+    {
+        true
+    } else {
+        false
+    }
 }
 
 impl<'a, 'src, T, C> SemanticDerivation<'a, 'src, T, C>
@@ -637,19 +660,38 @@ where
                 children
                     .into_iter()
                     .cartesian_product(complements)
-                    .filter_map(|(child, complement)| {
+                    .flat_map(|(child, complement)| {
                         let child_type = child.0.expr.get_type().unwrap();
                         let complement_type = complement.0.expr.get_type().unwrap();
-                        if child_type == complement_type {
-                            self.predicate_modification(rule_id, child, complement)
-                        } else if child_type.can_apply(&complement_type)
-                            || complement_type.can_apply(&child_type)
-                        {
-                            self.functional_application(rule_id, child, complement)
+
+                        let can_apply = can_apply(&child_type, &complement_type);
+                        let can_event_id = can_event_id(&child_type, &complement_type);
+
+                        if can_apply && can_event_id {
+                            Either::Left(
+                                std::iter::once(self.functional_application(
+                                    rule_id,
+                                    child.clone(),
+                                    complement.clone(),
+                                ))
+                                .chain(std::iter::once(
+                                    self.event_identification(rule_id, child, complement),
+                                )),
+                            )
                         } else {
-                            self.event_identification(rule_id, child, complement)
+                            let x = if child_type == complement_type {
+                                self.predicate_modification(rule_id, child, complement)
+                            } else if child_type.can_apply(&complement_type)
+                                || complement_type.can_apply(&child_type)
+                            {
+                                self.functional_application(rule_id, child, complement)
+                            } else {
+                                self.event_identification(rule_id, child, complement)
+                            };
+                            Either::Right(std::iter::once(x))
                         }
                     })
+                    .flatten()
                     .collect()
             }
             Rule::UnmergeFromMover {
@@ -668,19 +710,41 @@ where
                     })
                     .collect::<Vec<_>>();
 
-                new_states.extend(product.filter_map(|(child, complement)| {
-                    let child_type = child.0.expr.get_type().unwrap();
-                    let complement_type = complement.0.expr.get_type().unwrap();
-                    if child_type == complement_type {
-                        self.predicate_modification(rule_id, child, complement)
-                    } else if child_type.can_apply(&complement_type)
-                        || complement_type.can_apply(&child_type)
-                    {
-                        self.functional_application(rule_id, child, complement)
-                    } else {
-                        self.event_identification(rule_id, child, complement)
-                    }
-                }));
+                new_states.extend(
+                    product
+                        .flat_map(|(child, complement)| {
+                            let child_type = child.0.expr.get_type().unwrap();
+                            let complement_type = complement.0.expr.get_type().unwrap();
+
+                            let can_apply = can_apply(&child_type, &complement_type);
+                            let can_event_id = can_event_id(&child_type, &complement_type);
+
+                            if can_apply && can_event_id {
+                                Either::Left(
+                                    std::iter::once(self.functional_application(
+                                        rule_id,
+                                        child.clone(),
+                                        complement.clone(),
+                                    ))
+                                    .chain(std::iter::once(
+                                        self.event_identification(rule_id, child, complement),
+                                    )),
+                                )
+                            } else {
+                                let x = if child_type == complement_type {
+                                    self.predicate_modification(rule_id, child, complement)
+                                } else if child_type.can_apply(&complement_type)
+                                    || complement_type.can_apply(&child_type)
+                                {
+                                    self.functional_application(rule_id, child, complement)
+                                } else {
+                                    self.event_identification(rule_id, child, complement)
+                                };
+                                Either::Right(std::iter::once(x))
+                            }
+                        })
+                        .flatten(),
+                );
                 new_states
             }
             Rule::Unmove {
@@ -876,18 +940,32 @@ mod tests {
     #[test]
     fn weird_lex() -> anyhow::Result<()> {
         let lexicons = [
-            "0::3= +2 1= 0::lambda t phi phi & Q#<a,t>(a_m)\n1::3 -2::lambda t phi phi & P#<a,t>(a_m)\n2::1::P#<a,t>(a_j)",
-            "0::3= 2= +1 0::a_c\n1::3 -1::lambda a x iota_e(y, some_e(z, all_e, pa_Q(a_c)))\n2::2::lambda e x ~(pe_run(x) | pe_walk(x))",
+            (
+                "0::3= +2 1= 0::lambda t phi phi & Q#<a,t>(a_m)\n1::3 -2::lambda t phi phi & P#<a,t>(a_m)\n2::1::P#<a,t>(a_j)",
+                ["1", "0", "2"],
+            ),
+            (
+                "0::3= 2= +1 0::a_c\n1::3 -1::lambda a x iota_e(y, some_e(z, all_e, pa_Q(a_c)))\n2::2::lambda e x ~(pe_run(x) | pe_walk(x))",
+                ["1", "0", "2"],
+            ),
+            (
+                "0::2= 1= 0::lambda <t,e> P lambda <t,t> Q pe_run(P(pa_Q(a_c)))\n1::2::lambda <t,t> P some_e(x, pe_walk(x), pe_walk(x))\n2::1::lambda <<t,e>,<<t,t>,t>> M pe_walk(iota_e(x, pe_walk(x)))",
+                ["0", "1", "2"],
+            ),
+            (
+                "0::2= 1= 0::lambda <a,t> P P\n1::2::lambda a x ~pa_Q(x)\n2::1::lambda <<a,t>,<a,t>> M PatientOf(a_c, iota_e(x, pa_P(a_b)))",
+                ["0", "1", "2"],
+            ),
         ];
 
-        for lexicon in lexicons {
+        for (lexicon, s) in lexicons {
             let lexicon = SemanticLexicon::parse(lexicon)?;
             let mut n = 0;
-            for (_, _, r) in lexicon.lexicon().parse(
-                &PhonContent::from(["1", "0", "2"]),
-                "0",
-                &ParsingConfig::default(),
-            )? {
+            for (_, _, r) in
+                lexicon
+                    .lexicon()
+                    .parse(&PhonContent::from(s), "0", &ParsingConfig::default())?
+            {
                 let (x, _h) = r.to_interpretation(&lexicon).next().unwrap();
                 println!("{x:}");
                 n += 1;

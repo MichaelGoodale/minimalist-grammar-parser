@@ -461,7 +461,6 @@ impl RulePool {
         self.0.len()
     }
 
-    #[cfg(any(feature = "pretty", feature = "semantics"))]
     fn get(&self, x: RuleIndex) -> &Rule {
         &self.0[x.0]
     }

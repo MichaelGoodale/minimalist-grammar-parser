@@ -121,7 +121,9 @@ impl PhonContent<&str> {
 ///Enum to record the direction of a merge/move operation (whether the phonological value goes to
 ///the right or left)
 #[allow(missing_docs)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 pub enum Direction {
     #[default]
     Left,

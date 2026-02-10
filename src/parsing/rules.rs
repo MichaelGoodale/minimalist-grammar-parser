@@ -34,6 +34,7 @@ pub struct TraceId(usize);
 
 impl TraceId {
     ///Gets the inner value of the trace as a `usize`
+    #[must_use]
     pub fn index(&self) -> usize {
         self.0
     }
@@ -179,7 +180,7 @@ impl RulePool {
                             argument,
                             direction: *dir,
                         }
-                    })
+                    });
                 }
                 Rule::UnmergeFromMover {
                     child_id,
@@ -205,7 +206,7 @@ impl RulePool {
                         child,
                         argument,
                         direction: *dir,
-                    })
+                    });
                 }
                 Rule::Unmove {
                     child_id,
@@ -215,7 +216,7 @@ impl RulePool {
                     movers.insert(*stored_id, vec![i]);
                     rules.push(None);
                     stack.push((*child_id, child));
-                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 })
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 });
                 }
                 Rule::UnmoveFromMover {
                     child_id,
@@ -229,7 +230,7 @@ impl RulePool {
                     movers.insert(*stored_id, future_moves);
                     rules.push(None);
                     stack.push((*child_id, child));
-                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 })
+                    *rules.get_mut(i).unwrap() = Some(DerivationStep::Move { child, mover: 0 });
                 }
             }
         }
@@ -447,9 +448,7 @@ impl RulePool {
                 ..
             } => match (self.get(*a).is_scan(), self.get(*b).is_scan()) {
                 (true, false) => [Some(*a), Some(*b)],
-                (false, true) => [Some(*b), Some(*a)],
-                (false, false) => [Some(*b), Some(*a)],
-                (true, true) => [Some(*b), Some(*a)],
+                (false, true) | (false, false) | (true, true) => [Some(*b), Some(*a)],
             },
         }
         .into_iter()
@@ -457,6 +456,7 @@ impl RulePool {
     }
 
     ///The number of steps in the derivation
+    #[must_use]
     pub fn n_steps(&self) -> usize {
         self.0.len()
     }
@@ -481,6 +481,7 @@ impl RulePool {
     }
 
     ///Records the maximum number of moving pieces stored in memory at a single time.
+    #[must_use]
     pub fn max_memory_load(&self) -> usize {
         let mut max = 0;
         let mut memory = HashSet::default();

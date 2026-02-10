@@ -46,7 +46,7 @@ impl Serialize for MovementTrace {
         S: serde::Serializer,
     {
         let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for (source, tgt) in self.0.iter() {
+        for (source, tgt) in &self.0 {
             seq.serialize_element(&(source.to_string(), tgt.to_string()))?;
         }
         seq.end()
@@ -61,7 +61,7 @@ pub struct TreeWithMovement<'src, T, C: Eq + Display> {
     phrasal_movement: MovementTrace,
 }
 
-impl<'src, T: Serialize, C: Eq + Display + Clone> Serialize for TreeWithMovement<'src, T, C> {
+impl<T: Serialize, C: Eq + Display + Clone> Serialize for TreeWithMovement<'_, T, C> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -75,7 +75,7 @@ impl<'src, T: Serialize, C: Eq + Display + Clone> Serialize for TreeWithMovement
         seq.end()
     }
 }
-impl<'src, T: Display, C: Eq + Display + Clone> TreeWithMovement<'src, T, C> {
+impl<T: Display, C: Eq + Display + Clone> TreeWithMovement<'_, T, C> {
     ///The representation of the tree as a LaTeX forest tree. Requires using [the following commands in the preamble](https://github.com/MichaelGoodale/python-mg/blob/master/latex-commands.tex)
     pub fn latex(&self) -> String {
         format!(
@@ -157,7 +157,7 @@ impl Display for TreeEdge {
 }
 
 impl<'src, T: Debug + Clone, C: Debug + Clone + Eq + Display> TreeWithMovement<'src, T, C> {
-    ///Get a parse as a [petgraph](https://crates.io/crates/petgraph) DiGraph
+    ///Get a parse as a [petgraph](https://crates.io/crates/petgraph) `DiGraph`
     pub fn petgraph(&self) -> (DiGraph<TreeNode<'src, T, C>, TreeEdge>, NodeIndex) {
         let mut g = DiGraph::new();
         let root = g.add_node(self.tree.node.clone());
@@ -194,10 +194,10 @@ impl<'src, T: Debug + Clone, C: Debug + Clone + Eq + Display> TreeWithMovement<'
             }));
         }
 
-        for (a, b) in self.head_movement.0.iter() {
+        for (a, b) in &self.head_movement.0 {
             g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::MoveHead);
         }
-        for (a, b) in self.phrasal_movement.0.iter() {
+        for (a, b) in &self.phrasal_movement.0 {
             g.add_edge(*h.get(a).unwrap(), *h.get(b).unwrap(), TreeEdge::Move);
         }
 
@@ -222,7 +222,7 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
                         _ => panic!("Trees should always be binary!"),
                     }),
                 )
-            }))
+            }));
         }
 
         h
@@ -260,11 +260,11 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
     }
 }
 
-impl<'src, T: Display, C: Eq + Display> Tree<'src, T, C> {
+impl<T: Display, C: Eq + Display> Tree<'_, T, C> {
     fn latex_inner(&self) -> String {
         let node = self.node.latex();
 
-        let children: Vec<_> = self.children.iter().map(|x| x.latex_inner()).collect();
+        let children: Vec<_> = self.children.iter().map(Tree::latex_inner).collect();
         if children.is_empty() {
             format!("[{node}]")
         } else {
@@ -290,7 +290,7 @@ pub struct TreeNode<'src, T, C: Eq + Display> {
     semantics: PhantomData<&'src ()>,
 }
 
-impl<'src, T: Display, C: Eq + Display> Display for TreeNode<'src, T, C> {
+impl<T: Display, C: Eq + Display> Display for TreeNode<'_, T, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.node {
             MgNode::Start => {
@@ -328,16 +328,17 @@ impl<T: Display> Lemma<T> {
             Lemma::Multi { heads, .. } => heads
                 .iter()
                 .map(|x| {
-                    x.as_ref()
-                        .map(|x| x.to_string())
-                        .unwrap_or_else(|| empty_string.to_string())
+                    x.as_ref().map_or_else(
+                        || empty_string.to_string(),
+                        std::string::ToString::to_string,
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(join),
         }
     }
 }
-impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
+impl<T, C: Eq + Display> TreeNode<'_, T, C> {
     ///Checks if this node represents a trace.
     pub fn is_trace(&self) -> bool {
         matches!(self.node, MgNode::Trace { .. })
@@ -360,11 +361,14 @@ impl<'src, T, C: Eq + Display> TreeNode<'src, T, C> {
     }
 }
 
-impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
+impl<T: Display, C: Eq + Display> TreeNode<'_, T, C> {
     fn latex(&self) -> String {
         match &self.node {
             MgNode::Node { features } => {
-                let features = features.iter().map(|x| x.to_string()).join(" ");
+                let features = features
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .join(" ");
 
                 #[cfg(feature = "semantics")]
                 if let Some(meaning) = &self.semantics {
@@ -372,7 +376,7 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
                         SemanticNode::Rich(..) => {
                             return format!(
                                 "\\semder{{{features}}}{{\\texttt{{{}}}}}",
-                                clean_up_expr(meaning.to_string())
+                                clean_up_expr(meaning.to_string().as_str())
                             );
                         }
                         SemanticNode::Simple(_) => {
@@ -386,7 +390,10 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
             MgNode::Leaf {
                 lemma, features, ..
             } => {
-                let features = features.iter().map(|x| x.to_string()).join(" ");
+                let features = features
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .join(" ");
                 let lemma = lemma.to_string("$\\epsilon$", "-");
                 #[cfg(feature = "semantics")]
                 if let Some(meaning) = &self.semantics {
@@ -394,7 +401,7 @@ impl<'src, T: Display, C: Eq + Display> TreeNode<'src, T, C> {
                         SemanticNode::Rich(..) => {
                             return format!(
                                 "\\lex{{{features}}}{{{lemma}}}{{\\texttt{{{}}}}}",
-                                clean_up_expr(meaning.to_string())
+                                clean_up_expr(meaning.to_string().as_str())
                             );
                         }
                         SemanticNode::Simple(_) => {
@@ -452,16 +459,16 @@ impl<C: Eq + Display> Serialize for Feature<C> {
 }
 
 #[cfg(feature = "semantics")]
-fn clean_up_expr(s: String) -> String {
+fn clean_up_expr(s: &str) -> String {
     let re = Regex::new(r"lambda (?<t>[eat,< >]+) ").unwrap();
     let s = s
-        .replace("&", "\\&")
-        .replace("_", "\\_")
-        .replace("#", "\\#");
+        .replace('&', "\\&")
+        .replace('_', "\\_")
+        .replace('#', "\\#");
     re.replace_all(s.as_str(), "{$\\lambda_{$t}$}")
         .to_string()
-        .replace("<", "\\left\\langle ")
-        .replace(">", "\\right\\rangle ")
+        .replace('<', "\\left\\langle ")
+        .replace('>', "\\right\\rangle ")
 }
 
 impl<C: Eq + Display + Clone> Serialize for Storage<C> {
@@ -613,7 +620,7 @@ impl<'src, T, C: Eq + Display> Tree<'src, T, C> {
                         _ => panic!("Trees should always be binary!"),
                     }),
                 )
-            }))
+            }));
         }
 
         h

@@ -25,7 +25,7 @@ pub(crate) struct ParseScan<'a, T> {
     pub sentence: Vec<(&'a [PhonContent<T>], usize)>,
 }
 
-impl<'a, T> Scanner<T> for ParseScan<'a, T>
+impl<T> Scanner<T> for ParseScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
@@ -115,7 +115,7 @@ pub(crate) struct FuzzyScan<'b, T> {
     pub sentence_guides: Vec<(&'b [PhonContent<T>], usize)>,
 }
 
-impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
+impl<T: Eq + std::fmt::Debug + Clone> FuzzyScan<'_, T> {
     pub fn yield_good_parse(
         b: BeamWrapper<T, Self>,
         rules: &[RuleHolder],
@@ -123,7 +123,7 @@ impl<'a, T: Eq + std::fmt::Debug + Clone> FuzzyScan<'a, T> {
         if b.is_empty() {
             Some((
                 b.log_prob,
-                b.beam.generated_sentences.to_vec(),
+                b.beam.generated_sentences.clone(),
                 b.rules.into_rule_pool(rules),
             ))
         } else {
@@ -239,7 +239,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
         if b.is_empty() {
             Some((
                 b.log_prob,
-                b.beam.sentence.to_vec(),
+                b.beam.sentence.clone(),
                 b.rules.into_rule_pool(rules),
             ))
         } else {
@@ -323,7 +323,7 @@ where
     }
 }
 
-impl<'a, T: Eq + Debug + Clone> ContinuationScan<'a, T> {
+impl<T: Eq + Debug + Clone> ContinuationScan<'_, T> {
     pub fn yield_good_parse(b: BeamWrapper<T, Self>) -> Option<Continuation<T>> {
         if b.is_empty() {
             match b.beam.final_char {

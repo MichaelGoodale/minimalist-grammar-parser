@@ -342,7 +342,7 @@ impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
     ///Gets the category of a lexical entry
     pub fn category(&self) -> &Category {
         let mut cat = None;
-        for lex in self.features.iter() {
+        for lex in &self.features {
             if let Feature::Category(c) = lex {
                 cat = Some(c);
                 break;
@@ -454,7 +454,8 @@ where
     T: Eq + std::fmt::Debug + Clone + Display,
     Category: Eq + std::fmt::Debug + Clone + Display,
 {
-    ///Prints a lexicon as a GraphViz dot file.
+    ///Prints a lexicon as a `GraphViz` dot file.
+    #[must_use]
     pub fn graphviz(&self) -> String {
         let dot = Dot::new(&self.graph);
         format!("{dot}")
@@ -483,7 +484,7 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
                     .map(|(w, _edge)| *w)
                     .softmax()
                     .unwrap()
-                    .map(|x| x.into_inner());
+                    .map(logprob::LogProb::into_inner);
 
                 for (new_weight, (_weight, edge)) in dist.zip(edges.iter()) {
                     graph[*edge] = new_weight;
@@ -503,7 +504,7 @@ pub struct Climber<'a, T: Eq, C: Eq> {
     pos: NodeIndex,
 }
 
-impl<'a, T: Eq, C: Eq + Clone> Iterator for Climber<'a, T, C> {
+impl<T: Eq, C: Eq + Clone> Iterator for Climber<'_, T, C> {
     type Item = Feature<C>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -606,6 +607,7 @@ impl<T: Eq + Debug, Category: Eq + Hash + Clone> Lexicon<T, Category> {
     ///# }
     ///
     ///```
+    #[must_use]
     pub fn obligatory_movers(&self) -> Vec<ObligatoryMover<Category>> {
         let mut stack = vec![(self.root, vec![])];
         let mut histories: HashMap<&Category, Vec<Vec<&Category>>> = HashMap::default();
@@ -622,14 +624,18 @@ impl<T: Eq + Debug, Category: Eq + Hash + Clone> Lexicon<T, Category> {
                         histories.entry(c).or_default().push(hist.clone());
                     }
                     _ => (),
-                };
+                }
             }
         }
 
         let mut movers = vec![];
         let mut used_licensees = HashSet::default();
         for (category, mut licensees) in histories {
-            while let Ok(Some(licensee)) = licensees.iter_mut().map(|x| x.pop()).all_equal_value() {
+            while let Ok(Some(licensee)) = licensees
+                .iter_mut()
+                .map(std::vec::Vec::pop)
+                .all_equal_value()
+            {
                 if used_licensees.contains(licensee) {
                     movers.retain(|x: &ObligatoryMover<Category>| &x.licensee != licensee);
                 } else {
@@ -736,12 +742,13 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 
     ///Climb up a node over all of its features
-    pub(crate) fn node_to_features<'a>(&'a self, nx: NodeIndex) -> Climber<'a, T, Category> {
+    pub(crate) fn node_to_features(&self, nx: NodeIndex) -> Climber<'_, T, Category> {
         Climber { lex: self, pos: nx }
     }
 
     ///Climb up a lexeme over all of its features
-    pub fn leaf_to_features<'a>(&'a self, lexeme: LexemeId) -> Option<Climber<'a, T, Category>> {
+    #[must_use]
+    pub fn leaf_to_features(&self, lexeme: LexemeId) -> Option<Climber<'_, T, Category>> {
         if !matches!(
             self.graph.node_weight(lexeme.0),
             Some(FeatureOrLemma::Lemma(_))
@@ -756,6 +763,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 
     ///Gets the lemma of a lexeme.
+    #[must_use]
     pub fn leaf_to_lemma(&self, lexeme_id: LexemeId) -> Option<&Option<T>> {
         match self.graph.node_weight(lexeme_id.0) {
             Some(x) => {
@@ -770,6 +778,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 
     ///Get the category of a lexeme.
+    #[must_use]
     pub fn category(&self, lexeme_id: LexemeId) -> Option<&Category> {
         let mut pos = lexeme_id.0;
         while !matches!(
@@ -777,7 +786,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
             FeatureOrLemma::Feature(Feature::Category(_))
         ) {
             let new_pos = self.parent_of(pos)?;
-            pos = new_pos
+            pos = new_pos;
         }
         let FeatureOrLemma::Feature(Feature::Category(cat)) = &self.graph[pos] else {
             return None;
@@ -796,6 +805,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
 
 impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     ///Checks if `nx` is a complement
+    #[must_use]
     pub fn is_complement(&self, nx: NodeIndex) -> bool {
         matches!(
             self.graph.node_weight(nx).unwrap(),
@@ -804,11 +814,13 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 
     ///The number of nodes in a lexicon.
+    #[must_use]
     pub fn n_nodes(&self) -> usize {
         self.graph.node_count()
     }
 
     ///Returns the leaves of a grammar
+    #[must_use]
     pub fn leaves(&self) -> &[LexemeId] {
         &self.leaves
     }
@@ -841,6 +853,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
 impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
     ///Returns all leaves with their sibling nodes (e.g. exemes that are identical except for
     ///their lemma)
+    #[must_use]
     pub fn sibling_leaves(&self) -> Vec<Vec<LexemeId>> {
         let mut leaves = self.leaves.clone();
         let mut result = vec![];
@@ -874,7 +887,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         let mut v = vec![];
 
         //NOTE: Must guarantee to iterate in this order.
-        for leaf in self.leaves.iter() {
+        for leaf in &self.leaves {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[leaf.0] {
                 let mut features = vec![];
                 let mut nx = leaf.0;
@@ -890,9 +903,9 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
                 }
 
                 v.push(LexicalEntry {
-                    lemma: lemma.as_ref().cloned(),
+                    lemma: lemma.clone(),
                     features,
-                })
+                });
             } else {
                 return Err(LexiconError::MissingLexeme(*leaf));
             }
@@ -919,10 +932,11 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
         .clone();
 
         let features = self.leaf_to_features(lexeme_id).unwrap().collect();
-        Ok(LexicalEntry { features, lemma })
+        Ok(LexicalEntry { lemma, features })
     }
 
     ///Create a new grammar from a [`Vec`] of [`LexicalEntry`]
+    #[must_use]
     pub fn new(items: Vec<LexicalEntry<T, Category>>, collapse_lemmas: bool) -> Self {
         let n_items = items.len();
         Self::new_with_weights(
@@ -966,7 +980,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
 
                 if let FeatureOrLemma::Lemma(_) = graph[node_index] {
                     leaves.push(LexemeId(node_index));
-                };
+                }
             }
         }
         let graph = renormalise_weights(graph);
@@ -1019,10 +1033,10 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     ///the entire lexicon so it will repeat elements multiple times.
     pub fn categories(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
-            FeatureOrLemma::Feature(Feature::Category(x))
-            | FeatureOrLemma::Feature(Feature::Selector(x, _))
-            | FeatureOrLemma::Complement(x, _)
-            | FeatureOrLemma::Feature(Feature::Affix(x, _)) => Some(x),
+            FeatureOrLemma::Feature(
+                Feature::Category(x) | Feature::Selector(x, _) | Feature::Affix(x, _),
+            )
+            | FeatureOrLemma::Complement(x, _) => Some(x),
             _ => None,
         })
     }
@@ -1030,8 +1044,7 @@ impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Le
     ///Iterate over all licensors of a grammar
     pub fn licensor_types(&self) -> impl Iterator<Item = &Category> {
         self.graph.node_references().filter_map(|(_, x)| match x {
-            FeatureOrLemma::Feature(Feature::Licensor(x))
-            | FeatureOrLemma::Feature(Feature::Licensee(x)) => Some(x),
+            FeatureOrLemma::Feature(Feature::Licensor(x) | Feature::Licensee(x)) => Some(x),
             _ => None,
         })
     }
@@ -1045,7 +1058,7 @@ impl<'src> Lexicon<&'src str, &'src str> {
             .then_ignore(end())
             .parse(s)
             .into_result()
-            .map_err(|x| x.into())
+            .map_err(std::convert::Into::into)
     }
 }
 
@@ -1101,6 +1114,7 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
 
 impl<'a> Lexicon<&'a str, &'a str> {
     ///Converts from `Lexicon<&str, &str>` to `Lexicon<String, String>`
+    #[must_use]
     pub fn to_owned_values(&self) -> Lexicon<String, String> {
         let Lexicon {
             graph,
@@ -1111,7 +1125,9 @@ impl<'a> Lexicon<&'a str, &'a str> {
         let graph = graph.map(
             |_, x| match *x {
                 FeatureOrLemma::Root => FeatureOrLemma::Root,
-                FeatureOrLemma::Lemma(s) => FeatureOrLemma::Lemma(s.map(|x| x.to_owned())),
+                FeatureOrLemma::Lemma(s) => {
+                    FeatureOrLemma::Lemma(s.map(std::borrow::ToOwned::to_owned))
+                }
                 FeatureOrLemma::Feature(Feature::Category(c)) => {
                     FeatureOrLemma::Feature(Feature::Category(c.to_owned()))
                 }
@@ -1145,14 +1161,14 @@ impl<'a> Lexicon<&'a str, &'a str> {
 #[derive(Error, Debug, Clone)]
 pub struct LexiconParsingError<'a>(pub Vec<Rich<'a, char>>);
 
-impl<'a> Display for LexiconParsingError<'a> {
+impl Display for LexiconParsingError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
             "{}",
             self.0
                 .iter()
-                .map(|e| e.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join("\n")
         )
@@ -1167,13 +1183,11 @@ impl<'a> From<Vec<Rich<'a, char>>> for LexiconParsingError<'a> {
 
 impl LexicalEntry<&str, &str> {
     ///Parses a single lexical entry and returns it as a [`LexicalEntry`].
-    pub fn parse<'a>(
-        s: &'a str,
-    ) -> Result<LexicalEntry<&'a str, &'a str>, LexiconParsingError<'a>> {
+    pub fn parse(s: &str) -> Result<LexicalEntry<&str, &str>, LexiconParsingError<'_>> {
         entry_parser::<extra::Err<Rich<char>>>()
             .parse(s)
             .into_result()
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 }
 
@@ -1210,7 +1224,7 @@ where
             self.lexemes()
                 .unwrap()
                 .iter()
-                .map(|l| l.to_string())
+                .map(std::string::ToString::to_string)
                 .join("\n")
         )
     }
@@ -1579,7 +1593,7 @@ mod tests {
     #[test]
     fn conversion() -> anyhow::Result<()> {
         let lex = Lexicon::from_string(STABLER2011)?;
-        lex.to_owned_values();
+        let _ = lex.to_owned_values();
         Ok(())
     }
     #[test]

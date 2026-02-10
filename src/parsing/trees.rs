@@ -48,10 +48,7 @@ impl std::fmt::Display for GornIndex {
             "{}",
             self.index[..self.size]
                 .iter()
-                .map(|x| match *x {
-                    true => "1",
-                    false => "0",
-                })
+                .map(|x| if *x { "1" } else { "0" })
                 .join("")
         )
     }
@@ -83,7 +80,7 @@ impl Iterator for GornIterator {
     }
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Hash)]
 pub struct GornIterator {
     pos: usize,
     gorn: GornIndex,
@@ -111,7 +108,7 @@ where
             .iter()
             .enumerate()
             .for_each(|(i, &x)| index.set(i, x.into()));
-        GornIndex { size, index }
+        GornIndex { index, size }
     }
 }
 impl From<GornIndex> for Vec<Direction> {
@@ -120,7 +117,7 @@ impl From<GornIndex> for Vec<Direction> {
             .index
             .into_iter()
             .take(value.size)
-            .map(|x| x.into())
+            .map(std::convert::Into::into)
             .collect()
     }
 }
@@ -128,6 +125,7 @@ impl From<GornIndex> for Vec<Direction> {
 impl GornIndex {
     ///Take a [`GornIndex`] and add a child with [`Direction`] `d`.
     #[inline]
+    #[must_use]
     pub fn clone_push(&self, d: Direction) -> Self {
         let mut v = *self;
         v.index.set(v.size, d.into());
@@ -143,6 +141,7 @@ impl GornIndex {
 
     ///Create a [`GornIndex`] with one [`Direction`] preset (you can use [`GornIndex::default`] for
     ///the root).
+    #[must_use]
     pub fn new(d: Direction) -> Self {
         let mut v = GornIndex {
             size: 0,
@@ -154,21 +153,25 @@ impl GornIndex {
     }
 
     ///How deep in the tree is this [`GornIndex`]
+    #[must_use]
     pub fn depth(&self) -> usize {
         self.size
     }
 
     ///Is `self` an ancestor of `x` ?
+    #[must_use]
     pub fn is_ancestor_of(&self, x: GornIndex) -> bool {
         self.size < x.size && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }
 
     ///Is `self` the parent of `x`?
+    #[must_use]
     pub fn is_parent_of(&self, x: GornIndex) -> bool {
         x.size > 0 && self.size == (x.size - 1) && (self.into_iter().zip(x).all(|(x, y)| x == y))
     }
 
     ///Is `self` to the left of `x`?
+    #[must_use]
     pub fn comes_before(&self, x: &GornIndex) -> bool {
         matches!(GornIndex::infix_order(self, x), Ordering::Less)
     }
@@ -179,7 +182,7 @@ impl GornIndex {
                 (Direction::Left, Direction::Right) => return Ordering::Less,
                 (Direction::Right, Direction::Left) => return Ordering::Greater,
                 _ => (),
-            };
+            }
         }
         match x.size.cmp(&y.size) {
             Ordering::Less => {
@@ -209,11 +212,13 @@ impl GornIndex {
     ///assert_eq!(GornIndex::default().len(), 0);
     ///assert_eq!(GornIndex::from([Direction::Left, Direction::Right]).len(), 2);
     ///```
+    #[must_use]
     pub fn len(&self) -> usize {
         self.size
     }
 
     ///Checks if the [`GornIndex`] is root.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
@@ -252,9 +257,9 @@ pub(crate) struct ParseMoment {
 impl ParseMoment {
     pub fn least_index(&self) -> &GornIndex {
         let mut least = &self.tree.index;
-        for m in self.movers.iter() {
+        for m in &self.movers {
             if m.index < *least {
-                least = &m.index
+                least = &m.index;
             }
         }
         least
@@ -263,8 +268,8 @@ impl ParseMoment {
     pub fn new(tree: FutureTree, movers: ThinVec<FutureTree>, stolen_head: StolenHead) -> Self {
         ParseMoment {
             tree,
-            movers,
             stolen_head,
+            movers,
         }
     }
 

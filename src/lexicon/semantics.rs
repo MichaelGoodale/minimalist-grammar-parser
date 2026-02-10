@@ -23,6 +23,7 @@ pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
 impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
     ///Create a new [`SemanticLexicon`] by combining a [`Lexicon`] and a [`HashMap`] of leaf nodes
     ///and semantic interpretations ([`RootedLambdaPool`])
+    #[must_use]
     pub fn new(
         lexicon: Lexicon<T, C>,
         semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
@@ -93,6 +94,7 @@ impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
 
 impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T, C> {
     ///Get the interpretation of a leaf node. Panics if the node has no semantic interpretation.
+    #[must_use]
     pub fn interpretation(&self, lexeme_id: LexemeId) -> &RootedLambdaPool<'src, Expr<'src>> {
         self.semantic_entries
             .get(&lexeme_id)
@@ -100,6 +102,7 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
     }
 
     ///Get a reference to the underlying [`Lexicon`]
+    #[must_use]
     pub fn lexicon(&self) -> &Lexicon<T, C> {
         &self.lexicon
     }
@@ -110,6 +113,7 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Clone + Debug> SemanticLexicon<'src, T
     }
 
     ///Get a reference to the underlying [`HashMap`] of lexical entries.
+    #[must_use]
     pub fn interpretations(&self) -> &HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>> {
         &self.semantic_entries
     }
@@ -471,7 +475,7 @@ John::0 -1::a_1";
         )? {
             for (pool, h) in r.to_interpretation(&lexicon) {
                 pool.into_pool()?;
-                h.into_rich(&lexicon, &r);
+                let _ = h.into_rich(&lexicon, &r);
             }
         }
         Ok(())

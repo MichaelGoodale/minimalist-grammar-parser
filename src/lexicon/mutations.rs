@@ -151,9 +151,8 @@ where
 
     fn add_indirect_children(&mut self, node: NodeIndex) {
         match self.lex.graph.node_weight(node).unwrap() {
-            FeatureOrLemma::Feature(Feature::Selector(c, _))
-            | FeatureOrLemma::Complement(c, _)
-            | FeatureOrLemma::Feature(Feature::Affix(c, _)) => match self.lex.find_category(c) {
+            FeatureOrLemma::Feature(Feature::Selector(c, _) | Feature::Affix(c, _)) |
+FeatureOrLemma::Complement(c, _) => match self.lex.find_category(c) {
                 Ok(x) => {
                     if !self.seen.contains(&x) {
                         self.stack.push(x);
@@ -175,10 +174,8 @@ where
                     Err(_) => self.mark_unsatisfiable(node),
                 }
             }
-            FeatureOrLemma::Root
-            | FeatureOrLemma::Lemma(_)
-            | FeatureOrLemma::Feature(Feature::Licensee(_))
-            | FeatureOrLemma::Feature(Feature::Category(_)) => (),
+            FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) |
+FeatureOrLemma::Feature(Feature::Licensee(_) | Feature::Category(_)) => (),
         }
     }
 }
@@ -215,15 +212,12 @@ where
     ///base category of `start`
     pub fn prune(&mut self, start: &C) {
         loop {
-            let start = match self.find_category(start) {
-                Ok(x) => x,
-                Err(_) => {
-                    self.graph.retain_nodes(|g, n| {
-                        matches!(g.node_weight(n).unwrap(), FeatureOrLemma::Root)
-                    });
-                    self.leaves.clear();
-                    return;
-                }
+            let start = if let Ok(x) = self.find_category(start) { x } else {
+                self.graph.retain_nodes(|g, n| {
+                    matches!(g.node_weight(n).unwrap(), FeatureOrLemma::Root)
+                });
+                self.leaves.clear();
+                return;
             };
             let mut checker = AccessibilityChecker::new(start, self);
 
@@ -236,11 +230,10 @@ where
             //-1 since we're not gonna see the root
             {
                 break;
-            } else {
-                self.graph.retain_nodes(|_, n| {
-                    checker.seen.contains(&n) & !checker.unsatisfiable.contains(&n)
-                });
             }
+            self.graph.retain_nodes(|_, n| {
+                checker.seen.contains(&n) & !checker.unsatisfiable.contains(&n)
+            });
         }
 
         self.leaves = self
@@ -478,13 +471,10 @@ where
         if let Some(&node) = self
             .graph
             .node_indices()
-            .filter(|&nx| match self.graph.node_weight(nx).unwrap() {
-                FeatureOrLemma::Root => false,
-                _ => {
-                    let parent = self.parent_of(nx).unwrap();
-                    //We can only delete a branch if there's at least one sibling.
-                    self.children_of(parent).count() > 1
-                }
+            .filter(|&nx| if self.graph.node_weight(nx).unwrap() == &FeatureOrLemma::Root { false } else {
+                let parent = self.parent_of(nx).unwrap();
+                //We can only delete a branch if there's at least one sibling.
+                self.children_of(parent).count() > 1
             })
             .collect::<Vec<_>>()
             .choose(rng)
@@ -713,7 +703,7 @@ where
                 features.entry(feature).or_default().push(child);
             }
 
-            for (key, mut nodes_to_merge) in features.into_iter() {
+            for (key, mut nodes_to_merge) in features {
                 if nodes_to_merge.len() == 1 {
                     stack.push(nodes_to_merge.pop().unwrap());
                 } else if matches!(key, FeatureOrLemma::Lemma(_)) {
@@ -906,8 +896,7 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
                         stack.push(child);
                     }
                 }
-                FeatureOrLemma::Feature(Feature::Licensor(_))
-                | FeatureOrLemma::Feature(Feature::Selector(_, _)) => {
+                FeatureOrLemma::Feature(Feature::Licensor(_) | Feature::Selector(_, _)) => {
                     let n_children = self.n_children(rng);
                     for _ in 0..n_children {
                         let feature = self.get_feature(rng);

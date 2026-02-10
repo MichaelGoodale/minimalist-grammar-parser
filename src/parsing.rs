@@ -184,8 +184,8 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
     ) {
         self.queue.push(Reverse(ParseMoment {
             tree,
-            movers,
             stolen_head,
+            movers,
         }));
     }
 
@@ -259,7 +259,7 @@ fn unmerge_from_mover<
     child_prob: LogProb<f64>,
 ) -> bool {
     let mut new_beam = false;
-    for mover in moment.movers.iter() {
+    for mover in &moment.movers {
         for stored_child_node in lexicon.children_of(mover.node) {
             let (stored, stored_prob) = lexicon.get(stored_child_node).unwrap();
             match stored {
@@ -269,7 +269,7 @@ fn unmerge_from_mover<
                         .movers
                         .iter()
                         .filter(|&v| v != mover)
-                        .cloned()
+                        .copied()
                         .collect();
 
                     let (stored_movers, child_movers) = if lexicon.is_complement(child_node) {
@@ -390,7 +390,7 @@ fn unmerge<
             beam.add_tree_to_queue(complement_tree, complement_movers, StolenHead::None);
         }
         (_, _) => panic!("Should be impossible"),
-    };
+    }
 
     beam.log_prob += child_prob;
     beam.rules.push_rule(
@@ -448,7 +448,7 @@ fn unmove_from_mover<
                         .movers
                         .iter()
                         .filter(|&v| v != mover)
-                        .cloned()
+                        .copied()
                         .chain(std::iter::once(stored_tree))
                         .collect();
 
@@ -585,10 +585,10 @@ pub(crate) fn expand<
         .for_each(
             |(mut beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.should_be_scanned() => {
-                    beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon)
+                    beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon);
                 }
-                (FeatureOrLemma::Complement(cat, dir), mut p)
-                | (FeatureOrLemma::Feature(Feature::Selector(cat, dir)), mut p) => {
+                (FeatureOrLemma::Complement(cat, dir) |
+FeatureOrLemma::Feature(Feature::Selector(cat, dir)), mut p) => {
                     if unmerge_from_mover(
                         extender,
                         lexicon,
@@ -603,7 +603,7 @@ pub(crate) fn expand<
                             p
                         },
                     ) {
-                        p += config.dont_move_prob
+                        p += config.dont_move_prob;
                     }
                     let _ = unmerge(
                         extender,
@@ -621,8 +621,7 @@ pub(crate) fn expand<
                     let already_mover_of_this_cat = moment.movers.iter().any(|x| {
                         lexicon
                             .get_feature_category(x.node)
-                            .map(|x| x == cat)
-                            .unwrap_or(false)
+                            .is_some_and(|x| x == cat)
                     });
                     if unmove_from_mover(
                         extender,
@@ -638,7 +637,7 @@ pub(crate) fn expand<
                         },
                         already_mover_of_this_cat,
                     ) {
-                        p += config.dont_move_prob
+                        p += config.dont_move_prob;
                     }
                     if !already_mover_of_this_cat {
                         //This corresponds to the SMC here.
@@ -661,9 +660,8 @@ pub(crate) fn expand<
                         head_info,
                     );
                 }
-                (FeatureOrLemma::Lemma(_), _)
-                | (FeatureOrLemma::Feature(Feature::Category(_)), _)
-                | (FeatureOrLemma::Feature(Feature::Licensee(_)), _) => (),
+                (FeatureOrLemma::Lemma(_) |
+FeatureOrLemma::Feature(Feature::Category(_) | Feature::Licensee(_)), _) => (),
                 (FeatureOrLemma::Root, _) => unimplemented!("Impossible to parse the root node"),
             },
         );

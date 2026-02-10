@@ -1,14 +1,12 @@
 //! This module defines the basic semantic rules which allow for semantic derivations.
-use std::{collections::BTreeMap, fmt::Display, ops::Deref};
-
+use super::{Rule, RuleIndex, RulePool, TraceId};
 use crate::lexicon::{LexemeId, SemanticLexicon};
 use itertools::{Either, Itertools};
 use simple_semantics::{
     lambda::{RootedLambdaPool, types::LambdaType},
     language::{ConjoiningError, Expr},
 };
-
-use super::{Rule, RuleIndex, RulePool, TraceId};
+use std::{collections::BTreeMap, fmt::Display};
 
 #[cfg(feature = "pretty")]
 use serde::{Serialize, ser::SerializeMap, ser::SerializeStruct};
@@ -138,6 +136,7 @@ impl<'a> SemanticHistory<'a> {
 
     ///Get all the constituents of a semantic history (e.g. the interpretation of all
     ///constituents). Returns [`None`] if the semantic history is [`SemanticHistory::Simple`]
+    #[must_use]
     pub fn constituents(
         &self,
     ) -> Option<impl Iterator<Item = (SemanticRule, &RootedLambdaPool<'a, Expr<'a>>)>> {
@@ -153,6 +152,7 @@ impl<'a> SemanticHistory<'a> {
     }
 
     ///Calculates the semantic interpretation of each partial step in a derivation.
+    #[must_use]
     pub fn into_rich<T, C>(self, lexicon: &SemanticLexicon<'a, T, C>, rules: &RulePool) -> Self
     where
         T: Eq + std::fmt::Debug + std::clone::Clone,
@@ -239,7 +239,7 @@ impl Serialize for Movers<'_, '_> {
         S: serde::Serializer,
     {
         let mut s = serializer.serialize_map(Some(self.0.len()))?;
-        for (k, v) in self.0.iter() {
+        for (k, v) in self.0 {
             s.serialize_entry(k, &Mover(v))?;
         }
         s.end()
@@ -382,11 +382,11 @@ fn can_apply(a: &LambdaType, b: &LambdaType) -> bool {
 
 fn can_event_id(alpha: &LambdaType, beta: &LambdaType) -> bool {
     if let LambdaType::Composition(_sigma, b) = alpha
-        && let LambdaType::Composition(tau_alpha, t) = b.deref()
-        && matches!(t.deref(), LambdaType::T)
+        && let LambdaType::Composition(tau_alpha, t) = &**b
+        && matches!(&**t, LambdaType::T)
         && let LambdaType::Composition(tau_beta, t_beta) = beta
         && tau_beta == tau_alpha
-        && matches!(t_beta.deref(), LambdaType::T)
+        && matches!(&**t_beta, LambdaType::T)
     {
         true
     } else {
@@ -801,7 +801,7 @@ where
         let semantic_rule = history.get(rule_id.0).unwrap().0;
         let children: Vec<_> = self.rules.get(rule_id).children().collect();
 
-        for child in children.iter() {
+        for child in &children {
             self.redo_history(*child, history);
         }
         let get_child = |i: usize| {

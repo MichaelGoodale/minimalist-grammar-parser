@@ -101,14 +101,15 @@ impl<T> PhonContent<T> {
     ///Try to flatten the output assuming that all members of the vector are
     ///[`PhonContent::Normal`]
     pub fn try_flatten(x: Vec<PhonContent<T>>) -> Result<Vec<T>, FlattenError> {
-        x.into_iter().map(|x| x.try_inner()).collect()
+        x.into_iter().map(PhonContent::try_inner).collect()
     }
 }
 impl PhonContent<&str> {
     ///Try to flatten the output and join all affixes without spaces
+    #[must_use] 
     pub fn flatten(x: Vec<PhonContent<&str>>) -> Vec<String> {
         let mut v = vec![];
-        for content in x.into_iter() {
+        for content in x {
             match content {
                 PhonContent::Normal(val) => v.push(val.to_string()),
                 PhonContent::Affixed(items) => v.push(items.join("")),
@@ -132,6 +133,7 @@ pub enum Direction {
 
 impl Direction {
     ///Swaps direction so that left is right and vice-versa
+    #[must_use] 
     pub fn flip(&self) -> Self {
         match self {
             Direction::Left => Direction::Right,
@@ -151,10 +153,7 @@ impl From<Direction> for bool {
 
 impl From<bool> for Direction {
     fn from(value: bool) -> Self {
-        match value {
-            false => Direction::Left,
-            true => Direction::Right,
-        }
+        if value { Direction::Right } else { Direction::Left }
     }
 }
 
@@ -183,6 +182,7 @@ impl ParsingConfig {
     ///Create a new [`ParsingConfig`] with no limits on parsing and default move probability. Be careful to ensure when parsing
     ///or generating with this config to avoid infinite loops (at the very least use
     ///[`ParsingConfig::with_max_time`]).
+    #[must_use] 
     pub fn empty() -> ParsingConfig {
         let move_prob = LogProb::from_raw_prob(0.5).unwrap();
         let dont_move_prob = move_prob.opposite_prob();
@@ -200,6 +200,7 @@ impl ParsingConfig {
     }
 
     ///Create a new [`ParsingConfig`] with the following parameters
+    #[must_use] 
     pub fn new(
         min_log_prob: LogProb<f64>,
         move_prob: LogProb<f64>,
@@ -222,36 +223,42 @@ impl ParsingConfig {
 
     ///Set the maximum time before timing out a parse (not available on `wasm32`).
     #[cfg(not(target_arch = "wasm32"))]
+    #[must_use] 
     pub fn with_max_time(mut self, duration: Duration) -> Self {
         self.max_time = Some(duration);
         self
     }
 
     ///Set the maximum number of repeated empty heads.
+    #[must_use] 
     pub fn with_max_consecutive_empty(mut self, n: usize) -> Self {
         self.max_consecutive_empty = Some(n);
         self
     }
 
     ///Set the minimum log probability for a parse.
+    #[must_use] 
     pub fn with_min_log_prob(mut self, min_log_prob: LogProb<f64>) -> Self {
         self.min_log_prob = Some(min_log_prob);
         self
     }
 
     ///Set the maximum number of derivational steps for a parse.
+    #[must_use] 
     pub fn with_max_steps(mut self, max_steps: usize) -> Self {
         self.max_steps = Some(max_steps);
         self
     }
 
     ///Set the maximum number of competing parses at a single time.
+    #[must_use] 
     pub fn with_max_beams(mut self, max_beams: usize) -> Self {
         self.max_beams = Some(max_beams);
         self
     }
 
     ///Set the probability of moving as opposed to merging.
+    #[must_use] 
     pub fn with_move_prob(mut self, move_prob: LogProb<f64>) -> Self {
         self.move_prob = move_prob;
         self.dont_move_prob = self.move_prob.opposite_prob();
@@ -335,18 +342,15 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
         let is_probable_enough = self
             .config
             .min_log_prob
-            .map(|p| v.log_prob() > p)
-            .unwrap_or(true);
+            .is_none_or(|p| v.log_prob() > p);
         let is_short_enough = self
             .config
             .max_steps
-            .map(|max_steps| v.n_steps() < max_steps)
-            .unwrap_or(true);
+            .is_none_or(|max_steps| v.n_steps() < max_steps);
         let is_not_fake_structure = self
             .config
             .max_consecutive_empty
-            .map(|n_empty| v.n_consecutive_empty() <= n_empty)
-            .unwrap_or(true);
+            .is_none_or(|n_empty| v.n_consecutive_empty() <= n_empty);
         is_short_enough && is_probable_enough && is_not_fake_structure
     }
 
@@ -369,7 +373,7 @@ impl<T: Eq + std::fmt::Debug + Clone, B: Scanner<T> + Eq + Clone> ParseHeap<T, B
             let buffer = std::mem::take(&mut self.random_buffer);
             for (i, beam) in buffer.into_iter().enumerate() {
                 if i == head_id {
-                    self.head = Some(beam)
+                    self.head = Some(beam);
                 } else {
                     self.add_to_heap(beam);
                 }
@@ -484,7 +488,7 @@ pub struct Parser<'a, 'b, T: Eq + std::fmt::Debug + Clone, Category: Eq + Clone 
     buffer: Vec<ParserOutput<'b, T>>,
 }
 
-impl<'a, 'b, T, Category> Iterator for Parser<'a, 'b, T, Category>
+impl<'b, T, Category> Iterator for Parser<'_, 'b, T, Category>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,
@@ -552,7 +556,7 @@ pub struct RandomParser<
 }
 
 #[cfg(feature = "sampling")]
-impl<'a, 'b, T, Category, R> Iterator for RandomParser<'a, 'b, T, Category, R>
+impl<'b, T, Category, R> Iterator for RandomParser<'_, 'b, T, Category, R>
 where
     T: Eq + std::fmt::Debug + Clone,
     Category: Eq + Clone + std::fmt::Debug,

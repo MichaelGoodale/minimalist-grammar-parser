@@ -11,7 +11,7 @@ pub trait SymbolCost: Sized {
     ///This is the length of a member where each sub-unit has `n_phonemes` possible encodings.
     /// # Example
     /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``Lexicon::mdl_score``].
-    /// The string, abcabc should have symbol_cost 6.
+    /// The string, abcabc should have `symbol_cost` 6.
     fn symbol_cost(x: &Option<Self>) -> u16;
 }
 
@@ -79,7 +79,7 @@ impl<T: Eq + std::fmt::Debug + Clone + SymbolCost, Category: Eq + std::fmt::Debu
         let mut category_symbols = AHashSet::new();
         let mut lexemes: Vec<(f64, f64)> = Vec::with_capacity(self.leaves.len());
 
-        for leaf in self.leaves.iter() {
+        for leaf in &self.leaves {
             if let FeatureOrLemma::Lemma(lemma) = &self.graph[leaf.0] {
                 let n_phonemes = T::symbol_cost(lemma);
 

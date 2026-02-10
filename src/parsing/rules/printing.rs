@@ -83,9 +83,7 @@ impl<T: Display> Display for Lemma<T> {
                 heads
                     .iter()
                     .map(|x| x
-                        .as_ref()
-                        .map(|x| x.to_string())
-                        .unwrap_or_else(|| "ε".to_string()))
+                        .as_ref().map_or_else(|| "ε".to_string(), std::string::ToString::to_string))
                     .collect::<Vec<_>>()
                     .join("-")
             ),
@@ -101,6 +99,7 @@ enum DepthRuleOrder {
 
 impl RulePool {
     ///Get this derivation as a [`TreeWithMovement`]
+    #[must_use] 
     pub fn to_tree<'src, T: Eq + Clone, C: Eq + Clone + Display>(
         self,
         lex: &Lexicon<T, C>,
@@ -325,7 +324,7 @@ fn organise_movements(mut v: Vec<TraceHistory>) -> Vec<Vec<RuleIndex>> {
     {
         if let Some(x) = threads
             .iter_mut()
-            .find(|x| x.last().map(|x| *x == source).unwrap_or(false))
+            .find(|x| x.last().is_some_and(|x| *x == source))
         {
             x.push(destination);
         } else {
@@ -385,7 +384,7 @@ impl<C: Clone> Storage<C> {
             } else {
                 self.h.insert(*s_id, value);
             }
-        };
+        }
     }
 
     fn add_from(&mut self, other: &Storage<C>) {
@@ -418,7 +417,7 @@ fn movement_helpers<T: Eq, C: Eq + Clone>(
         .map(|x| {
             lex.node_to_features(rules.get(*x.first().unwrap()).node(rules).unwrap())
                 .skip(1) //skip category where merge happened
-                .map(|x| x.into_inner())
+                .map(crate::lexicon::Feature::into_inner)
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -516,7 +515,7 @@ impl<T: Eq + Clone, C: Eq + Clone + Display> Lexicon<T, C> {
                         windows.push(order.len());
                     }
 
-                    order.push(rule_index)
+                    order.push(rule_index);
                 }
             }
         }
@@ -544,6 +543,7 @@ impl<'src, T: Eq + Debug + Clone, C: Eq + Debug + Clone + Display> SemanticLexic
     ///Converts a [`RulePool`] into a [`Derivation`] which allows the construction of [`Tree`]s
     ///which can be used to plot syntactic trees throughout the derivation of the parse. This
     ///version allows for semantic information in the derivation as well.
+    #[must_use] 
     pub fn derivation(&self, rules: RulePool, h: SemanticHistory<'src>) -> Derivation<'src, T, C> {
         let Derivation {
             order,
@@ -584,6 +584,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
 
 impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
     ///Get all possible [`Tree`]s in bottom-up order of a parse.
+    #[must_use] 
     pub fn trees(&self) -> impl DoubleEndedIterator<Item = TreeWithMovement<'src, T, C>> {
         (0..self.windows.len()).map(|x| {
             let o = self.windows[x];
@@ -592,16 +593,19 @@ impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
     }
 
     ///Get a [`Tree`] representation of the final parse.
+    #[must_use] 
     pub fn tree(&self) -> TreeWithMovement<'src, T, C> {
         self.tree_and_movement(*self.order.last().unwrap(), self.order.len() - 1)
     }
 
     ///How many trees in the derivation
+    #[must_use] 
     pub fn number_of_trees(&self) -> usize {
         self.windows.len()
     }
 
     ///Get the tree at the nth derivation step
+    #[must_use] 
     pub fn nth_tree(&self, n: usize) -> TreeWithMovement<'src, T, C> {
         let o = self.windows[n];
         self.tree_and_movement(self.order[o], o)
@@ -640,19 +644,19 @@ impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
                 .iter()
                 .enumerate()
                 .find_map(|(i, rule)| {
-                    if !valid_rules.contains(rule) {
-                        Some(i)
-                    } else {
+                    if valid_rules.contains(rule) {
                         None
+                    } else {
+                        Some(i)
                     }
                 })
                 .unwrap_or(movement.len());
 
             if n != 0 {
                 let pos = (movement.iter().position(|x| *x == rule).unwrap() + 1) % n;
-                rule = movement[pos]
+                rule = movement[pos];
             }
-        };
+        }
 
         //Marks a stolen head as /not/ stolen if the head's destination isn't in the tree here.
         let mut node = self.nodes[rule.0].clone();

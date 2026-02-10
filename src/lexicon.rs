@@ -158,9 +158,10 @@ fn grammar_parser<'src>()
 fn entry_parser<'src, E>() -> impl Parser<'src, &'src str, LexicalEntry<&'src str, &'src str>, E>
 where
     E: ParserExtra<'src, &'src str>,
-    E::Error: LabelError<'src, &'src str, TextExpected<'src, &'src str>>
+    E::Error: LabelError<'src, &'src str, TextExpected<&'src str>>
         + LabelError<'src, &'src str, MaybeRef<'src, char>>
-        + LabelError<'src, &'src str, &'static str>,
+        + LabelError<'src, &'src str, &'static str>
+        + LabelError<'src, &'src str, TextExpected<()>>,
 {
     let feature_name = any()
         .and_is(none_of([

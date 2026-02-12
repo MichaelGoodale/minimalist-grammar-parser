@@ -223,7 +223,7 @@ impl Serialize for Mover<'_, '_> {
     {
         let mut s = serializer.serialize_struct("Mover", 3)?;
         s.serialize_field("expr", self.0.0.to_string().as_str())?;
-        s.serialize_field("tokens", &self.0.0)?;
+        s.serialize_field("tokens", &self.0.0.for_document())?;
         if let Some(t) = self.0.1.as_ref() {
             s.serialize_field("type", t.to_string().as_str())?;
         }
@@ -254,7 +254,7 @@ impl Serialize for SemanticState<'_> {
     {
         let mut s = serializer.serialize_struct("SemanticState", 3)?;
         s.serialize_field("expr", self.expr.to_string().as_str())?;
-        s.serialize_field("tokens", &self.expr)?;
+        s.serialize_field("tokens", &self.expr.for_document())?;
         s.serialize_field("movers", &Movers(&self.movers))?;
 
         s.end()

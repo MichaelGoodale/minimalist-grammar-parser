@@ -448,7 +448,7 @@ impl RulePool {
                 ..
             } => match (self.get(*a).is_scan(), self.get(*b).is_scan()) {
                 (true, false) => [Some(*a), Some(*b)],
-                (false, true) | (false, false) | (true, true) => [Some(*b), Some(*a)],
+                (false | true, true) | (false, false) => [Some(*b), Some(*a)],
             },
         }
         .into_iter()

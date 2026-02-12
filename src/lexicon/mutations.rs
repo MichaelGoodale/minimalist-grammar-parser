@@ -19,7 +19,7 @@ use petgraph::{
     visit::EdgeRef,
 };
 use rand::{
-    Rng,
+    Rng, RngExt,
     seq::{IndexedRandom, IteratorRandom},
 };
 use rand_distr::{Distribution, Geometric};
@@ -151,8 +151,8 @@ where
 
     fn add_indirect_children(&mut self, node: NodeIndex) {
         match self.lex.graph.node_weight(node).unwrap() {
-            FeatureOrLemma::Feature(Feature::Selector(c, _) | Feature::Affix(c, _)) |
-FeatureOrLemma::Complement(c, _) => match self.lex.find_category(c) {
+            FeatureOrLemma::Feature(Feature::Selector(c, _) | Feature::Affix(c, _))
+            | FeatureOrLemma::Complement(c, _) => match self.lex.find_category(c) {
                 Ok(x) => {
                     if !self.seen.contains(&x) {
                         self.stack.push(x);
@@ -174,8 +174,9 @@ FeatureOrLemma::Complement(c, _) => match self.lex.find_category(c) {
                     Err(_) => self.mark_unsatisfiable(node),
                 }
             }
-            FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) |
-FeatureOrLemma::Feature(Feature::Licensee(_) | Feature::Category(_)) => (),
+            FeatureOrLemma::Root
+            | FeatureOrLemma::Lemma(_)
+            | FeatureOrLemma::Feature(Feature::Licensee(_) | Feature::Category(_)) => (),
         }
     }
 }
@@ -212,10 +213,11 @@ where
     ///base category of `start`
     pub fn prune(&mut self, start: &C) {
         loop {
-            let start = if let Ok(x) = self.find_category(start) { x } else {
-                self.graph.retain_nodes(|g, n| {
-                    matches!(g.node_weight(n).unwrap(), FeatureOrLemma::Root)
-                });
+            let start = if let Ok(x) = self.find_category(start) {
+                x
+            } else {
+                self.graph
+                    .retain_nodes(|g, n| matches!(g.node_weight(n).unwrap(), FeatureOrLemma::Root));
                 self.leaves.clear();
                 return;
             };
@@ -471,10 +473,14 @@ where
         if let Some(&node) = self
             .graph
             .node_indices()
-            .filter(|&nx| if self.graph.node_weight(nx).unwrap() == &FeatureOrLemma::Root { false } else {
-                let parent = self.parent_of(nx).unwrap();
-                //We can only delete a branch if there's at least one sibling.
-                self.children_of(parent).count() > 1
+            .filter(|&nx| {
+                if self.graph.node_weight(nx).unwrap() == &FeatureOrLemma::Root {
+                    false
+                } else {
+                    let parent = self.parent_of(nx).unwrap();
+                    //We can only delete a branch if there's at least one sibling.
+                    self.children_of(parent).count() > 1
+                }
             })
             .collect::<Vec<_>>()
             .choose(rng)

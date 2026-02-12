@@ -83,7 +83,8 @@ impl<T: Display> Display for Lemma<T> {
                 heads
                     .iter()
                     .map(|x| x
-                        .as_ref().map_or_else(|| "ε".to_string(), std::string::ToString::to_string))
+                        .as_ref()
+                        .map_or_else(|| "ε".to_string(), std::string::ToString::to_string))
                     .collect::<Vec<_>>()
                     .join("-")
             ),
@@ -99,7 +100,7 @@ enum DepthRuleOrder {
 
 impl RulePool {
     ///Get this derivation as a [`TreeWithMovement`]
-    #[must_use] 
+    #[must_use]
     pub fn to_tree<'src, T: Eq + Clone, C: Eq + Clone + Display>(
         self,
         lex: &Lexicon<T, C>,
@@ -543,7 +544,7 @@ impl<'src, T: Eq + Debug + Clone, C: Eq + Debug + Clone + Display> SemanticLexic
     ///Converts a [`RulePool`] into a [`Derivation`] which allows the construction of [`Tree`]s
     ///which can be used to plot syntactic trees throughout the derivation of the parse. This
     ///version allows for semantic information in the derivation as well.
-    #[must_use] 
+    #[must_use]
     pub fn derivation(&self, rules: RulePool, h: SemanticHistory<'src>) -> Derivation<'src, T, C> {
         let Derivation {
             order,
@@ -584,7 +585,7 @@ pub struct Derivation<'src, T, C: Eq + Display> {
 
 impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
     ///Get all possible [`Tree`]s in bottom-up order of a parse.
-    #[must_use] 
+    #[must_use]
     pub fn trees(&self) -> impl DoubleEndedIterator<Item = TreeWithMovement<'src, T, C>> {
         (0..self.windows.len()).map(|x| {
             let o = self.windows[x];
@@ -593,19 +594,19 @@ impl<'src, T: Clone, C: Clone + Eq + Display> Derivation<'src, T, C> {
     }
 
     ///Get a [`Tree`] representation of the final parse.
-    #[must_use] 
+    #[must_use]
     pub fn tree(&self) -> TreeWithMovement<'src, T, C> {
         self.tree_and_movement(*self.order.last().unwrap(), self.order.len() - 1)
     }
 
     ///How many trees in the derivation
-    #[must_use] 
+    #[must_use]
     pub fn number_of_trees(&self) -> usize {
         self.windows.len()
     }
 
     ///Get the tree at the nth derivation step
-    #[must_use] 
+    #[must_use]
     pub fn nth_tree(&self, n: usize) -> TreeWithMovement<'src, T, C> {
         let o = self.windows[n];
         self.tree_and_movement(self.order[o], o)

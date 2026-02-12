@@ -587,8 +587,11 @@ pub(crate) fn expand<
                 (FeatureOrLemma::Lemma(s), p) if moment.should_be_scanned() => {
                     beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon);
                 }
-                (FeatureOrLemma::Complement(cat, dir) |
-FeatureOrLemma::Feature(Feature::Selector(cat, dir)), mut p) => {
+                (
+                    FeatureOrLemma::Complement(cat, dir)
+                    | FeatureOrLemma::Feature(Feature::Selector(cat, dir)),
+                    mut p,
+                ) => {
                     if unmerge_from_mover(
                         extender,
                         lexicon,
@@ -660,8 +663,11 @@ FeatureOrLemma::Feature(Feature::Selector(cat, dir)), mut p) => {
                         head_info,
                     );
                 }
-                (FeatureOrLemma::Lemma(_) |
-FeatureOrLemma::Feature(Feature::Category(_) | Feature::Licensee(_)), _) => (),
+                (
+                    FeatureOrLemma::Lemma(_)
+                    | FeatureOrLemma::Feature(Feature::Category(_) | Feature::Licensee(_)),
+                    _,
+                ) => (),
                 (FeatureOrLemma::Root, _) => unimplemented!("Impossible to parse the root node"),
             },
         );

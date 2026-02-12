@@ -144,8 +144,7 @@ runs::=>0 0= +1 0::lambda t phi lambda t psi ~pa_woman(a_Phil)
 runs::2::a_Mary
 John::0 -1::pa_woman(a_Susan)";
 
-    let worse_head_movement = 
-    "ε::0::some(x, pa_man(x), pa_woman(x))
+    let worse_head_movement = "ε::0::some(x, pa_man(x), pa_woman(x))
 John::0::pa_woman(a_Susan)
 John::0::some_e(x, pe_breathe(x), pe_breathe(x))
 John::0<= =0 0::lambda t phi lambda t psi some_e(x, phi, pa_man(a_John))

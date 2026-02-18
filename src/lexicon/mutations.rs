@@ -213,9 +213,7 @@ where
     ///base category of `start`
     pub fn prune(&mut self, start: &C) {
         loop {
-            let start = if let Ok(x) = self.find_category(start) {
-                x
-            } else {
+            let Ok(start) = self.find_category(start) else {
                 self.graph
                     .retain_nodes(|g, n| matches!(g.node_weight(n).unwrap(), FeatureOrLemma::Root));
                 self.leaves.clear();
@@ -749,9 +747,9 @@ where
                         self.graph[e] = p;
                     }
 
-                    new_edges.into_iter().for_each(|(tgt, weight)| {
+                    for (tgt, weight) in new_edges {
                         self.graph.add_edge(node_to_keep, tgt, weight);
-                    });
+                    }
 
                     if let Some(e) = self
                         .graph
@@ -761,9 +759,9 @@ where
                     {
                         self.graph[e] = incoming_weight;
                     }
-                    nodes_to_merge.into_iter().for_each(|x| {
+                    for x in nodes_to_merge {
                         self.graph.remove_node(x);
-                    });
+                    }
                     stack.push(node_to_keep);
                 }
             }

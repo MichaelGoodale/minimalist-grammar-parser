@@ -120,7 +120,7 @@ impl RulePool {
             Rule::UnmoveTrace(trace_id) => MgNode::Trace { trace: *trace_id },
             Rule::Scan { lexeme, .. } => {
                 let features = lex.leaf_to_features(*lexeme).unwrap().collect();
-                let lemma = lemma_lookup.get_lemma(lex, &rule);
+                let lemma = lemma_lookup.get_lemma(lex, rule);
                 MgNode::Leaf { lemma, features }
             }
             Rule::Unmerge { child, .. } | Rule::UnmergeFromMover { child, .. } => MgNode::Node {
@@ -214,9 +214,9 @@ impl LemmaLookup {
     fn get_lemma<T: Eq + Clone, C: Eq>(
         &self,
         lex: &Lexicon<T, C>,
-        rule_index: &RuleIndex,
+        rule_index: RuleIndex,
     ) -> Lemma<T> {
-        match self.h.get(rule_index).expect("Missing rule index") {
+        match self.h.get(&rule_index).expect("Missing rule index") {
             KeyValue::Normal(lexeme_id) => Lemma::Single(
                 lex.leaf_to_lemma(*lexeme_id)
                     .expect("Missing word in lexicon!")
@@ -231,7 +231,7 @@ impl LemmaLookup {
                     .iter()
                     .enumerate()
                     .map(|(i, (_, x, r))| {
-                        if r == rule_index {
+                        if r == &rule_index {
                             original_head = i;
                         }
                         lex.leaf_to_lemma(*x).unwrap().clone()
@@ -254,7 +254,7 @@ impl LemmaLookup {
                     .filter(|(g, _, _)| g == gorn_index || gorn_index.is_ancestor_of(*g))
                     .enumerate()
                     .map(|(i, (_, x, r))| {
-                        if r == rule_index {
+                        if r == &rule_index {
                             original_head = i;
                         }
                         lex.leaf_to_lemma(*x).unwrap().clone()
@@ -370,7 +370,7 @@ impl<C: Display + Eq> Display for Storage<C> {
 impl<C> Default for Storage<C> {
     fn default() -> Self {
         Self {
-            h: Default::default(),
+            h: BTreeMap::default(),
         }
     }
 }

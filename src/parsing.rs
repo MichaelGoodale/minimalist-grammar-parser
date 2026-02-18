@@ -571,7 +571,7 @@ pub(crate) fn expand<
     L: Borrow<Lexicon<T, Category>>,
 >(
     extender: &mut ParseHeap<T, B>,
-    moment: ParseMoment,
+    moment: &ParseMoment,
     beam: BeamWrapper<T, B>,
     lexicon: L,
     config: &ParsingConfig,
@@ -585,7 +585,7 @@ pub(crate) fn expand<
         .for_each(
             |(mut beam, child_node)| match lexicon.get(child_node).unwrap() {
                 (FeatureOrLemma::Lemma(s), p) if moment.should_be_scanned() => {
-                    beam.scan(extender, &moment, s, LexemeId(child_node), p, lexicon);
+                    beam.scan(extender, moment, s, LexemeId(child_node), p, lexicon);
                 }
                 (
                     FeatureOrLemma::Complement(cat, dir)
@@ -595,7 +595,7 @@ pub(crate) fn expand<
                     if unmerge_from_mover(
                         extender,
                         lexicon,
-                        &moment,
+                        moment,
                         &beam,
                         cat,
                         child_node,
@@ -611,7 +611,7 @@ pub(crate) fn expand<
                     let _ = unmerge(
                         extender,
                         lexicon,
-                        &moment,
+                        moment,
                         beam,
                         cat,
                         *dir,
@@ -629,7 +629,7 @@ pub(crate) fn expand<
                     if unmove_from_mover(
                         extender,
                         lexicon,
-                        &moment,
+                        moment,
                         &beam,
                         cat,
                         child_node,
@@ -644,17 +644,17 @@ pub(crate) fn expand<
                     }
                     if !already_mover_of_this_cat {
                         //This corresponds to the SMC here.
-                        let _ = unmove(extender, lexicon, &moment, beam, cat, child_node, p);
+                        let _ = unmove(extender, lexicon, moment, beam, cat, child_node, p);
                     }
                 }
                 (FeatureOrLemma::Feature(Feature::Affix(cat, dir)), p) => {
-                    let head_info = set_beam_head(&moment, *dir, &mut beam);
+                    let head_info = set_beam_head(moment, *dir, &mut beam);
                     //We set dir=right since headmovement is always after a right-merge, even
                     //if you can put it to the left or right of the head
                     let _ = unmerge(
                         extender,
                         lexicon,
-                        &moment,
+                        moment,
                         beam,
                         cat,
                         Direction::Right,

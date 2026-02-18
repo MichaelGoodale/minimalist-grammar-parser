@@ -464,7 +464,7 @@ where
             if let Some(moment) = beam.pop_moment() {
                 expand(
                     &mut self.parse_heap,
-                    moment,
+                    &moment,
                     beam,
                     self.lexicon,
                     self.config,
@@ -514,7 +514,7 @@ where
                 if let Some(moment) = beam.pop_moment() {
                     expand(
                         &mut self.parse_heap,
-                        moment,
+                        &moment,
                         beam,
                         self.lexicon,
                         self.config,
@@ -583,7 +583,7 @@ where
                 if let Some(moment) = beam.pop_moment() {
                     expand(
                         &mut self.parse_heap,
-                        moment,
+                        &moment,
                         beam,
                         self.lexicon,
                         self.config,
@@ -840,7 +840,7 @@ where
             if let Some(moment) = beam.pop_moment() {
                 expand(
                     &mut self.parse_heap,
-                    moment,
+                    &moment,
                     beam,
                     self.lexicon.borrow(),
                     &self.config,

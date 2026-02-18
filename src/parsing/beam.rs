@@ -123,7 +123,7 @@ impl<T: Eq + std::fmt::Debug + Clone> FuzzyScan<'_, T> {
         if b.is_empty() {
             Some((
                 b.log_prob,
-                b.beam.generated_sentences.clone(),
+                b.beam.generated_sentences,
                 b.rules.into_rule_pool(rules),
             ))
         } else {
@@ -237,11 +237,7 @@ impl<T: Eq + std::fmt::Debug + Clone> GeneratorScan<T> {
         rules: &[RuleHolder],
     ) -> Option<(LogProb<f64>, Vec<PhonContent<T>>, RulePool)> {
         if b.is_empty() {
-            Some((
-                b.log_prob,
-                b.beam.sentence.clone(),
-                b.rules.into_rule_pool(rules),
-            ))
+            Some((b.log_prob, b.beam.sentence, b.rules.into_rule_pool(rules)))
         } else {
             None
         }
@@ -363,19 +359,19 @@ where
     ///# use minimalist_grammar_parser::parsing::beam::Continuation;
     ///
     ///let lex = Lexicon::from_string("a::S= b= S\n::S\nb::b")?;
-    ///let continuations = lex.valid_continuations("S", &PhonContent::from(["a"]), &ParsingConfig::default())?;
+    ///let continuations = lex.valid_continuations(&"S", &PhonContent::from(["a"]), &ParsingConfig::default())?;
     ///assert_eq!(continuations, HashSet::from_iter([Continuation::Word("b"), Continuation::Word("a")].into_iter()));
-    ///let continuations = lex.valid_continuations("S", &PhonContent::from(["a", "b"]), &ParsingConfig::default())?;
+    ///let continuations = lex.valid_continuations(&"S", &PhonContent::from(["a", "b"]), &ParsingConfig::default())?;
     ///assert_eq!(continuations, HashSet::from_iter([Continuation::EndOfSentence]));
     ///# Ok::<(), anyhow::Error>(())
     /// ```
     pub fn valid_continuations(
         &self,
-        initial_category: C,
+        initial_category: &C,
         prefix: &[PhonContent<T>],
         config: &ParsingConfig,
     ) -> Result<HashSet<Continuation<T>>, ParsingError<C>> {
-        let cat = self.find_category(&initial_category)?;
+        let cat = self.find_category(initial_category)?;
 
         let cont = ContinuationScan {
             prefix,
@@ -396,7 +392,7 @@ where
             }
 
             if let Some(moment) = beam.pop_moment() {
-                expand(&mut parse_heap, moment, beam, self, config);
+                expand(&mut parse_heap, &moment, beam, self, config);
             } else if let Some(cont) = ContinuationScan::yield_good_parse(beam) {
                 valid_chars.insert(cont);
             }
@@ -461,7 +457,7 @@ mod test {
         .map(|x| x.into_iter().collect());
 
         for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
-            let cont = lex.valid_continuations("C", &s, &ParsingConfig::default())?;
+            let cont = lex.valid_continuations(&"C", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
         let lex = Lexicon::from_string(DYCK_LANGUAGE)?;
@@ -481,7 +477,7 @@ mod test {
         .map(|x| x.into_iter().collect());
 
         for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
-            let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
+            let cont = lex.valid_continuations(&"S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
 
@@ -504,7 +500,7 @@ mod test {
         .map(|x| x.into_iter().collect());
 
         for (s, valid) in strings.into_iter().map(PhonContent::new).zip(continuations) {
-            let cont = lex.valid_continuations("S", &s, &ParsingConfig::default())?;
+            let cont = lex.valid_continuations(&"S", &s, &ParsingConfig::default())?;
             assert_eq!(cont, valid);
         }
 
@@ -625,7 +621,7 @@ PAST::=>V +subj1 t
         );
         assert_eq!(
             lexicon.valid_continuations(
-                "C",
+                &"C",
                 &[
                     PhonContent::Normal("I"),
                     PhonContent::Normal("can"),

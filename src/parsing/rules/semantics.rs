@@ -635,6 +635,7 @@ where
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn get_previous_rules(&mut self, rule_id: RuleIndex) -> Vec<(SemanticState<'src>, HistoryId)> {
         let rule = self.rules.get(rule_id);
         match rule {
@@ -870,14 +871,11 @@ where
                 return;
             }
             SemanticRule::Scan(_) => {
-                let node = match rule {
-                    Rule::Scan { lexeme, stolen: _ } => lexeme,
-                    _ => panic!(
-                        "The scan semantic rule should only happen with scanning when parsing"
-                    ),
+                let Rule::Scan { lexeme, stolen: _ } = rule else {
+                    panic!("The scan semantic rule should only happen with scanning when parsing")
                 };
                 Some((
-                    SemanticState::new(self.lexicon.interpretation(node).clone()),
+                    SemanticState::new(self.lexicon.interpretation(lexeme).clone()),
                     HistoryId(0),
                 ))
             }

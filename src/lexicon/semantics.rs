@@ -20,14 +20,21 @@ pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
     semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
 }
 
-impl<'src, T: Eq, C: Eq> SemanticLexicon<'src, T, C> {
-    ///Create a new [`SemanticLexicon`] by combining a [`Lexicon`] and a [`HashMap`] of leaf nodes
-    ///and semantic interpretations ([`RootedLambdaPool`])
-    #[must_use]
+impl<'src, T: Eq + Clone + Debug, C: Eq + Debug + Clone> SemanticLexicon<'src, T, C> {
+    ///Create a new [`SemanticLexicon`] from a [`Vec`] of [`LexicalEntry`]s and a [`Vec`] of
+    ///[`RootedLambdaPool`]s
     pub fn new(
-        lexicon: Lexicon<T, C>,
-        semantic_entries: HashMap<LexemeId, RootedLambdaPool<'src, Expr<'src>>>,
-    ) -> Self {
+        lexical_entries: Vec<LexicalEntry<T, C>>,
+        interpretations: Vec<RootedLambdaPool<'src, Expr<'src>>>,
+    ) -> SemanticLexicon<'src, T, C> {
+        let lexicon = Lexicon::new(lexical_entries, false);
+        let semantic_entries = lexicon
+            .leaves
+            .iter()
+            .copied()
+            .zip(interpretations)
+            .collect();
+
         SemanticLexicon {
             lexicon,
             semantic_entries,

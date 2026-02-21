@@ -1,8 +1,7 @@
 //! Module which defines the core functions to create or modify MG lexicons.
 
 use ahash::{HashMap, HashSet};
-#[cfg(feature = "pretty")]
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::Direction;
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
@@ -420,6 +419,28 @@ pub struct Lexicon<T: Eq, Category: Eq> {
     graph: StableDiGraph<FeatureOrLemma<T, Category>, LogProb<f64>>,
     root: NodeIndex,
     leaves: Vec<LexemeId>,
+}
+
+impl Serialize for Lexicon<&str, &str> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for Lexicon<&'a str, &'a str>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        Lexicon::from_string(s).map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]

@@ -42,6 +42,28 @@ impl<'src, T: Eq + Clone + Debug, C: Eq + Debug + Clone> SemanticLexicon<'src, T
     }
 }
 
+impl Serialize for SemanticLexicon<'_, &str, &str> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de, 'a> Deserialize<'de> for SemanticLexicon<'a, &'a str, &'a str>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        SemanticLexicon::parse(s).map_err(serde::de::Error::custom)
+    }
+}
+
 #[allow(clippy::type_complexity)]
 fn semantic_grammar_parser<'src>() -> impl Parser<
     'src,

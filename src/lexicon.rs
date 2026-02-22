@@ -45,6 +45,31 @@ pub enum Feature<Category: Eq> {
 }
 
 impl<C: Eq> Feature<C> {
+    ///Maps a [`Feature<C>`] to a [`Feature<C2>`]
+    pub fn map<C2: Eq, F>(self, mut f: F) -> Feature<C2>
+    where
+        F: FnMut(C) -> C2,
+    {
+        match self {
+            Feature::Category(c) => Feature::Category(f(c)),
+            Feature::Selector(c, direction) => Feature::Selector(f(c), direction),
+            Feature::Affix(c, direction) => Feature::Affix(f(c), direction),
+            Feature::Licensor(c) => Feature::Licensor(f(c)),
+            Feature::Licensee(c) => Feature::Licensee(f(c)),
+        }
+    }
+
+    ///Convert from [`&Feature<T>`] to [`Feature<&T>`].
+    pub const fn as_ref(&self) -> Feature<&C> {
+        match self {
+            Feature::Category(c) => Feature::Category(c),
+            Feature::Selector(c, direction) => Feature::Selector(c, *direction),
+            Feature::Affix(c, direction) => Feature::Affix(c, *direction),
+            Feature::Licensor(c) => Feature::Licensor(c),
+            Feature::Licensee(c) => Feature::Licensee(c),
+        }
+    }
+
     ///Get a reference to the inner category of a feature.
     pub fn inner(&self) -> &C {
         match self {
@@ -1083,7 +1108,7 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
     pub fn remap_lexicon<'lex, T2: Eq, C2: Eq>(
         &'lex self,
         lemma_map: impl Fn(&'lex T) -> T2,
-        category_map: impl Fn(&'lex C) -> C2,
+        mut category_map: impl Fn(&'lex C) -> C2,
     ) -> Lexicon<T2, C2> {
         let Lexicon {
             graph,
@@ -1102,20 +1127,8 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
                 FeatureOrLemma::Lemma(Pronounciation::Unpronounced) => {
                     FeatureOrLemma::Lemma(Pronounciation::Unpronounced)
                 }
-                FeatureOrLemma::Feature(Feature::Category(c)) => {
-                    FeatureOrLemma::Feature(Feature::Category(category_map(c)))
-                }
-                FeatureOrLemma::Feature(Feature::Licensor(c)) => {
-                    FeatureOrLemma::Feature(Feature::Licensor(category_map(c)))
-                }
-                FeatureOrLemma::Feature(Feature::Licensee(c)) => {
-                    FeatureOrLemma::Feature(Feature::Licensee(category_map(c)))
-                }
-                FeatureOrLemma::Feature(Feature::Affix(c, d)) => {
-                    FeatureOrLemma::Feature(Feature::Affix(category_map(c), *d))
-                }
-                FeatureOrLemma::Feature(Feature::Selector(c, d)) => {
-                    FeatureOrLemma::Feature(Feature::Selector(category_map(c), *d))
+                FeatureOrLemma::Feature(feature) => {
+                    FeatureOrLemma::Feature(feature.as_ref().map(&mut category_map))
                 }
                 FeatureOrLemma::Complement(c, direction) => {
                     FeatureOrLemma::Complement(category_map(c), *direction)

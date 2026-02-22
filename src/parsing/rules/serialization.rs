@@ -336,7 +336,32 @@ impl<T: Display> Lemma<T> {
         }
     }
 }
-impl<T, C: Eq + Display> TreeNode<'_, T, C> {
+impl<'a, T, C: Eq + Display> TreeNode<'a, T, C> {
+    ///Convert from [`TreeNode<T, C>`] to [`Pronounciation<T2, C2>`] with a closure.
+    pub fn map<T2: Eq + Display, C2: Eq + Display, F, G>(
+        self,
+        lemma_map: F,
+        mut category_map: G,
+    ) -> TreeNode<'a, T2, C2>
+    where
+        F: FnMut(T) -> T2,
+        G: FnMut(C) -> C2,
+    {
+        let TreeNode {
+            node,
+            rule,
+            storage,
+            semantics,
+        } = self;
+
+        TreeNode {
+            node: node.map(lemma_map, &mut category_map),
+            rule,
+            storage: storage.map(category_map),
+            semantics,
+        }
+    }
+
     ///Checks if this node represents a trace.
     pub fn is_trace(&self) -> bool {
         matches!(self.node, MgNode::Trace { .. })

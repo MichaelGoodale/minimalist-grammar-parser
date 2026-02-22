@@ -48,6 +48,37 @@ pub enum MgNode<T, C: Eq + Display> {
     },
 }
 
+impl<T, C: Eq + Display> MgNode<T, C> {
+    ///Convert from [`MgNode<T, C>`] to [`MgNode<T2, C2>`] with 2 closures.
+    pub fn map<T2: Eq + Display, C2: Eq + Display, F, G>(
+        self,
+        lemma_map: F,
+        mut category_map: G,
+    ) -> MgNode<T2, C2>
+    where
+        F: FnMut(T) -> T2,
+        G: FnMut(C) -> C2,
+    {
+        match self {
+            MgNode::Start => MgNode::Start,
+            MgNode::Node { features } => MgNode::Node {
+                features: features
+                    .into_iter()
+                    .map(|x| x.map(&mut category_map))
+                    .collect(),
+            },
+            MgNode::Leaf { lemma, features } => MgNode::Leaf {
+                lemma: lemma.map(lemma_map),
+                features: features
+                    .into_iter()
+                    .map(|x| x.map(&mut category_map))
+                    .collect(),
+            },
+            MgNode::Trace { trace } => MgNode::Trace { trace },
+        }
+    }
+}
+
 ///Representation of a lemma for display or printing
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub enum Lemma<T> {
@@ -68,6 +99,25 @@ impl<T> Lemma<T> {
             *stolen
         } else {
             false
+        }
+    }
+
+    ///Maps from [`Lemma<T>`] to [`Lemma<U>`]
+    pub fn map<U, F>(self, mut f: F) -> Lemma<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        match self {
+            Lemma::Single(p) => Lemma::Single(p.map(f)),
+            Lemma::Multi {
+                heads,
+                original_head,
+                stolen,
+            } => Lemma::Multi {
+                heads: heads.into_iter().map(|p| p.map(&mut f)).collect(),
+                original_head,
+                stolen,
+            },
         }
     }
 }
@@ -350,6 +400,22 @@ impl<C> MovementHelper<C> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Storage<C> {
     h: BTreeMap<usize, Vec<C>>,
+}
+
+impl<C> Storage<C> {
+    ///Converts from [`Storage<C>`] to [`Storage<C2>`]
+    pub fn map<C2, F>(self, mut f: F) -> Storage<C2>
+    where
+        F: FnMut(C) -> C2,
+    {
+        let Storage { h } = self;
+
+        Storage {
+            h: h.into_iter()
+                .map(|(k, v)| (k, v.into_iter().map(&mut f).collect::<Vec<_>>()))
+                .collect(),
+        }
+    }
 }
 
 impl<C: Display + Eq> Display for Storage<C> {

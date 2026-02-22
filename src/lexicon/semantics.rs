@@ -23,6 +23,7 @@ pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
 impl<'src, T: Eq + Clone + Debug, C: Eq + Debug + Clone> SemanticLexicon<'src, T, C> {
     ///Create a new [`SemanticLexicon`] from a [`Vec`] of [`LexicalEntry`]s and a [`Vec`] of
     ///[`RootedLambdaPool`]s
+    #[must_use] 
     pub fn new(
         lexical_entries: Vec<LexicalEntry<T, C>>,
         interpretations: Vec<RootedLambdaPool<'src, Expr<'src>>>,

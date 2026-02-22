@@ -359,7 +359,10 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
         write!(
             f,
             "{}",
-            self.features.iter().map(|x| x.to_string()).join(" ")
+            self.features
+                .iter()
+                .map(std::string::ToString::to_string)
+                .join(" ")
         )
     }
 }
@@ -526,8 +529,7 @@ impl<T: Eq, C: Eq + Clone> Iterator for Climber<'_, T, C> {
 
         match self.lex.graph.node_weight(self.pos) {
             Some(x) => match x {
-                FeatureOrLemma::Root => None,
-                FeatureOrLemma::Lemma(_) => None,
+                FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => None,
                 FeatureOrLemma::Feature(feature) => Some(feature.clone()),
                 FeatureOrLemma::Complement(c, direction) => {
                     Some(Feature::Selector(c.clone(), *direction))
@@ -850,8 +852,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     ///Get the feature of a node, if it has one.
     pub(crate) fn get_feature_category(&self, nx: NodeIndex) -> Option<&Category> {
         self.graph.node_weight(nx).and_then(|x| match x {
-            FeatureOrLemma::Root => None,
-            FeatureOrLemma::Lemma(_) => None,
+            FeatureOrLemma::Root | FeatureOrLemma::Lemma(_) => None,
             FeatureOrLemma::Feature(feature) => match feature {
                 Feature::Category(c)
                 | Feature::Selector(c, _)

@@ -236,7 +236,7 @@ impl From<bool> for Direction {
 /// - `move_prob`: The probability of moving rather than merging when both are available (Default = log(0.5))
 /// - `max_steps`: The maximum number of derivational steps before crashing (Default = 256)
 /// - `max_beams`: The maximum number of competing parses available in the parse heap at a single time (Default = 256)
-/// - `max_time`: The maximum amount of *time* before the parse crashes (not available on `wasm32). Disabled by default
+/// - `max_time`: The maximum amount of *time* before the parse crashes (not available on wasm32). Disabled by default
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ParsingConfig {
     min_log_prob: Option<LogProb<f64>>,

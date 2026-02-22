@@ -81,7 +81,7 @@ impl<T: Display> Display for Lemma<T> {
                 "{}",
                 heads
                     .iter()
-                    .map(|x| x.to_string())
+                    .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("-")
             ),

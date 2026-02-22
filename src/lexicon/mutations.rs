@@ -5,7 +5,7 @@ use std::{collections::hash_map::Entry, f64::consts::LN_2, fmt::Debug, hash::Has
 use thiserror::Error;
 
 use crate::{
-    Direction,
+    Direction, Pronounciation,
     lexicon::{LexemeId, LexicalEntry, fix_weights, fix_weights_per_node},
 };
 
@@ -75,7 +75,7 @@ impl<T: Eq, Category: Eq + Clone> LexicalEntry<T, Category> {
     fn sample(
         categories: &[Category],
         licensors: &[Category],
-        lemma: Option<T>,
+        lemma: Pronounciation<T>,
         config: LexicalProbConfig,
         rng: &mut impl Rng,
     ) -> Self {
@@ -412,11 +412,11 @@ where
         if let Some(&leaf) = self
             .leaves
             .iter()
-            .filter(|&&x| matches!(self.graph.node_weight(x.0).unwrap(), FeatureOrLemma::Lemma(Some(s)) if s!=&lemma))
+            .filter(|&&x| matches!(self.graph.node_weight(x.0).unwrap(), FeatureOrLemma::Lemma(Pronounciation::Pronounced(s)) if s!=&lemma))
             .choose(rng)
         {
             let parent = self.parent_of(leaf.0).unwrap();
-            let node = self.graph.add_node(FeatureOrLemma::Lemma(Some(lemma)));
+            let node = self.graph.add_node(FeatureOrLemma::Lemma(Pronounciation::Pronounced(lemma)));
             self.graph.add_edge(parent, node, LogProb::prob_of_one());
             fix_weights_per_node(&mut self.graph, parent);
             self.leaves.push(LexemeId(node));
@@ -429,7 +429,7 @@ where
     ///Adds a new lexeme and return its node index if it is novel.
     pub fn add_new_lexeme(
         &mut self,
-        lemma: Option<T>,
+        lemma: Pronounciation<T>,
         config: Option<LexicalProbConfig>,
         rng: &mut impl Rng,
     ) -> Option<LexemeId> {
@@ -949,11 +949,11 @@ impl<'a, 'b, 'c, T: Eq + Clone + Debug, C: Eq + FreshCategory + Clone + Debug>
         }
     }
 
-    fn get_lemma(&self, rng: &mut impl Rng) -> Option<T> {
+    fn get_lemma(&self, rng: &mut impl Rng) -> Pronounciation<T> {
         if rng.random_bool(self.config.empty_prob) {
-            None
+            Pronounciation::Unpronounced
         } else {
-            self.lemmas.choose(rng).cloned()
+            self.lemmas.choose(rng).cloned().into()
         }
     }
 
@@ -1246,7 +1246,13 @@ mod test {
     fn sample_lexeme() -> anyhow::Result<()> {
         let config = LexicalProbConfig::default();
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        LexicalEntry::sample(&["a", "b"], &["c", "d"], Some("john"), config, &mut rng);
+        LexicalEntry::sample(
+            &["a", "b"],
+            &["c", "d"],
+            Pronounciation::Pronounced("john"),
+            config,
+            &mut rng,
+        );
         Ok(())
     }
 
@@ -1340,7 +1346,7 @@ mod test {
             lex.add_new_lexeme_from_sibling("lbarg", &mut rng);
             validate_lexicon(&lex)?;
             let mut lex = Lexicon::<_, usize>::random(&0, lemmas, None, &mut rng);
-            lex.add_new_lexeme(Some("lbarg"), None, &mut rng);
+            lex.add_new_lexeme(Pronounciation::Pronounced("lbarg"), None, &mut rng);
             validate_lexicon(&lex)?;
         }
         Ok(())

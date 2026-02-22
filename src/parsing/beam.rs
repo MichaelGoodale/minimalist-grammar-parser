@@ -2,7 +2,7 @@
 //!work.
 
 use crate::{
-    ParseHeap, ParsingConfig, PhonContent, expand,
+    ParseHeap, ParsingConfig, PhonContent, Pronounciation, expand,
     lexicon::{Lexicon, ParsingError},
 };
 
@@ -15,7 +15,7 @@ use std::{fmt::Debug, hash::Hash};
 ///works. Parsing checks the next string corresponds to a parse, whereas generation uses scan to
 ///iteratively build strings.
 pub(crate) trait Scanner<T>: Sized {
-    fn scan(&mut self, s: &Option<T>) -> bool;
+    fn scan(&mut self, s: &Pronounciation<T>) -> bool;
 
     fn multiscan(&mut self, heads: Vec<&T>) -> bool;
 }
@@ -29,9 +29,9 @@ impl<T> Scanner<T> for ParseScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn scan(&mut self, s: &Option<T>) -> bool {
+    fn scan(&mut self, s: &Pronounciation<T>) -> bool {
         self.sentence.retain_mut(|(sentence, position)| match s {
-            Some(s) => {
+            Pronounciation::Pronounced(s) => {
                 if let Some(PhonContent::Normal(string)) = sentence.get(*position) {
                     if s == string {
                         *position += 1;
@@ -43,7 +43,7 @@ where
                     false
                 }
             }
-            None => true,
+            Pronounciation::Unpronounced => true,
         });
         !self.sentence.is_empty()
     }
@@ -136,14 +136,14 @@ impl<T> Scanner<T> for FuzzyScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
-    fn scan(&mut self, s: &Option<T>) -> bool {
-        if let Some(s) = s {
+    fn scan(&mut self, s: &Pronounciation<T>) -> bool {
+        if let Pronounciation::Pronounced(s) = s {
             self.generated_sentences
                 .push(PhonContent::Normal(s.clone()));
         }
         self.sentence_guides
             .retain_mut(|(sentence, position)| match s {
-                Some(s) => {
+                Pronounciation::Pronounced(s) => {
                     if let Some(PhonContent::Normal(string)) = sentence.get(*position) {
                         if s == string {
                             *position += 1;
@@ -155,7 +155,7 @@ where
                         false
                     }
                 }
-                None => true,
+                Pronounciation::Unpronounced => true,
             });
         true
     }
@@ -209,8 +209,8 @@ impl<T: Clone> Scanner<T> for GeneratorScan<T>
 where
     T: std::cmp::Eq + std::fmt::Debug,
 {
-    fn scan(&mut self, s: &Option<T>) -> bool {
-        if let Some(s) = s {
+    fn scan(&mut self, s: &Pronounciation<T>) -> bool {
+        if let Pronounciation::Pronounced(s) = s {
             //If the word was None then adding it does nothing
             self.sentence.push(PhonContent::Normal(s.clone()));
         }
@@ -255,9 +255,9 @@ impl<T> Scanner<T> for ContinuationScan<'_, T>
 where
     T: std::cmp::Eq + std::fmt::Debug + Clone,
 {
-    fn scan(&mut self, word: &Option<T>) -> bool {
+    fn scan(&mut self, word: &Pronounciation<T>) -> bool {
         match word {
-            Some(word) => {
+            Pronounciation::Pronounced(word) => {
                 if let Some(string) = self.prefix.get(self.position) {
                     if let PhonContent::Normal(string) = string
                         && string == word
@@ -276,7 +276,7 @@ where
                     true
                 }
             }
-            None => true,
+            Pronounciation::Unpronounced => true,
         }
     }
 

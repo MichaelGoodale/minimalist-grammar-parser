@@ -114,10 +114,10 @@ fn moving_parse() -> anyhow::Result<()> {
             .map(SimpleLexicalEntry::parse)
             .filter_map(|x| {
                 if let Ok(LexicalEntry { lemma, features }) = x {
-                    if let Some(lemma) = lemma {
+                    if let Pronounciation::Pronounced(lemma) = lemma {
                         if bad_sentence.contains(&lemma) {
                             Some(LexicalEntry {
-                                lemma: Some(lemma),
+                                lemma: Pronounciation::Pronounced(lemma),
                                 features,
                             })
                         } else {

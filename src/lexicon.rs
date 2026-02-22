@@ -3,7 +3,7 @@
 use ahash::{HashMap, HashSet};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::Direction;
+use crate::{Direction, Pronounciation};
 use chumsky::{extra::ParserExtra, label::LabelError, text::TextExpected, util::MaybeRef};
 use chumsky::{
     prelude::*,
@@ -112,10 +112,7 @@ pub enum LexiconError {
 
 ///Indicates a problem with parsing.
 #[derive(Error, Clone, Copy, Debug)]
-pub enum ParsingError<C>
-where
-    C: Debug,
-{
+pub enum ParsingError<C> {
     ///We try to get a licensor or category of a feature that is not in the grammar.
     #[error("There is nothing with feature ({0})")]
     NoLicensorOrCategory(LicenseeOrCategory<C>),
@@ -248,14 +245,14 @@ where
     .map(|(((lemma, mut features), category), mut licensees)| {
         features.push(category);
         features.append(&mut licensees);
-        LexicalEntry::new(lemma, features)
+        LexicalEntry::new(lemma.into(), features)
     })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum FeatureOrLemma<T: Eq, Category: Eq> {
     Root,
-    Lemma(Option<T>),
+    Lemma(Pronounciation<T>),
     Feature(Feature<Category>),
     Complement(Category, Direction),
 }
@@ -298,17 +295,20 @@ impl<T: Eq, Category: Eq> From<LexicalEntry<T, Category>> for Vec<FeatureOrLemma
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 ///A representation of a lexical entry in a grammar.
 pub struct LexicalEntry<T: Eq, Category: Eq> {
-    pub(crate) lemma: Option<T>,
+    pub(crate) lemma: Pronounciation<T>,
     pub(crate) features: Vec<Feature<Category>>,
 }
 impl<T: Eq, Category: Eq> LexicalEntry<T, Category> {
     ///Creates a new lexical entry
-    pub fn new(lemma: Option<T>, features: Vec<Feature<Category>>) -> LexicalEntry<T, Category> {
+    pub fn new(
+        lemma: Pronounciation<T>,
+        features: Vec<Feature<Category>>,
+    ) -> LexicalEntry<T, Category> {
         LexicalEntry { lemma, features }
     }
 
     ///Get the lemma (possibly `None`) of a lexical entry
-    pub fn lemma(&self) -> &Option<T> {
+    pub fn lemma(&self) -> &Pronounciation<T> {
         &self.lemma
     }
 
@@ -355,18 +355,12 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
     for LexicalEntry<T, Category>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(t) = &self.lemma {
-            write!(f, "{t}::")?;
-        } else {
-            write!(f, "ε::")?;
-        }
-        for (i, feature) in self.features.iter().enumerate() {
-            if i > 0 {
-                write!(f, " ")?;
-            }
-            write!(f, "{feature}")?;
-        }
-        Ok(())
+        write!(f, "{}::", &self.lemma)?;
+        write!(
+            f,
+            "{}",
+            self.features.iter().map(|x| x.to_string()).join(" ")
+        )
     }
 }
 
@@ -472,8 +466,8 @@ impl<T: Eq, Category: Eq> PartialEq for Lexicon<T, Category> {
 impl<T: Eq, Category: Eq> Eq for Lexicon<T, Category> {}
 impl<T, Category> Lexicon<T, Category>
 where
-    T: Eq + std::fmt::Debug + Clone + Display,
-    Category: Eq + std::fmt::Debug + Clone + Display,
+    T: Eq + Display,
+    Category: Eq + Display,
 {
     ///Prints a lexicon as a `GraphViz` dot file.
     #[must_use]
@@ -483,7 +477,7 @@ where
     }
 }
 
-fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
+fn renormalise_weights<T: Eq, C: Eq>(
     mut graph: StableDiGraph<FeatureOrLemma<T, C>, f64>,
 ) -> StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>> {
     //Renormalise probabilities to sum to one.
@@ -515,8 +509,7 @@ fn renormalise_weights<T: Eq + Clone, C: Eq + Clone>(
         }
     }
 
-    //TODO: Get rid of this annoying clone.
-    graph.map(|_, n| n.clone(), |_, e| LogProb::new(*e).unwrap())
+    graph.map_owned(|_, n| n, |_, e| LogProb::new(e).unwrap())
 }
 
 ///Iterator that climbs up a graph until it reaches the root.
@@ -565,7 +558,7 @@ pub(crate) fn fix_weights_per_node<T: Eq, C: Eq>(
     }
 }
 
-pub(crate) fn fix_weights<T: Eq + Clone, C: Eq + Clone>(
+pub(crate) fn fix_weights<T: Eq, C: Eq>(
     graph: &mut StableDiGraph<FeatureOrLemma<T, C>, LogProb<f64>>,
 ) {
     //Renormalise probabilities to sum to one.
@@ -785,7 +778,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
 
     ///Gets the lemma of a lexeme.
     #[must_use]
-    pub fn leaf_to_lemma(&self, lexeme_id: LexemeId) -> Option<&Option<T>> {
+    pub fn leaf_to_lemma(&self, lexeme_id: LexemeId) -> Option<&Pronounciation<T>> {
         match self.graph.node_weight(lexeme_id.0) {
             Some(x) => {
                 if let FeatureOrLemma::Lemma(l) = x {
@@ -847,7 +840,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 
     ///Get all lemmas of a grammar
-    pub fn lemmas(&self) -> impl Iterator<Item = &Option<T>> {
+    pub fn lemmas(&self) -> impl Iterator<Item = &Pronounciation<T>> {
         self.leaves.iter().filter_map(|x| match &self.graph[x.0] {
             FeatureOrLemma::Lemma(x) => Some(x),
             _ => None,
@@ -871,7 +864,7 @@ impl<T: Eq, Category: Eq> Lexicon<T, Category> {
     }
 }
 
-impl<T: Eq + std::fmt::Debug + Clone, Category: Eq + std::fmt::Debug + Clone> Lexicon<T, Category> {
+impl<T: Eq + Clone, Category: Eq + Clone> Lexicon<T, Category> {
     ///Returns all leaves with their sibling nodes (e.g. exemes that are identical except for
     ///their lemma)
     #[must_use]
@@ -1102,8 +1095,12 @@ impl<T: Eq, C: Eq> Lexicon<T, C> {
         let graph = graph.map(
             |_, x| match x {
                 FeatureOrLemma::Root => FeatureOrLemma::Root,
-                FeatureOrLemma::Lemma(Some(s)) => FeatureOrLemma::Lemma(Some(lemma_map(s))),
-                FeatureOrLemma::Lemma(None) => FeatureOrLemma::Lemma(None),
+                FeatureOrLemma::Lemma(Pronounciation::Pronounced(s)) => {
+                    FeatureOrLemma::Lemma(Pronounciation::Pronounced(lemma_map(s)))
+                }
+                FeatureOrLemma::Lemma(Pronounciation::Unpronounced) => {
+                    FeatureOrLemma::Lemma(Pronounciation::Unpronounced)
+                }
                 FeatureOrLemma::Feature(Feature::Category(c)) => {
                     FeatureOrLemma::Feature(Feature::Category(category_map(c)))
                 }
@@ -1220,13 +1217,7 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FeatureOrLemma::Root => write!(f, "root"),
-            FeatureOrLemma::Lemma(lemma) => {
-                if let Some(l) = lemma {
-                    write!(f, "{l}")
-                } else {
-                    write!(f, "ε")
-                }
-            }
+            FeatureOrLemma::Lemma(lemma) => write!(f, "{lemma}"),
             FeatureOrLemma::Feature(feature) => write!(f, "{feature}"),
             FeatureOrLemma::Complement(c, d) => write!(f, "{}", Feature::Selector(c, *d)),
         }
@@ -1290,14 +1281,14 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("John::d").unwrap(),
             SimpleLexicalEntry {
-                lemma: Some("John"),
+                lemma: Pronounciation::Pronounced("John"),
                 features: vec![Feature::Category("d")]
             }
         );
         assert_eq!(
             SimpleLexicalEntry::parse("eats::d= =d V").unwrap(),
             SimpleLexicalEntry {
-                lemma: Some("eats"),
+                lemma: Pronounciation::Pronounced("eats"),
                 features: vec![
                     Feature::Selector("d", Direction::Right),
                     Feature::Selector("d", Direction::Left),
@@ -1308,7 +1299,7 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("::d= =d V").unwrap(),
             SimpleLexicalEntry::new(
-                None,
+                Pronounciation::Unpronounced,
                 vec![
                     Feature::Selector("d", Direction::Right),
                     Feature::Selector("d", Direction::Left),
@@ -1319,7 +1310,7 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("ε::d= =d V").unwrap(),
             SimpleLexicalEntry {
-                lemma: None,
+                lemma: Pronounciation::Unpronounced,
                 features: vec![
                     Feature::Selector("d", Direction::Right),
                     Feature::Selector("d", Direction::Left),
@@ -1330,7 +1321,7 @@ mod tests {
         assert_eq!(
             SimpleLexicalEntry::parse("ε::d<= V").unwrap(),
             SimpleLexicalEntry {
-                lemma: None,
+                lemma: Pronounciation::Unpronounced,
                 features: vec![
                     Feature::Affix("d", Direction::Right),
                     Feature::Category("V")
@@ -1385,7 +1376,7 @@ mod tests {
         assert_eq!(
             x,
             vec![
-                FeatureOrLemma::Lemma(Some("eats")),
+                FeatureOrLemma::Lemma(Pronounciation::Pronounced("eats")),
                 FeatureOrLemma::Complement("d", Direction::Right),
                 FeatureOrLemma::Feature(Feature::Selector("d", Direction::Left)),
                 FeatureOrLemma::Feature(Feature::Category("V")),
@@ -1407,18 +1398,18 @@ mod tests {
         assert_eq!(
             leaves,
             vec![
-                (None, "C"),
-                (None, "C"),
-                (Some("knows"), "V"),
-                (Some("says"), "V"),
-                (Some("prefers"), "V"),
-                (Some("drinks"), "V"),
-                (Some("king"), "N"),
-                (Some("wine"), "N"),
-                (Some("beer"), "N"),
-                (Some("queen"), "N"),
-                (Some("the"), "D"),
-                (Some("which"), "D")
+                (Pronounciation::Unpronounced, "C"),
+                (Pronounciation::Unpronounced, "C"),
+                (Pronounciation::Pronounced("knows"), "V"),
+                (Pronounciation::Pronounced("says"), "V"),
+                (Pronounciation::Pronounced("prefers"), "V"),
+                (Pronounciation::Pronounced("drinks"), "V"),
+                (Pronounciation::Pronounced("king"), "N"),
+                (Pronounciation::Pronounced("wine"), "N"),
+                (Pronounciation::Pronounced("beer"), "N"),
+                (Pronounciation::Pronounced("queen"), "N"),
+                (Pronounciation::Pronounced("the"), "D"),
+                (Pronounciation::Pronounced("which"), "D")
             ]
         );
         Ok(())
@@ -1439,13 +1430,24 @@ mod tests {
         assert_eq!(
             siblings,
             vec![
-                vec![Some("which")],
-                vec![Some("the")],
-                vec![Some("queen"), Some("beer"), Some("wine"), Some("king")],
-                vec![Some("drinks"), Some("prefers")],
-                vec![Some("says"), Some("knows")],
-                vec![None],
-                vec![None]
+                vec![Pronounciation::Pronounced("which")],
+                vec![Pronounciation::Pronounced("the")],
+                vec![
+                    Pronounciation::Pronounced("queen"),
+                    Pronounciation::Pronounced("beer"),
+                    Pronounciation::Pronounced("wine"),
+                    Pronounciation::Pronounced("king")
+                ],
+                vec![
+                    Pronounciation::Pronounced("drinks"),
+                    Pronounciation::Pronounced("prefers")
+                ],
+                vec![
+                    Pronounciation::Pronounced("says"),
+                    Pronounciation::Pronounced("knows")
+                ],
+                vec![Pronounciation::Unpronounced],
+                vec![Pronounciation::Unpronounced]
             ]
         );
         Ok(())
@@ -1532,18 +1534,18 @@ mod tests {
         assert_eq!(
             lemmas,
             vec![
-                &None,
-                &None,
-                &Some("beer"),
-                &Some("drinks"),
-                &Some("king"),
-                &Some("knows"),
-                &Some("prefers"),
-                &Some("queen"),
-                &Some("says"),
-                &Some("the"),
-                &Some("which"),
-                &Some("wine")
+                &Pronounciation::Unpronounced,
+                &Pronounciation::Unpronounced,
+                &Pronounciation::Pronounced("beer"),
+                &Pronounciation::Pronounced("drinks"),
+                &Pronounciation::Pronounced("king"),
+                &Pronounciation::Pronounced("knows"),
+                &Pronounciation::Pronounced("prefers"),
+                &Pronounciation::Pronounced("queen"),
+                &Pronounciation::Pronounced("says"),
+                &Pronounciation::Pronounced("the"),
+                &Pronounciation::Pronounced("which"),
+                &Pronounciation::Pronounced("wine")
             ]
         );
 

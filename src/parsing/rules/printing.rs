@@ -20,7 +20,7 @@ use super::{Rule, RuleIndex};
 use crate::lexicon::{Feature, LexemeId};
 use crate::parsing::rules::{StolenInfo, TraceId};
 use crate::parsing::trees::GornIndex;
-use crate::{Lexicon, RulePool};
+use crate::{Lexicon, Pronounciation, RulePool};
 
 //TODO: Window function for derivation
 
@@ -52,10 +52,10 @@ pub enum MgNode<T, C: Eq + Display> {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 pub enum Lemma<T> {
     ///A normal lemma
-    Single(Option<T>),
+    Single(Pronounciation<T>),
     ///A head created by affixing multiple heads.
     Multi {
-        heads: Vec<Option<T>>,
+        heads: Vec<Pronounciation<T>>,
         original_head: usize,
         stolen: bool,
     },
@@ -75,16 +75,13 @@ impl<T> Lemma<T> {
 impl<T: Display> Display for Lemma<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Lemma::Single(Some(x)) => write!(f, "{x}"),
-            Lemma::Single(None) => write!(f, "ε"),
+            Lemma::Single(x) => write!(f, "{x}"),
             Lemma::Multi { heads, .. } => write!(
                 f,
                 "{}",
                 heads
                     .iter()
-                    .map(|x| x
-                        .as_ref()
-                        .map_or_else(|| "ε".to_string(), std::string::ToString::to_string))
+                    .map(|x| x.to_string())
                     .collect::<Vec<_>>()
                     .join("-")
             ),

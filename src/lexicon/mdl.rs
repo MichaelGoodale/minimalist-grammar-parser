@@ -2,6 +2,8 @@
 //!
 //! - Ermolaeva, M. (2021). Learning Syntax via Decomposition [The University of Chicago]. <https://doi.org/10.6082/uchicago.3015>
 
+use crate::Pronounciation;
+
 use super::{Feature, FeatureOrLemma, Lexicon, LexiconError};
 use ahash::AHashSet;
 use std::hash::Hash;
@@ -12,41 +14,41 @@ pub trait SymbolCost: Sized {
     /// # Example
     /// Let Phon = $\{a,b,c\}$ so, `n_phonemes` should be 3 (passed to [``Lexicon::mdl_score``].
     /// The string, abcabc should have `symbol_cost` 6.
-    fn symbol_cost(x: &Option<Self>) -> u16;
+    fn symbol_cost(x: &Pronounciation<Self>) -> u16;
 }
 
 impl SymbolCost for &str {
-    fn symbol_cost(x: &Option<Self>) -> u16 {
+    fn symbol_cost(x: &Pronounciation<Self>) -> u16 {
         match x {
-            Some(x) => x.len().try_into().unwrap(),
-            None => 0,
+            Pronounciation::Pronounced(x) => x.len().try_into().unwrap(),
+            Pronounciation::Unpronounced => 0,
         }
     }
 }
 
 impl SymbolCost for String {
-    fn symbol_cost(x: &Option<Self>) -> u16 {
+    fn symbol_cost(x: &Pronounciation<Self>) -> u16 {
         match x {
-            Some(x) => x.len().try_into().unwrap(),
-            None => 0,
+            Pronounciation::Pronounced(x) => x.len().try_into().unwrap(),
+            Pronounciation::Unpronounced => 0,
         }
     }
 }
 
 impl SymbolCost for char {
-    fn symbol_cost(x: &Option<Self>) -> u16 {
+    fn symbol_cost(x: &Pronounciation<Self>) -> u16 {
         match x {
-            Some(_) => 1,
-            None => 0,
+            Pronounciation::Pronounced(_) => 1,
+            Pronounciation::Unpronounced => 0,
         }
     }
 }
 
 impl SymbolCost for u8 {
-    fn symbol_cost(x: &Option<Self>) -> u16 {
+    fn symbol_cost(x: &Pronounciation<Self>) -> u16 {
         match x {
-            Some(_) => 1,
-            None => 0,
+            Pronounciation::Pronounced(_) => 1,
+            Pronounciation::Unpronounced => 0,
         }
     }
 }

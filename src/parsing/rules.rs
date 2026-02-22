@@ -14,7 +14,7 @@ pub use printing::Derivation;
 pub use serialization::{Tree, TreeEdge, TreeNode, TreeWithMovement};
 
 use crate::{
-    Direction, Lexicon,
+    Direction, Lexicon, Pronounciation,
     lexicon::{Feature, FeatureOrLemma, LexemeId},
 };
 
@@ -102,7 +102,7 @@ pub(crate) enum Rule {
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash)]
 pub enum DerivationStep<T> {
     ///A lemma is merged here
-    Lemma(Option<T>),
+    Lemma(Pronounciation<T>),
 
     ///Merge
     Merge {
@@ -507,7 +507,8 @@ impl RulePool {
 #[cfg(test)]
 mod test {
     use crate::{
-        Direction, Lexicon, ParsingConfig, PhonContent, grammars, parsing::rules::DerivationStep,
+        Direction, Lexicon, ParsingConfig, PhonContent, Pronounciation, grammars,
+        parsing::rules::DerivationStep,
     };
 
     #[test]
@@ -559,14 +560,14 @@ mod test {
                         argument: 2,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(Some("a")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("a")),
                     DerivationStep::Merge {
                         child: 3,
                         argument: 4,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(Some("b")),
-                    DerivationStep::Lemma(Some("c"))
+                    DerivationStep::Lemma(Pronounciation::Pronounced("b")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("c"))
                 ]
             );
         }
@@ -594,7 +595,7 @@ mod test {
                         argument: 2,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(None),
+                    DerivationStep::Lemma(Pronounciation::Unpronounced),
                     DerivationStep::Merge {
                         child: 3,
                         argument: 4,
@@ -610,9 +611,9 @@ mod test {
                         argument: 6,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(Some("the")),
-                    DerivationStep::Lemma(Some("king")),
-                    DerivationStep::Lemma(Some("knows")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("the")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("king")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("knows")),
                     DerivationStep::Move {
                         child: 9,
                         mover: 17
@@ -622,7 +623,7 @@ mod test {
                         argument: 11,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(None),
+                    DerivationStep::Lemma(Pronounciation::Unpronounced),
                     DerivationStep::Merge {
                         child: 12,
                         argument: 13,
@@ -638,16 +639,16 @@ mod test {
                         argument: 15,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(Some("the")),
-                    DerivationStep::Lemma(Some("queen")),
-                    DerivationStep::Lemma(Some("drinks")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("the")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("queen")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("drinks")),
                     DerivationStep::Merge {
                         child: 18,
                         argument: 19,
                         direction: Direction::Right
                     },
-                    DerivationStep::Lemma(Some("which")),
-                    DerivationStep::Lemma(Some("beer"))
+                    DerivationStep::Lemma(Pronounciation::Pronounced("which")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("beer"))
                 ]
             );
         }
@@ -675,7 +676,7 @@ mod test {
                         argument: 4,
                         direction: Direction::Left
                     },
-                    DerivationStep::Lemma(None),
+                    DerivationStep::Lemma(Pronounciation::Unpronounced),
                     DerivationStep::Move {
                         child: 5,
                         mover: 10
@@ -685,7 +686,7 @@ mod test {
                         argument: 7,
                         direction: Direction::Left
                     },
-                    DerivationStep::Lemma(Some("b")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("b")),
                     DerivationStep::Move {
                         child: 8,
                         mover: 13
@@ -695,7 +696,7 @@ mod test {
                         argument: 10,
                         direction: Direction::Left
                     },
-                    DerivationStep::Lemma(Some("b")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("b")),
                     DerivationStep::Move {
                         child: 11,
                         mover: 16
@@ -705,7 +706,7 @@ mod test {
                         argument: 13,
                         direction: Direction::Left
                     },
-                    DerivationStep::Lemma(Some("a")),
+                    DerivationStep::Lemma(Pronounciation::Pronounced("a")),
                     DerivationStep::Move {
                         child: 14,
                         mover: 16
@@ -715,8 +716,8 @@ mod test {
                         argument: 16,
                         direction: Direction::Left
                     },
-                    DerivationStep::Lemma(Some("a")),
-                    DerivationStep::Lemma(None)
+                    DerivationStep::Lemma(Pronounciation::Pronounced("a")),
+                    DerivationStep::Lemma(Pronounciation::Unpronounced)
                 ]
             );
         }

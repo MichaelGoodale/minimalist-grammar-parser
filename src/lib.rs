@@ -58,7 +58,7 @@ use rand_distr::Distribution;
 #[cfg(feature = "sampling")]
 use rand_distr::weighted::WeightedIndex;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
 ///The basic input type of the library used by generation and parsing a like
@@ -68,6 +68,74 @@ pub enum PhonContent<T> {
     Normal(T),
     ///Words that are built out of combining heads with head movement
     Affixed(Vec<T>),
+}
+
+///Whether a word has a given pronounciation or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(from = "Option<T>")]
+pub enum Pronounciation<T> {
+    ///An empty pronounciation
+    Unpronounced,
+    ///The pronounciation
+    Pronounced(T),
+}
+
+impl<T: Serialize> Serialize for Pronounciation<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let opt: Option<&T> = match self {
+            Pronounciation::Pronounced(t) => Some(t),
+            Pronounciation::Unpronounced => None,
+        };
+        opt.serialize(serializer)
+    }
+}
+
+impl<T> Pronounciation<T> {
+    ///Convert from [`&Pronounciation<T>`] to [`Pronounciation<&T>`].
+    pub const fn as_ref(&self) -> Pronounciation<&T> {
+        match *self {
+            Pronounciation::Pronounced(ref x) => Pronounciation::Pronounced(x),
+            Pronounciation::Unpronounced => Pronounciation::Unpronounced,
+        }
+    }
+
+    ///Convert from [`Pronounciation<T>`] to [`Pronounciation<U>`] with a closure.
+    pub fn map<U, F>(self, f: F) -> Pronounciation<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        match self {
+            Pronounciation::Pronounced(x) => Pronounciation::Pronounced(f(x)),
+            Pronounciation::Unpronounced => Pronounciation::Unpronounced,
+        }
+    }
+}
+
+impl<T> From<Pronounciation<T>> for Option<T> {
+    fn from(value: Pronounciation<T>) -> Self {
+        match value {
+            Pronounciation::Pronounced(t) => Some(t),
+            Pronounciation::Unpronounced => None,
+        }
+    }
+}
+
+impl<T> From<Option<T>> for Pronounciation<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(t) => Pronounciation::Pronounced(t),
+            None => Pronounciation::Unpronounced,
+        }
+    }
+}
+
+impl<T: Display> Display for Pronounciation<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Pronounciation::Pronounced(x) => write!(f, "{x}"),
+            Pronounciation::Unpronounced => write!(f, "ε"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Error)]

@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 use crate::lexicon::{Feature, FeatureOrLemma, LexemeId, Lexicon, ParsingError};
 use crate::parsing::rules::StolenInfo;
 use crate::parsing::trees::StolenHead;
-use crate::{Direction, ParseHeap, ParsingConfig};
+use crate::{Direction, ParseHeap, ParsingConfig, Pronounciation};
 use beam::Scanner;
 use logprob::LogProb;
 use petgraph::graph::NodeIndex;
@@ -93,14 +93,14 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
         mut self,
         v: &mut ParseHeap<T, B>,
         moment: &ParseMoment,
-        s: &Option<T>,
+        s: &Pronounciation<T>,
         child_node: LexemeId,
         child_prob: LogProb<f64>,
         lexicon: &Lexicon<T, Category>,
     ) {
         match s {
-            Some(_) => self.n_consec_empties = 0,
-            None => self.n_consec_empties += 1,
+            Pronounciation::Pronounced(_) => self.n_consec_empties = 0,
+            Pronounciation::Unpronounced => self.n_consec_empties += 1,
         }
         let rule = match moment.stolen_head {
             StolenHead::Root(head_id) => {
@@ -112,7 +112,7 @@ impl<T: Clone + Eq + std::fmt::Debug, B: Scanner<T> + Eq + Clone> BeamWrapper<T,
                 let heads = heads
                     .heads
                     .iter()
-                    .filter_map(|x| lexicon.leaf_to_lemma(*x).unwrap().as_ref())
+                    .filter_map(|x| lexicon.leaf_to_lemma(*x).unwrap().as_ref().into())
                     .collect();
 
                 if self.beam.multiscan(heads) {

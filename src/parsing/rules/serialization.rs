@@ -1,5 +1,5 @@
 use crate::{
-    Direction,
+    Direction, Pronounciation,
     lexicon::Feature,
     parsing::{
         RuleIndex,
@@ -323,15 +323,13 @@ impl<T: Display, C: Eq + Display> Display for TreeNode<'_, T, C> {
 impl<T: Display> Lemma<T> {
     fn to_string(&self, empty_string: &str, join: &str) -> String {
         match self {
-            Lemma::Single(Some(x)) => x.to_string(),
-            Lemma::Single(None) => empty_string.to_string(),
+            Lemma::Single(Pronounciation::Pronounced(x)) => x.to_string(),
+            Lemma::Single(Pronounciation::Unpronounced) => empty_string.to_string(),
             Lemma::Multi { heads, .. } => heads
                 .iter()
-                .map(|x| {
-                    x.as_ref().map_or_else(
-                        || empty_string.to_string(),
-                        std::string::ToString::to_string,
-                    )
+                .map(|x| match x.as_ref() {
+                    Pronounciation::Pronounced(x) => x.to_string(),
+                    Pronounciation::Unpronounced => empty_string.to_string(),
                 })
                 .collect::<Vec<_>>()
                 .join(join),

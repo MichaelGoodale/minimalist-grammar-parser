@@ -187,6 +187,26 @@ impl PhonContent<&str> {
     }
 }
 
+impl<T: Display> Display for PhonContent<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhonContent::Normal(x) => write!(f, "{x}")?,
+            PhonContent::Affixed(items) => {
+                let mut first = true;
+                for x in items {
+                    if !first {
+                        write!(f, "-")?;
+                    }
+                    first = false;
+
+                    write!(f, "{x}")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 ///Enum to record the direction of a merge/move operation (whether the phonological value goes to
 ///the right or left)
 #[allow(missing_docs)]

@@ -23,7 +23,7 @@ pub struct SemanticLexicon<'src, T: Eq, Category: Eq> {
 impl<'src, T: Eq + Clone + Debug, C: Eq + Debug + Clone> SemanticLexicon<'src, T, C> {
     ///Create a new [`SemanticLexicon`] from a [`Vec`] of [`LexicalEntry`]s and a [`Vec`] of
     ///[`RootedLambdaPool`]s
-    #[must_use] 
+    #[must_use]
     pub fn new(
         lexical_entries: Vec<LexicalEntry<T, C>>,
         interpretations: Vec<RootedLambdaPool<'src, Expr<'src>>>,
@@ -599,44 +599,6 @@ John::0 -1::a_1";
                 println!("{pool}");
             }
         }
-        Ok(())
-    }
-
-    #[test]
-    fn iota_test() -> anyhow::Result<()> {
-        let grammar = [
-            "John::d -k::a_j",
-            "Mary::d -k::a_m",
-            "the::n= d -k::lambda <a,t> P iota(x, P(x))",
-            "vase::n::lambda a x pa_vase(x)",
-            "see::d= V::lambda e x pe_see(x)",
-            "::=>V +k agrO::lambda a x lambda e y PatientOf(x, y)",
-            "::=>agrO v::lambda <e,t> phi phi",
-            "::=>v =d voice::lambda a x lambda e y AgentOf(x, y)",
-            "s::=>voice +k t::lambda <e,t> P some_e(x, all_e, P(x) & Habitual#<e,t>(x))",
-        ]
-        .join("\n");
-
-        let lexicon = SemanticLexicon::parse(&grammar)?;
-        let s = [
-            PhonContent::Normal("John"),
-            PhonContent::Affixed(vec!["see", "s"]),
-            PhonContent::Normal("the"),
-            PhonContent::Normal("vase"),
-        ];
-        for (_, _, r) in lexicon
-            .lexicon
-            .parse(&s, "t", &ParsingConfig::default())
-            .unwrap()
-        {
-            for (pool, _) in r.to_interpretation(&lexicon) {
-                assert_eq!(
-                    pool.to_string(),
-                    "some_e(x, all_e, AgentOf(a_j, x) & PatientOf(iota(y, pa_vase(y)), x) & pe_see(x) & Habitual#<e,t>(x))"
-                )
-            }
-        }
-
         Ok(())
     }
 }

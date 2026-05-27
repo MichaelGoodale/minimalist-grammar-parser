@@ -997,7 +997,7 @@ impl<T: Eq + Clone, Category: Eq + Clone> Lexicon<T, Category> {
         let root_index = graph.add_node(FeatureOrLemma::Root);
         let mut leaves = vec![];
 
-        for (lexeme, weight) in items.into_iter().zip(weights.into_iter()) {
+        for (lexeme, weight) in items.into_iter().zip(weights) {
             let lexeme: Vec<FeatureOrLemma<T, Category>> = lexeme.into();
             let mut node_index = root_index;
 

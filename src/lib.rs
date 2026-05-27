@@ -99,6 +99,19 @@ impl<T> Pronounciation<T> {
         }
     }
 
+    ///Unwraps the [`Pronounciation`] if it was [`Pronounciation::Pronounced`].
+    ///
+    ///# Panics
+    ///Will panic if it is [`Pronounciation::Unpronounced`]
+    pub fn unwrap(self) -> T {
+        match self {
+            Pronounciation::Unpronounced => {
+                panic!("Pronounciation was Unpronounced and can't be unwrapped!")
+            }
+            Pronounciation::Pronounced(x) => x,
+        }
+    }
+
     ///Convert from [`Pronounciation<T>`] to [`Pronounciation<U>`] with a closure.
     pub fn map<U, F>(self, f: F) -> Pronounciation<U>
     where

@@ -380,7 +380,7 @@ impl<T: Display + PartialEq + Eq, Category: Display + PartialEq + Eq> Display
     for LexicalEntry<T, Category>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}::", &self.lemma)?;
+        write!(f, "{}::", self.lemma)?;
         write!(
             f,
             "{}",

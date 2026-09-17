@@ -940,7 +940,7 @@ mod tests {
                 ["1", "0", "2"],
             ),
             (
-                "0::3= 2= +1 0::a_c\n1::3 -1::lambda a x iota_e(y, some_e(z, all_e, pa_Q(a_c)))\n2::2::lambda e x ~(pe_run(x) | pe_walk(x))",
+                "0::3= 2= +1 0::a_c\n1::3 -1::lambda a x iota_e(y, some_e(z, all_e(z), pa_Q(a_c)))\n2::2::lambda e x ~(pe_run(x) | pe_walk(x))",
                 ["1", "0", "2"],
             ),
             (

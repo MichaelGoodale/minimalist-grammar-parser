@@ -106,12 +106,14 @@ fn semantic_grammar_parser<'src>() -> impl Parser<
 }
 
 impl<'src> SemanticLexicon<'src, &'src str, &'src str> {
+    //TODO: Unified nice error handling for parsing using Ariadne like in SimpleSemantics
+
     ///Create a new semantic lexicon by parsing a string.
     pub fn parse(s: &'src str) -> Result<Self, LambdaParseError> {
         let (lexicon, errors) = semantic_grammar_parser().parse(s).into_output_errors();
 
         if !errors.is_empty() {
-            todo!("Do some error handling");
+            return Err(LambdaParseError::from_errors(errors, s));
         }
 
         let (lexicon, semantic_entries) = lexicon.unwrap();

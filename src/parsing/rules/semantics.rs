@@ -108,7 +108,7 @@ impl Serialize for SemanticNode<'_> {
     {
         match self {
             SemanticNode::Rich(semantic_rule, semantic_state) => {
-                let mut s = serializer.serialize_struct("SemanticNode", 1)?;
+                let mut s = serializer.serialize_struct("SemanticNode", 2)?;
                 s.serialize_field("rule", semantic_rule)?;
                 s.serialize_field("state", semantic_state)?;
                 s.end()

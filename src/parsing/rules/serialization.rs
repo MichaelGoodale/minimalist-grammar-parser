@@ -66,7 +66,7 @@ impl<T: Serialize, C: Eq + Display + Clone> Serialize for TreeWithMovement<'_, T
     where
         S: serde::Serializer,
     {
-        let mut seq = serializer.serialize_struct("Tree", 2)?;
+        let mut seq = serializer.serialize_struct("Tree", 3)?;
 
         seq.serialize_field("tree", &self.tree)?;
         seq.serialize_field("head_movement", &self.head_movement)?;
@@ -524,10 +524,10 @@ where
         match &self.node {
             MgNode::Node { features, .. } => {
                 #[cfg(not(feature = "semantics"))]
-                let n = 3;
+                let n = 2;
 
                 #[cfg(feature = "semantics")]
-                let n = if self.semantics.is_some() { 4 } else { 3 };
+                let n = if self.semantics.is_some() { 3 } else { 2 };
 
                 let mut seq = serializer.serialize_struct_variant("MgNode", 0, "Node", n)?;
 
@@ -543,10 +543,10 @@ where
             }
             MgNode::Leaf { lemma, features } => {
                 #[cfg(not(feature = "semantics"))]
-                let n = 4;
+                let n = 2;
 
                 #[cfg(feature = "semantics")]
-                let n = if self.semantics.is_some() { 5 } else { 4 };
+                let n = if self.semantics.is_some() { 3 } else { 2 };
 
                 let mut seq = serializer.serialize_struct_variant("MgNode", 1, "Leaf", n)?;
 
@@ -562,10 +562,10 @@ where
             }
             MgNode::Trace { trace } => {
                 #[cfg(not(feature = "semantics"))]
-                let n = 2;
+                let n = 1;
 
                 #[cfg(feature = "semantics")]
-                let n = if self.semantics.is_some() { 3 } else { 2 };
+                let n = if self.semantics.is_some() { 2 } else { 1 };
 
                 let mut seq = serializer.serialize_struct_variant("MgNode", 2, "Trace", n)?;
 

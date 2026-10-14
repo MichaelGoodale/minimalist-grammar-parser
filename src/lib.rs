@@ -262,6 +262,23 @@ impl From<bool> for Direction {
     }
 }
 
+macro_rules! impl_from_direction {
+    ($($t:ty)*) => {
+        $(
+            impl From<Direction> for $t {
+                fn from(value: Direction) -> Self {
+                    match value {
+                        Direction::Left => 0,
+                        Direction::Right => 1,
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_from_direction!(usize u8 u16 u32 u64 u128 isize i8 i16 i32 i64 i128);
+
 ///This struct defines the configuration used when parsing a [`Lexicon`].
 ///
 ///It has the following options:

@@ -379,11 +379,20 @@ enum ApplyFromStorageResult<T> {
     NoTrace(T),
 }
 
-fn can_apply(a: &LambdaType, b: &LambdaType) -> bool {
+///Checks if two types can be used in standard FunctionApplication
+pub fn can_fa(a: &LambdaType, b: &LambdaType) -> bool {
     a.can_apply(b) || b.can_apply(a)
 }
 
-fn can_event_id(alpha: &LambdaType, beta: &LambdaType) -> bool {
+///Checks whether two types can be used in PredicateModification
+pub fn can_pred_mod(alpha: &LambdaType, beta: &LambdaType) -> bool {
+    alpha == beta
+        && alpha.lhs().is_ok_and(|x| x == &LambdaType::T)
+        && beta.lhs().is_ok_and(|x| x == &LambdaType::T)
+}
+
+///Checks if two types, alpha and beta can be used for EventIdentification
+pub fn can_event_id(alpha: &LambdaType, beta: &LambdaType) -> bool {
     if let LambdaType::Composition(_sigma, b) = alpha
         && let LambdaType::Composition(tau_alpha, t) = &**b
         && matches!(&**t, LambdaType::T)
@@ -665,7 +674,7 @@ where
                         let child_type = child.0.expr.get_type().unwrap();
                         let complement_type = complement.0.expr.get_type().unwrap();
 
-                        let can_apply = can_apply(&child_type, &complement_type);
+                        let can_apply = can_fa(&child_type, &complement_type);
                         let can_event_id = can_event_id(&child_type, &complement_type);
 
                         if can_apply && can_event_id {
@@ -717,7 +726,7 @@ where
                             let child_type = child.0.expr.get_type().unwrap();
                             let complement_type = complement.0.expr.get_type().unwrap();
 
-                            let can_apply = can_apply(&child_type, &complement_type);
+                            let can_apply = can_fa(&child_type, &complement_type);
                             let can_event_id = can_event_id(&child_type, &complement_type);
 
                             if can_apply && can_event_id {
